@@ -31,11 +31,20 @@ def to_HTML(lines):
     token = False
     productions = []
     terminals = []
+    numbers = set()
+    error = 1
+    numbering = 1
     for r in each_rule(lines):
         logging.debug(r)
         if r == '@terminals': token = True
         else:
             num, sym, expr = rule_parts(r)
+            if num in numbers:
+                logging.error("Duplicate rule number %r", num)
+                num = "ERROR-" + str(error)
+                error = error + 1
+            else:
+                numbers.add(num)
             row = as_HTML(num, sym, expr, token, r)
             if not token:
                 productions.append(row)
@@ -45,8 +54,8 @@ def to_HTML(lines):
 
 
 ROW_TEMPLATE =  Template("""<tr id="${prefix + "-" if prefix else ''}grammar-production-${sym}" data-grammar-original="${orig}" data-grammar-expression="${expr}" ${"class='grammar-token'" if isToken else ""}>
-    <td>[${num}]<td>
-    <td><code>${sym}</code><td>
+    <td>[${num}]</td>
+    <td><code>${sym}</code></td>
     <td>::=</td>
     <td>${hexpr}</td>
 </tr>""")
@@ -56,12 +65,10 @@ TABLE_TEMPLATE = Template("""<table ${'id="' + prefix + '"' if prefix else ''} c
         %for row in productions:
             ${row}
         %endfor
-    </tbody>
-    <tbody class="grammar-terminals">
+<tr><td colspan="4"><h4 id="terminals">Productions for terminals</h4></td></tr>
         %for row in terminals:
             ${row}
         %endfor
-    </tbody>
 </table>""")
 
 
@@ -71,33 +78,35 @@ def as_HTML(num, sym, expr, isToken, orig):
     return ROW_TEMPLATE.render(num=num, sym=sym, expr=escape(expr), hexpr=hexpr, isToken=isToken, orig=escape(orig), prefix=prefix)
 
 
-def html_expr(expr, nested=False):
+def html_expr(expr, nested=False, alternation=False):
     global prefix
     op, args = expr
     if op == '*':
-        return "({})<code class='grammar-star'>*</code>".format(html_expr(args))
+        return "{}<code class='grammar-star'>*</code>".format(html_expr(args, nested=True))
     elif op == 'id':
         return "<a href='#{1}grammar-production-{0}'>{0}</a>".format(args, prefix + '-' if prefix else '')
     elif op == '|':
-        content = " <code>|</code> ".join([html_expr(a, nested=True) for a in args])
+        content = " <code>| </code> ".join([html_expr(a, nested=True, alternation=True) for a in args])
+        if nested:
+            return "({})".format(content)
         return content
     elif op == ',':
-        if nested:
+        if nested and not alternation:
             content = " ".join([html_expr(a) for a in args])
             return "({})".format(content)
         else:
-            return " ".join([html_expr(a) for a in args])
+            return " ".join([html_expr(a, nested=True) for a in args])
     elif op == "'":
         if "'" in args:
             return '"<code class="grammar-literal">{}</code>"'.format(escape(args))
         else:
             return "'<code class='grammar-literal'>{}</code>'".format(escape(args))
     elif op == '?':
-        return "({})?".format(html_expr(args))
+        return "{}?".format(html_expr(args, nested=True))
     elif op == '+':
-        return "({})<code class='grammar-plus'>+</code>".format(html_expr(args))
+        return "{}<code class='grammar-plus'>+</code>".format(html_expr(args, nested=True))
     elif op == '[':
-        return "[<code class='grammar-chars'>{}</code>]".format(args)
+        return "[<code class='grammar-chars'>{}</code>]".format(escape(args))
     elif op == '-':
         lh = args[0]
         rh = args[1]

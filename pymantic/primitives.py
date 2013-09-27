@@ -277,7 +277,7 @@ class Literal(tuple):
         if self.language:
             return quoted + '@' + self.language
         elif self.datatype:
-            return quoted + '^^' + str(self.datatype)
+            return quoted + '^^' + self.datatype.toNT()
         else:
             return quoted
 

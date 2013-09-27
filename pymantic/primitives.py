@@ -1,6 +1,7 @@
 __all__ = ['Triple', 'Quad', 'q_as_t', 't_as_q', 'Literal', 'NamedNode',
            'Prefix', 'BlankNode', 'Graph', 'Dataset', 'PrefixMap', 'TermMap', 
-           'parse_curie', 'is_language', 'lang_match', 'to_curie']
+           'parse_curie', 'is_language', 'lang_match', 'to_curie', 'Profile',
+           ]
 
 import collections
 import datetime

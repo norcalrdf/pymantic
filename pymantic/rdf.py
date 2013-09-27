@@ -100,6 +100,8 @@ class Resource(object):
 
     rdf_classes = frozenset()
 
+    global_profile = Profile()
+
     def __init__(self, graph, subject):
         self.graph = graph
         if not isinstance(subject, NamedNode) and not isinstance(subject, BlankNode):
@@ -138,7 +140,10 @@ class Resource(object):
     @classmethod
     def resolve(cls, key):
         """Use this class's prefixes to resolve a curie"""
-        return parse_curie(key, cls.prefixes)
+        try:
+            return cls.prefixes.resolve(key)
+        except ValueError:
+            return cls.global_profile.resolve(key)
 
     def __eq__(self, other):
         if isinstance(other, Resource):

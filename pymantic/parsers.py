@@ -1,4 +1,4 @@
-__all__ = ['ntriples_parser', 'nquads_parser', 'turtle_parser']
+__all__ = ['ntriples_parser', 'nquads_parser', 'turtle_parser', 'jsonld_parser']
 
 from collections import defaultdict, namedtuple, OrderedDict
 from lepl import *
@@ -723,6 +723,16 @@ class PyLDLoader(BaseLeplParser):
             jobj = json.loads(string)
             self.pyld_loader.process_jobj(jobj)
 
+
+    def parse_json(self, jobj, sink=None):
+        if sink is None:
+            sink = self._make_graph()
+        self._prepare_parse(sink)
+        self.process_jobj(jobj)
+        self._cleanup_parse()
+
+        return sink        
+    
     def make_quad(self, values):
         quad = self.env.createQuad(*values)
         self._call_state.graph.add(quad)
@@ -761,4 +771,6 @@ class PyLDLoader(BaseLeplParser):
                      graph_iri,
                      )
                 )
+                
+jsonld_parser = PyLDLoader()
 

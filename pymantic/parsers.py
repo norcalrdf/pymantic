@@ -713,6 +713,9 @@ class RDFXMLParser(object):
 import json
 
 class JSONLDParser(object):
+    
+    def __init__(self):
+        self.blanks = defaultdict(pymantic.primitives.BlankNode)
 
     def parse_json_ld(self, json_ld, context={}, base=None):
         # 1. Get Context
@@ -726,15 +729,20 @@ class JSONLDParser(object):
             context['@vocab'] = urljoin(context['@vocab'], context['@base'])
         
         s = json_ld.get("@id")
-        s = self.resolve(context, s)
         if s:
-            for k,v in json_ld.iteritems():
-                if k in ("@id"):
-                    continue
-                p = self.resolve(context, k)
-                if p:
-                    print s, p, v
-        
+            s = self.resolve(context, s)
+        else:
+            s = pymantic.primitives.BlankNode()
+        for k,v in json_ld.iteritems():
+            if k in ("@id"):
+                continue
+            p = self.resolve(context, k)
+            if p:
+                print s, p, v
+
+    def blankNode(self, label):
+        return self.blanks[label]
+    
     def resolve(self, context, term):
         log.debug(term)
         if term not in context:

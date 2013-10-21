@@ -9,6 +9,9 @@ from urlparse import urljoin
 from pymantic.util import normalize_iri
 import pymantic.primitives
 
+from logging import getLogger
+log = getLogger(__name__)
+
 def discrete_pairs(iterable):
     "s -> (s0,s1), (s2,s3), (s4, s5), ..."
     previous = None
@@ -718,53 +721,61 @@ class JSONLDParser(object):
         context = json_ld.get("@context", context)
         # check if it's a link
         
-        context['@base'] = urljoin(base, context['@base'])
+        context['@base'] = urljoin(base, context.get('@base'))
         if '@vocab' in context:
             context['@vocab'] = urljoin(context['@vocab'], context['@base'])
         
         s = json_ld.get("@id")
-        s = self.resolve(context, subject)
+        s = self.resolve(context, s)
         if s:
-            for k,v in json_ld:
+            for k,v in json_ld.iteritems():
                 if k in ("@id"):
                     continue
-                p = resolve(context, k)
+                p = self.resolve(context, k)
                 if p:
                     print s, p, v
         
-    def resolve(context, term):
+    def resolve(self, context, term):
+        log.debug(term)
         if term not in context:
-            if ':' in term:
-                prefix, sep, suffix = term.partition(':')
-                if prefix == "_":
-                    return self.blankNode(term)
-                elif prefix and suffix.startsWith("//"):
-                    return pymantic.primitives.NamedNode(term)
-                else:
-                    namespace = self.resolve(context, prefix)
-                    if namespace:
-                        return pymantic.primitives.Prefix(namespace)(suffix)
-                    else:
-                        return None
-            if '@vocab' in context:
-                return context['@vocab'] + term
-            else:
-                return None
+            return self.iri_resolve(term, context)
         else:
             value = context[term]
             if isinstance(value, pymantic.primitives.NamedNode):
                 return value
             if isinstance(value, dict):
-                value = value['@id']
+                if '@id' in value:
+                    value = value['@id']
+                else:
+                    return self.iri_resolve(term, context)
             return self.resolve(context, value)
+
+    def iri_resolve(self, term, context):
+        if ':' in term:
+            prefix, sep, suffix = term.partition(':')
+            if prefix == "_":
+                return self.blankNode(term)
+            elif prefix and suffix.startswith("//"):
+                return pymantic.primitives.NamedNode(term)
+            else:
+                namespace = self.resolve(context, prefix)
+                if namespace:
+                    return pymantic.primitives.Prefix(namespace)(suffix)
+                else:
+                    return None
+        if '@vocab' in context:
+            return context['@vocab'] + term
+        else:
+            return None
             
     
     
     
     def parse(self, stream, sink=None):
-        json_ld = json.load(stream)
+        json_ld = json.loads(stream)
         self.parse_json_ld(json_ld)
 
+jsonld_parser = JSONLDParser()
 
 
 class PyLDLoader(BaseLeplParser):
@@ -829,5 +840,4 @@ class PyLDLoader(BaseLeplParser):
                      )
                 )
                 
-jsonld_parser = PyLDLoader()
 

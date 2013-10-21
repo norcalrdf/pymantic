@@ -36,9 +36,8 @@ class MetaRDFTest(type):
         entries = manifest['mf:entries'].as_(rdf.List)
         for entry in entries:
             entry = entry.as_(ManifestEntry)
-            test_name = entry['mf:name'].value.replace('-', '_')
-            if not test_name.startswith('test_'):
-                test_name = 'test_' + test_name
+            entry_name = entry['mf:name'].value.replace('-', '_')
+            test_name = "Test: {} ({})".format(entry_name, entry['mf:action'])
             dict[test_name] = lambda self, entry=entry: self.execute(entry)
             # Doesn't look right in tracebacks, but looks fine in nose output.
             dict[test_name].func_name = test_name

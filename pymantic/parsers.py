@@ -756,6 +756,8 @@ class JSONLDParser(object):
                     value = value['@id']
                 else:
                     return self.iri_resolve(term, context)
+            if value == term:
+                return self.iri_resolve(term, context)
             return self.resolve(context, value)
 
     def iri_resolve(self, term, context):

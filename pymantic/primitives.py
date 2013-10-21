@@ -813,7 +813,7 @@ class RDFEnvironment(Profile):
 
     # Pymantic DataSet Extensions
 
-    def createQuad(self, subject, predicate, object, graph):
+    def createQuad(self, subject, predicate, object, graph=None):
         return Quad(subject, predicate, object, graph)
 
     def createDataset(self, quads=tuple()):

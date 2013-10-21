@@ -156,7 +156,7 @@ class NQuadsParser(BaseNParser):
         super(NQuadsParser, self).__init__(environment)
         self.graph_name = self.uriref
         self.quad = self.subject & ~Plus(Space()) & self.predicate \
-            & ~Plus(Space()) & self.object_ & ~Plus(Space()) & self.graph_name \
+            & ~Plus(Space()) & self.object_ & ~Plus(Space()) & Optional(self.graph_name) \
             & ~Star(Space()) & ~Literal('.') & ~Star(Space()) >= self.make_quad
         self.line = Star(Space()) & Optional(~self.quad | ~self.comment) \
             & ~Literal('\n')

@@ -709,6 +709,63 @@ class RDFXMLParser(object):
 
 import json
 
+class JSONLDParser(object):
+
+    def parse_json_ld(self, json_ld, context={}, base=None):
+        # 1. Get Context
+        # 2. Resolve Context 
+        # 3. Apply Context (recurse)
+        context = json_ld.get("@context", context)
+        # check if it's a link
+        
+        context['@base'] = urljoin(base, context['@base'])
+        if '@vocab' in context:
+            context['@vocab'] = urljoin(context['@vocab'], context['@base'])
+        
+        s = json_ld.get("@id")
+        s = self.resolve(context, subject)
+        if s:
+            for k,v in json_ld:
+                if k in ("@id"):
+                    continue
+                p = resolve(context, k)
+                if p:
+                    print s, p, v
+        
+    def resolve(context, term):
+        if term not in context:
+            if ':' in term:
+                prefix, sep, suffix = term.partition(':')
+                if prefix == "_":
+                    return self.blankNode(term)
+                elif prefix and suffix.startsWith("//"):
+                    return pymantic.primitives.NamedNode(term)
+                else:
+                    namespace = self.resolve(context, prefix)
+                    if namespace:
+                        return pymantic.primitives.Prefix(namespace)(suffix)
+                    else:
+                        return None
+            if '@vocab' in context:
+                return context['@vocab'] + term
+            else:
+                return None
+        else:
+            value = context[term]
+            if isinstance(value, pymantic.primitives.NamedNode):
+                return value
+            if isinstance(value, dict):
+                value = value['@id']
+            return self.resolve(context, value)
+            
+    
+    
+    
+    def parse(self, stream, sink=None):
+        json_ld = json.load(stream)
+        self.parse_json_ld(json_ld)
+
+
 
 class PyLDLoader(BaseLeplParser):
     class _Loader(object):

@@ -86,7 +86,8 @@ class _SelectOrUpdate(object):
             method = 'get'
 
         response = requests.request(method, self.server.query_url,
-                                    params=uri_params, headers=self.headers, data=data)
+                                    params=uri_params, headers=self.headers, data=data,
+                                    **self.server.requests_kwargs)
         if response.status_code == 204:
             return True
         if response.status_code != 200:
@@ -173,10 +174,13 @@ class SPARQLServer(object):
 
     """A server that can run SPARQL queries."""
 
-    def __init__(self, query_url, post_queries=False, post_directly=False):
+    def __init__(self, query_url, post_queries=False, post_directly=False, verify=None):
         self.query_url = query_url
         self.post_queries = post_queries
         self.post_directly = post_directly
+        self.requests_kwargs = {}
+        if verify is not None:
+            self.requests_kwargs = {'verify': verify}
 
     acceptable_sparql_responses = [
         'application/sparql-results+json',
@@ -230,7 +234,8 @@ class UpdateableGraphStore(SPARQLServer):
 
     def get(self, graph_uri):
         response = requests.get(self.request_url(graph_uri),
-                                headers={'Accept': ','.join(self.acceptable_graph_responses)})
+                                headers={'Accept': ','.join(self.acceptable_graph_responses)},
+                                **self.server.requests_kwargs)
         if response.status_code != 200:
             raise Exception('Error from Graph Store (%s): %s' %
                             (response.status_code, response.content))
@@ -246,7 +251,8 @@ class UpdateableGraphStore(SPARQLServer):
         return graph
 
     def delete(self, graph_uri):
-        response = requests.delete(self.request_url(graph_uri))
+        response = requests.delete(self.request_url(graph_uri),
+                                   **self.server.request_kwargs)
         if response.status_code not in (200, 202):
             raise Exception('Error from Graph Store (%s): %s' %
                             (response.status_code, response.content))
@@ -255,7 +261,8 @@ class UpdateableGraphStore(SPARQLServer):
         graph_triples = graph.serialize(format='nt')
         response = requests.put(self.request_url(graph_uri),
                                 data=graph_triples,
-                                headers={'content-type': 'text/plain'})
+                                headers={'content-type': 'text/plain'},
+                                **self.server.requests_kwargs)
         if response.status_code not in (200, 201, 204):
             raise Exception('Error from Graph Store (%s): %s' %
                             (response.status_code, response.content))
@@ -265,14 +272,16 @@ class UpdateableGraphStore(SPARQLServer):
         if graph_uri is not None:
             response = requests.post(self.request_url(graph_uri),
                                      data=graph_triples,
-                                     headers={'content-type': 'text/plain'})
+                                     headers={'content-type': 'text/plain'},
+                                     **self.server.requests_kwargs)
             if response.status_code not in (200, 201, 204):
                 raise Exception('Error from Graph Store (%s): %s' %
                                 (response.status_code, response.content))
         else:
             response = requests.post(self.dataset_url,
                                      data=graph_triples,
-                                     headers={'content-type': 'text/plain'})
+                                     headers={'content-type': 'text/plain'},
+                                     **self.server.requests_kwargs)
             if response.status_code != 201:
                 raise Exception('Error from Graph Store (%s): %s' %
                                 (response.status_code, response.content))
@@ -285,7 +294,8 @@ class PatchableGraphStore(UpdateableGraphStore):
     def patch(self, graph_uri, changeset):
         graph_xml = changeset.serialize(format='xml', encoding='utf-8')
         response = requests.patch(self.request_url(graph_uri), data=graph_xml,
-                                  headers={'content-type': 'application/vnd.talis.changeset+xml'})
+                                  headers={'content-type': 'application/vnd.talis.changeset+xml'},
+                                  **self.server.requests_kwargs)
         if response.status_code not in (200, 201, 204):
             raise Exception('Error from Graph Store (%s): %s' %
                             (response.status_code, response.content))

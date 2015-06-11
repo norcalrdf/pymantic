@@ -25,7 +25,7 @@ setup(name='pymantic',
       zip_safe=False,
       test_suite='nose.collector',
       install_requires=[
-          'httplib2',
+          'requests',
           'lxml',
           'mock_http',
           'pytz',

@@ -5,10 +5,10 @@ import datetime
 import urllib
 import urlparse
 
-import httplib2
 from lxml import objectify
 import pytz
 import rdflib
+import requests
 import simplejson
 
 import logging
@@ -51,8 +51,6 @@ class _SelectOrUpdate(object):
         pass
 
     def execute(self):
-        http = httplib2.Http()
-
         log.debug("Querying: %s with: %r", self.server.query_url, self.sparql)
 
         sparql = self.sparql.encode('utf-8')
@@ -64,31 +62,30 @@ class _SelectOrUpdate(object):
 
         if self.server.post_directly:
             self.headers["Content-Type"] = self.directContentType() + "; charset=utf-8"
-            uri_params = urllib.urlencode(self.params, doseq=True)
-            body = sparql
-            method='POST'
+            uri_params = self.params
+            data = sparql
+            method = 'post'
         elif self.postQueries():
-            self.headers["Content-Type"] = "application/x-www-form-urlencoded"
             uri_params = None
             self.params[self.query_or_update()] = sparql
-            body = urllib.urlencode(self.params, doseq=True)
-            method='POST'
+            data = self.params
+            method = 'post'
         else:
             # select only
             self.params[self.query_or_update()] = sparql
-            uri_params = urllib.urlencode(self.params, doseq=True)
-            body = None
-            method='GET'
+            uri_params = self.params
+            data = None
+            method = 'get'
 
-        uri = self.server.query_url
-        if uri_params:
-            uri = uri + "?" + uri_params
-        response, content = http.request(uri=uri, method=method, headers=self.headers, body=body)
-        if response['status'] == '204':
+        response = requests.request(method, self.server.query_url,
+                                    params=uri_params, headers=self.headers, data=data)
+        if response.status_code == 204:
             return True
-        if response['status'] != '200':
-            raise SPARQLQueryException('%s: %s\nQuery: %s' % (response, content, self.sparql))
-        return response, content
+        if response.status_code != 200:
+            raise SPARQLQueryException('%s: %s\nQuery: %s' %
+                                       (response.headers, response.content, self.sparql))
+        return response
+
 
 class _Select(_SelectOrUpdate):
 
@@ -125,26 +122,27 @@ class _Select(_SelectOrUpdate):
         return self.server.post_queries
 
     def execute(self):
-        response, content = super(_Select,self).execute()
+        response = super(_Select, self).execute()
         format = None
-        if response['content-type'].startswith('application/rdf+xml'):
+        if response.headers['content-type'].startswith('application/rdf+xml'):
             format = 'xml'
-        elif response['content-type'].startswith('text/turtle'):
+        elif response.headers['content-type'].startswith('text/turtle'):
             format = 'turtle'
 
         if format:
             graph = rdflib.ConjunctiveGraph()
-            graph.parse(StringIO(content), self.query_url, format=format)
+            graph.parse(StringIO(response.content), self.query_url, format=format)
             return graph
-        elif response['content-type'].startswith('application/sparql-results+json'):
+        elif response.headers['content-type'].startswith('application/sparql-results+json'):
             # See http://stackoverflow.com/a/19366580/2276263
             # for justification of unicode() below
-            return simplejson.loads(unicode(content, "utf-8"))
-        elif response['content-type'].startswith('application/sparql-results+xml'):
-            return objectify.parse(StringIO(content))
+            return simplejson.loads(unicode(response.content, "utf-8"))
+        elif response.headers['content-type'].startswith('application/sparql-results+xml'):
+            return objectify.parse(StringIO(response.content))
         else:
             raise UnknownSPARQLReturnTypeException('Got content of type: %s' %
-                                                   response['content-type'])
+                                                   response.headers['content-type'])
+
 
 class _Update(_SelectOrUpdate):
     def default_graph_uri(self):
@@ -217,73 +215,66 @@ class UpdateableGraphStore(SPARQLServer):
             return urlparse.urljoin(self.dataset_url, urllib.quote_plus(graph_uri))
 
     def get(self, graph_uri):
-        h = httplib2.Http()
-        resp, content = h.request(
-            uri = self.request_url(graph_uri), method = 'GET',
-            headers = {'Accept': ','.join(self.acceptable_graph_responses),},)
-        if resp['status'] != '200':
-            raise Exception('Error from Graph Store (%s): %s' %\
-                            (resp['status'], content))
+        response = requests.get(self.request_url(graph_uri),
+                                headers={'Accept': ','.join(self.acceptable_graph_responses)})
+        if response.status_code != 200:
+            raise Exception('Error from Graph Store (%s): %s' %
+                            (response.status_code, response.content))
         graph = rdflib.ConjunctiveGraph()
-        if resp['content-type'].startswith('text/plain'):
-            graph.parse(StringIO(content), publicID=graph_uri, format='nt')
-        elif resp['content-type'].startswith('application/rdf+xml'):
-            graph.parse(StringIO(content), publicID=graph_uri, format='xml')
-        elif resp['content-type'].startswith('text/turtle'):
-            graph.parse(StringIO(content), publicID=graph_uri, format='turtle')
-        elif resp['content-type'].startswith('text/rdf+n3'):
-            graph.parse(StringIO(content), publicID=graph_uri, format='n3')
+        if response.headers['content-type'].startswith('text/plain'):
+            graph.parse(StringIO(response.content), publicID=graph_uri, format='nt')
+        elif response.headers['content-type'].startswith('application/rdf+xml'):
+            graph.parse(StringIO(response.content), publicID=graph_uri, format='xml')
+        elif response.headers['content-type'].startswith('text/turtle'):
+            graph.parse(StringIO(response.content), publicID=graph_uri, format='turtle')
+        elif response.headers['content-type'].startswith('text/rdf+n3'):
+            graph.parse(StringIO(response.content), publicID=graph_uri, format='n3')
         return graph
 
     def delete(self, graph_uri):
-        h = httplib2.Http()
-        resp, content = h.request(uri = self.request_url(graph_uri),
-                                  method = 'DELETE')
-        if resp['status'] != '200' and resp['status'] != '202':
-            raise Exception('Error from Graph Store (%s): %s' %\
-                            (resp['status'], content))
+        response = requests.delete(self.request_url(graph_uri))
+        if response.status_code not in (200, 202):
+            raise Exception('Error from Graph Store (%s): %s' %
+                            (response.status_code, response.content))
 
     def put(self, graph_uri, graph):
-        h = httplib2.Http()
         graph_triples = graph.serialize(format = 'nt')
-        resp, content = h.request(uri = self.request_url(graph_uri),
-                                  method = 'PUT', body = graph_triples,
-                                  headers = {'content-type': 'text/plain',},)
-        if resp['status'] not in ('200', '201', '204'):
-            raise Exception('Error from Graph Store (%s): %s' %\
-                            (resp['status'], content))
+        response = requests.put(self.request_url(graph_uri),
+                                data=graph_triples,
+                                headers={'content-type': 'text/plain'})
+        if response.status_code not in (200, 201, 204):
+            raise Exception('Error from Graph Store (%s): %s' %
+                            (response.status_code, response.content))
 
     def post(self, graph_uri, graph):
-        h = httplib2.Http()
         graph_triples = graph.serialize(format = 'nt')
         if graph_uri != None:
-            resp, content = h.request(uri = self.request_url(graph_uri),
-                                      method = 'POST', body = graph_triples,
-                                      headers = {'content-type': 'text/plain',},)
-            if resp['status'] not in ('200', '201', '204'):
-                raise Exception('Error from Graph Store (%s): %s' %\
-                                (resp['status'], content))
+            response = requests.post(self.request_url(graph_uri),
+                                     data=graph_triples,
+                                     headers={'content-type': 'text/plain'})
+            if response.status_code not in (200, 201, 204):
+                raise Exception('Error from Graph Store (%s): %s' %
+                                (response.status_code, response.content))
         else:
-            resp, content = h.request(uri = self.dataset_url, method = 'POST',
-                                      body = graph_triples,
-                                      headers = {'content-type': 'text/plain',},)
-            if resp['status'] != '201':
-                raise Exception('Error from Graph Store (%s): %s' %\
-                                (resp['status'], content))
+            response = requests.post(self.dataset_url,
+                                     data=graph_triples,
+                                     headers={'content-type': 'text/plain'})
+            if response.status_code != 201:
+                raise Exception('Error from Graph Store (%s): %s' %
+                                (response.status_code, response.content))
+
 
 class PatchableGraphStore(UpdateableGraphStore):
     """A graph store that supports the optional PATCH method of updating
     RDF graphs."""
 
     def patch(self, graph_uri, changeset):
-        h = httplib2.Http()
         graph_xml = changeset.serialize(format = 'xml', encoding='utf-8')
-        resp, content = h.request(
-            uri = self.request_url(graph_uri), method = 'PATCH', body = graph_xml,
-            headers = {'content-type': 'application/vnd.talis.changeset+xml',},)
-        if resp['status'] not in ('200', '201', '204'):
-            raise Exception('Error from Graph Store (%s): %s' %\
-                            (resp['status'], content))
+        response = requests.patch(self.request_url(graph_uri), data=graph_xml,
+                                  headers={'content-type': 'application/vnd.talis.changeset+xml'})
+        if response.status_code not in (200, 201, 204):
+            raise Exception('Error from Graph Store (%s): %s' %
+                            (response.status_code, response.content))
         return True
 
 def changeset(a,b, graph_uri):

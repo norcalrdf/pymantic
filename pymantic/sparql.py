@@ -15,22 +15,30 @@ import logging
 
 log = logging.getLogger(__name__)
 
+
 class SPARQLQueryException(Exception):
+
     """Raised when the SPARQL store returns an HTTP status code other than 200 OK."""
+
     pass
+
 
 class UnknownSPARQLReturnTypeException(Exception):
+
     """Raised when the SPARQL store provides a response with an unrecognized content-type."""
+
     pass
 
+
 class _SelectOrUpdate(object):
+
     """A server that can run SPARQL queries."""
 
     def __init__(self, server, sparql, default_graph=None, named_graph=None, *args, **kwargs):
         self.server = server
         self.sparql = sparql
-        self.default_graphs=default_graph
-        self.named_graphs=named_graph
+        self.default_graphs = default_graph
+        self.named_graphs = named_graph
         self.headers = dict()
         self.params = dict()
 
@@ -99,9 +107,9 @@ class _Select(_SelectOrUpdate):
         'text/turtle',
     ]
 
-    def __init__(self, server, query, output='json', *args,**kwargs):
-        super(_Select,self).__init__(server, query, *args,**kwargs)
-        if output=='xml':
+    def __init__(self, server, query, output='json', *args, **kwargs):
+        super(_Select, self).__init__(server, query, *args, **kwargs)
+        if output == 'xml':
             self.headers['Accept'] = ','.join(self.acceptable_xml_responses)
         else:
             self.headers['Accept'] = ','.join(self.acceptable_json_responses)
@@ -160,7 +168,9 @@ class _Update(_SelectOrUpdate):
     def postQueries(self):
         return True
 
+
 class SPARQLServer(object):
+
     """A server that can run SPARQL queries."""
 
     def __init__(self, query_url, post_queries=False, post_directly=False):
@@ -175,28 +185,32 @@ class SPARQLServer(object):
     ]
 
     def query(self, sparql, *args, **kwargs):
-        """Executes a SPARQL query. The return type varies based on what the
-        SPARQL store responds with:
+        """Execute a SPARQL query.
+
+        The return type varies based on what the SPARQL store responds with:
 
         * application/rdf+xml: an rdflib.ConjunctiveGraph
         * application/sparql-results+json: A dictionary from simplejson
         * application/sparql-results+xml: An lxml.objectify structure
 
         :param sparql: The SPARQL to execute.
-        :returns: The results of the query from the SPARQL store."""
+        :returns: The results of the query from the SPARQL store.
+        """
         return _Select(self, sparql, *args, **kwargs).execute()
 
     def update(self, sparql, **kwargs):
-        """Executes a SPARQL update.
+        """Execute a SPARQL update.
 
-        :param sparql: The SPARQL Update request to execute."""
+        :param sparql: The SPARQL Update request to execute.
+        """
         return _Update(self, sparql, **kwargs).execute()
 
-class UpdateableGraphStore(SPARQLServer):
-    """SPARQL server class that is capable of interacting with SPARQL 1.1
-    graph stores."""
 
-    def __init__(self, query_url, dataset_url, param_style = True, **kwargs):
+class UpdateableGraphStore(SPARQLServer):
+
+    """SPARQL server class that is capable of interacting with SPARQL 1.1 graph stores."""
+
+    def __init__(self, query_url, dataset_url, param_style=True, **kwargs):
         super(UpdateableGraphStore, self).__init__(query_url, **kwargs)
         self.dataset_url = dataset_url
         self.param_style = param_style
@@ -238,7 +252,7 @@ class UpdateableGraphStore(SPARQLServer):
                             (response.status_code, response.content))
 
     def put(self, graph_uri, graph):
-        graph_triples = graph.serialize(format = 'nt')
+        graph_triples = graph.serialize(format='nt')
         response = requests.put(self.request_url(graph_uri),
                                 data=graph_triples,
                                 headers={'content-type': 'text/plain'})
@@ -247,8 +261,8 @@ class UpdateableGraphStore(SPARQLServer):
                             (response.status_code, response.content))
 
     def post(self, graph_uri, graph):
-        graph_triples = graph.serialize(format = 'nt')
-        if graph_uri != None:
+        graph_triples = graph.serialize(format='nt')
+        if graph_uri is not None:
             response = requests.post(self.request_url(graph_uri),
                                      data=graph_triples,
                                      headers={'content-type': 'text/plain'})
@@ -265,11 +279,11 @@ class UpdateableGraphStore(SPARQLServer):
 
 
 class PatchableGraphStore(UpdateableGraphStore):
-    """A graph store that supports the optional PATCH method of updating
-    RDF graphs."""
+
+    """A graph store that supports the optional PATCH method of updating RDF graphs."""
 
     def patch(self, graph_uri, changeset):
-        graph_xml = changeset.serialize(format = 'xml', encoding='utf-8')
+        graph_xml = changeset.serialize(format='xml', encoding='utf-8')
         response = requests.patch(self.request_url(graph_uri), data=graph_xml,
                                   headers={'content-type': 'application/vnd.talis.changeset+xml'})
         if response.status_code not in (200, 201, 204):
@@ -277,15 +291,17 @@ class PatchableGraphStore(UpdateableGraphStore):
                             (response.status_code, response.content))
         return True
 
-def changeset(a,b, graph_uri):
-    """Create an RDF graph with the changeset between graphs a and b"""
+
+def changeset(a, b, graph_uri):
+    """Create an RDF graph with the changeset between graphs a and b."""
     cs = rdflib.Namespace("http://purl.org/vocab/changeset/schema#")
     graph = rdflib.Graph()
     graph.namespace_manager.bind("cs", cs)
-    removal, addition = differences(a,b)
+    removal, addition = differences(a, b)
     change_set = rdflib.BNode()
     graph.add((change_set, rdflib.RDF.type, cs["ChangeSet"]))
-    graph.add((change_set, cs["createdDate"], rdflib.Literal(datetime.datetime.now(pytz.UTC).isoformat())))
+    graph.add((change_set, cs["createdDate"],
+               rdflib.Literal(datetime.datetime.now(pytz.UTC).isoformat())))
     graph.add((change_set, cs["subjectOfChange"], rdflib.URIRef(graph_uri)))
 
     for stmt in removal:
@@ -296,18 +312,20 @@ def changeset(a,b, graph_uri):
         graph.add((change_set, cs["addition"], statement))
     return graph
 
+
 def reify(graph, statement):
-    """Add reifed statement to graph"""
-    s,p,o = statement
+    """Add reifed statement to graph."""
+    s, p, o = statement
     statement_node = rdflib.BNode()
     graph.add((statement_node, rdflib.RDF.type, rdflib.RDF.Statement))
-    graph.add((statement_node, rdflib.RDF.subject,s))
+    graph.add((statement_node, rdflib.RDF.subject, s))
     graph.add((statement_node, rdflib.RDF.predicate, p))
     graph.add((statement_node, rdflib.RDF.object, o))
     return statement_node
 
+
 def differences(a, b, exclude=[]):
-    """Return (removes,adds) excluding statements with a predicate in exclude"""
+    """Return (removes,adds) excluding statements with a predicate in exclude."""
     exclude = [rdflib.URIRef(excluded) for excluded in exclude]
     return ([s for s in a if s not in b and s[1] not in exclude],
             [s for s in b if s not in a and s[1] not in exclude])

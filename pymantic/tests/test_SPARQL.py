@@ -1,33 +1,30 @@
-import urllib
+import os.path
 import unittest
-from nose import SkipTest
-raise SkipTest
 
-import mock_http
+from betamax import Betamax
 
-# from pymantic.sparql import SPARQLServer, SPARQLQueryException
+from pymantic.sparql import SPARQLServer, SPARQLQueryException
+
+
+with Betamax.configure() as config:
+    config.cassette_library_dir = os.path.join(
+        os.path.dirname(__file__), 'playbacks',
+    )
+
 
 class TestSparql(unittest.TestCase):
-    def setUp(self):
-        self.mock_port = 48558
-        self.mock_endpoint = mock_http.MockHTTP(self.mock_port)
-
     def testMockSPARQL(self):
         """Test a SPARQL query against a mocked-up endpoint."""
         test_query = """PREFIX dc: <http://purl.org/dc/terms/>
         SELECT ?product ?title WHERE { ?product dc:title ?title } LIMIT 10"""
-        test_json = '{"head": {"vars": ["product", "title"]}, "results": {"bindings": [{"product": {"type": "uri", "value": "test_product"}, "title": {"xml:lang": "en", "type": "literal", "value": "Test Title"}}]}}'
 
-        self.mock_endpoint.expects(
-            method='POST', times=mock_http.once, path='/tenuki/sparql',
-            headers={'Content-Type': 'application/x-www-form-urlencoded',},
-            params={'query': test_query, 'output': 'json',}).will(
-                body=test_json, headers={'content-type': 'application/sparql-results+json'})
-        sparql = SPARQLServer('http://localhost:%d/tenuki/sparql' % self.mock_port)
-        try:
+        sparql = SPARQLServer(
+            'http://localhost/tenuki/sparql', post_queries=True,
+        )
+
+        with Betamax(sparql.s).use_cassette('mock_sparql', record='none'):
             results = sparql.query(test_query)
-        finally:
-            self.assert_(self.mock_endpoint.verify())
+
         self.assertEqual(results['results']['bindings'][0]['product']['value'],
                          'test_product')
         self.assertEqual(results['results']['bindings'][0]['title']['value'],
@@ -37,13 +34,11 @@ class TestSparql(unittest.TestCase):
         """Test a SPARQL query against a mocked-up endpoint."""
         test_query = """PREFIX dc: <http://purl.org/dc/terms/>
         SELECT ?product ?title WHERE { ?product dc:title ?title } LIMIT 10"""
-        self.mock_endpoint.expects(
-            method='POST', times=mock_http.once, path='/tenuki/sparql',
-            headers={'Content-Type': 'application/x-www-form-urlencoded',},
-            params={'query': test_query, 'output': 'json',}).will(
-                http_code=500)
-        sparql = SPARQLServer('http://localhost:%d/tenuki/sparql' % self.mock_port)
-        try:
+
+        sparql = SPARQLServer(
+            'http://localhost/tenuki/sparql', post_queries=True,
+        )
+        with Betamax(sparql.s).use_cassette(
+            'mock_sparql_error', record='none',
+        ):
             self.assertRaises(SPARQLQueryException, sparql.query, test_query)
-        finally:
-            self.assert_(self.mock_endpoint.verify())

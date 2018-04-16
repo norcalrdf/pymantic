@@ -25,10 +25,10 @@ setup(name='pymantic',
       install_requires=[
           'requests',
           'lxml',
-          'mock_http',
           'pytz',
           'simplejson',
-          'lepl'
+          'lepl',
+          'betamax',
           ],
       entry_points="""
       # -*- Entry points: -*-

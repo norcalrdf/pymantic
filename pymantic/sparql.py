@@ -9,7 +9,7 @@ from lxml import objectify
 import pytz
 import rdflib
 import requests
-import simplejson
+import json
 
 import logging
 
@@ -146,7 +146,7 @@ class _Select(_SelectOrUpdate):
         elif response.headers['content-type'].startswith('application/sparql-results+json'):
             # See http://stackoverflow.com/a/19366580/2276263
             # for justification of unicode() below
-            return simplejson.loads(unicode(response.content, "utf-8"))
+            return json.loads(unicode(response.content, "utf-8"))
         elif response.headers['content-type'].startswith('application/sparql-results+xml'):
             return objectify.parse(StringIO(response.content))
         else:
@@ -197,7 +197,7 @@ class SPARQLServer(object):
         The return type varies based on what the SPARQL store responds with:
 
         * application/rdf+xml: an rdflib.ConjunctiveGraph
-        * application/sparql-results+json: A dictionary from simplejson
+        * application/sparql-results+json: A dictionary from json
         * application/sparql-results+xml: An lxml.objectify structure
 
         :param sparql: The SPARQL to execute.

@@ -6,7 +6,10 @@ from lxml import etree
 import re
 from threading import local
 from urlparse import urljoin
-from pymantic.util import normalize_iri
+from pymantic.util import (
+    normalize_iri,
+    smart_urljoin
+)
 import pymantic.primitives
 
 def discrete_pairs(iterable):
@@ -82,10 +85,15 @@ class BaseLeplParser(object):
         return sink
 
     def parse_string(self, string, sink = None):
+        from StringIO import StringIO
+
+        if isinstance(string, str):
+            string = string.decode('utf8')
+
         if sink is None:
             sink = self._make_graph()
         self._prepare_parse(sink)
-        self.document.parse(string)
+        self.document.parse(StringIO(string))
         self._cleanup_parse()
 
         return sink
@@ -346,191 +354,224 @@ class TurtleParser(BaseLeplParser):
     RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
 
     echar_map = OrderedDict((
-        ('\\', '\\'),
-        ('t', '\t'),
-        ('b', '\b'),
-        ('n', '\n'),
-        ('r', '\r'),
-        ('f', '\f'),
-        ('"', '"'),
-        ("'", "'"),
+        ('\\', u'\\'),
+        ('t', u'\t'),
+        ('b', u'\b'),
+        ('n', u'\n'),
+        ('r', u'\r'),
+        ('f', u'\f'),
+        ('"', u'"'),
+        ("'", u"'"),
     ))
     def __init__(self, environment=None):
         super(TurtleParser, self).__init__(environment)
 
         UCHAR = (Regexp(ur'\\u([0-9a-fA-F]{4})') |\
                  Regexp(ur'\\U([0-9a-fA-F]{8})')) >> self.decode_uchar
-        
+
         ECHAR = Regexp(ur'\\([tbnrf\\"\'])') >> self.decode_echar
-        
+
         PN_CHARS_BASE = Regexp(ur'[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF'
                                ur'\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F'
                                ur'\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD'
-                               ur'\U00010000-\U000EFFFF]') | UCHAR
-        
+                               ur'\U00010000-\U000EFFFF]')
+
         PN_CHARS_U = PN_CHARS_BASE | Literal('_')
-        
+
         PN_CHARS = PN_CHARS_U | Regexp(ur'[\-0-9\u00B7\u0300-\u036F\u203F-\u2040]')
-        
+
         PN_PREFIX = PN_CHARS_BASE & Optional(Star(PN_CHARS | Literal(".")) & PN_CHARS ) > ''.join
-        
-        PN_LOCAL = (PN_CHARS_U | Regexp('[0-9]')) & Optional(Star(PN_CHARS | Literal(".")) & PN_CHARS) > ''.join
-        
+
+        PERCENT = Regexp('%[0-9A-Fa-f]{2}')
+
+        PN_LOCAL_ESC = Regexp(r'\\[_~.\-!$&\'()*+,;=/?#@%]') >> self.decode_pn_local_esc
+
+        PLX = PERCENT | PN_LOCAL_ESC
+
+        PN_LOCAL = (
+            PN_CHARS_U | Literal(':') | Regexp('[0-9]') | PLX
+        ) & Optional(
+            Star(PN_CHARS | Literal(".") | Literal(":") | PLX) &
+            (PN_CHARS | Literal(':') | PLX)
+        ) > ''.join
+
         WS = Regexp(ur'[\t\n\r ]')
-        
+
         ANON = ~(Literal('[') & Star(WS) & Literal(']'))
-        
+
         NIL = Literal('(') & Star(WS) & Literal(')')
-        
+
         STRING_LITERAL1 = (Literal("'") &\
                            Star(Regexp(ur"[^'\\\n\r]") | ECHAR | UCHAR ) &\
                            Literal("'")) > self.string_contents
- 
+
         STRING_LITERAL2 = (Literal('"') &\
                            Star(Regexp(ur'[^"\\\n\r]') | ECHAR | UCHAR ) &\
                            Literal('"')) > self.string_contents
- 
+
         STRING_LITERAL_LONG1 = (Literal("'''") &\
-                                Star(Optional( Regexp("'|''")) &\
+                                Star(Optional( Regexp("''?")) &\
                                      ( Regexp(ur"[^'\\]") | ECHAR | UCHAR ) ) &\
                                 Literal("'''")) > self.string_contents
- 
+
         STRING_LITERAL_LONG2 = (Literal('"""') &\
-                                Star(Optional( Regexp(ur'"|""') ) &\
+                                Star(Optional( Regexp(ur'""?') ) &\
                                      ( Regexp(ur'[^\"\\]') | ECHAR | UCHAR ) ) &\
                                 Literal('"""')) > self.string_contents
-        
+
         INTEGER = Regexp(ur'[+-]?[0-9]+')
- 
+
         DECIMAL = Regexp(ur'[+-]?(?:[0-9]+\.[0-9]+|\.[0-9]+)')
-        
-        DOUBLE = Regexp(ur'[+-]?(?:[0-9]+\.[0-9]+|\.[0-9]+|[0-9]+)[eE][+-]?[0-9]+')
-        
-        IRI_REF = (~Literal('<') & (Star(Regexp(ur'[^<>"{}|^`\\\u0000-\u0020]') | UCHAR | ECHAR) > ''.join) & ~Literal('>'))
- 
+
+        DOUBLE = Regexp(ur'[+-]?(?:[0-9]+\.[0-9]*|\.[0-9]+|[0-9]+)[eE][+-]?[0-9]+')
+
+        IRI_REF = (~Literal('<') & (Star(Regexp(ur'[^<>"{}|^`\\\u0000-\u0020]') | UCHAR | ECHAR) > ''.join) & ~Literal('>')) >> self.check_iri_chars
+
         PNAME_NS = Optional(PN_PREFIX) & Literal(":")
- 
+
         PNAME_LN = PNAME_NS & PN_LOCAL
- 
-        BLANK_NODE_LABEL = ~Literal("_:") & PN_LOCAL 
- 
+
+        BLANK_NODE_LABEL = ~Literal("_:") & PN_LOCAL
+
         LANGTAG = ~Literal("@") & (Literal('base') | Literal('prefix') |\
                                    Regexp(ur'[a-zA-Z]+(?:-[a-zA-Z0-9]+)*'))
-        
+
         intertoken = ~Regexp(ur'[ \t\r\n]+|#[^\r\n]+')[:]
         with Separator(intertoken):
             BlankNode = (BLANK_NODE_LABEL >> self.create_blank_node) |\
                 (ANON > self.create_anon_node)
-            
+
             prefixID = (~Literal('@prefix') & PNAME_NS & IRI_REF) > self.bind_prefixed_name
-            
+
             base = (~Literal('@base') & IRI_REF) >> self.set_base
-            
+
             PrefixedName = (PNAME_LN | PNAME_NS) > self.resolve_prefixed_name
-            
+
             IRIref = PrefixedName | (IRI_REF >> self.create_named_node)
-            
+
             BooleanLiteral = (Literal('true') | Literal('false')) >> self.boolean_value
-            
+
             String = STRING_LITERAL1 | STRING_LITERAL2 | STRING_LITERAL_LONG1 | STRING_LITERAL_LONG2
-            
+
             RDFLiteral = ((String & LANGTAG) > self.langtag_string) |\
                        ((String & ~Literal('^^') & IRIref) > self.typed_string) |\
                         (String > self.bare_string)
-            
+
             literal = RDFLiteral | (INTEGER  >> self.int_value) |\
                     (DECIMAL >> self.decimal_value) |\
                     (DOUBLE >> self.double_value) | BooleanLiteral
-            
+
             object = Delayed()
-            
+
             predicateObjectList = Delayed()
-            
+
             blankNodePropertyList = ~Literal('[') & predicateObjectList & ~Literal(']') > self.make_blank_node_property_list
-            
+
             collection = (~Literal('(') & object[:] & ~Literal(')')) > self.make_collection
-            
+
             blank = BlankNode | blankNodePropertyList | collection
-            
+
             subject = IRIref | blank
-            
+
             predicate = IRIref
-            
+
             object += IRIref | blank | literal
-            
+
             verb = predicate | (~Literal('a') > self.create_rdf_type)
-            
+
             objectList = ((object & (~Literal(',') & object)[:]) | object) > self.make_object
-            
-            predicateObjectList += ((verb & objectList &\
-                                    (~Literal(';') & Optional(verb & objectList))[:]) |\
-                                (verb & objectList)) > self.make_object_list
-            
-            triples = (subject & predicateObjectList) > self.make_triples
-            
+
+            predicateObjectList += (
+                (verb & objectList &
+                 (~Literal(';') & Optional(verb & objectList))[:]) |
+                (verb & objectList)
+            ) > self.make_object_list
+
+            triples = (
+                (subject & predicateObjectList) |
+                (blankNodePropertyList & Optional(predicateObjectList))
+            ) > self.make_triples
+
             directive = prefixID | base
-            
-            statement = (directive | triples) & ~Literal('.')
-            
+
+            sparql_prefixID = (~Regexp('[Pp][Rr][Ee][Ff][Ii][Xx]') & PNAME_NS & IRI_REF) > self.bind_prefixed_name
+
+            sparql_base = (~(Regexp('[Bb][Aa][Ss][Ee]')) & IRI_REF) >> self.set_base
+
+            statement = ((directive | triples) & ~Literal('.')) | sparql_base | sparql_prefixID
+
             self.turtle_doc = intertoken & statement[:] & intertoken & Eos()
             self.turtle_doc.config.clear()
-    
+
     def _prepare_parse(self, graph):
         super(TurtleParser, self)._prepare_parse(graph)
         self._call_state.base_iri = self._base
         self._call_state.prefixes = {}
         self._call_state.current_subject = None
         self._call_state.current_predicate = None
-    
+
+    def check_iri_chars(self, iri):
+        from lepl.matchers.error import make_error
+
+        print repr(iri), re.search(ur'[\u0000-\u0020]', iri)
+
+        if re.search(ur'[\u0000-\u0020<>"{}|^`\\]', iri):
+            return make_error('Invalid \\u-sequence in IRI')
+
+        return iri
+
     def decode_uchar(self, uchar_string):
         return unichr(int(uchar_string, 16))
-    
+
     def decode_echar(self, echar_string):
         return self.echar_map[echar_string]
-    
+
+    def decode_pn_local_esc(self, pn_local_esc):
+        return pn_local_esc[1]
+
     def string_contents(self, string_chars):
-        return ''.join(string_chars[1:-1])
-    
+        return u''.join(string_chars[1:-1])
+
     def int_value(self, value):
         return LiteralToBe(value, language=None,
                            datatype=NamedNodeToBe(self.profile.resolve('xsd:integer')))
-    
+
     def decimal_value(self, value):
         return LiteralToBe(value, language=None,
                            datatype=NamedNodeToBe(self.profile.resolve('xsd:decimal')))
-    
+
     def double_value(self, value):
         return LiteralToBe(value, language=None,
                            datatype=NamedNodeToBe(self.profile.resolve('xsd:double')))
-    
+
     def boolean_value(self, value):
         return LiteralToBe(value, language=None,
                            datatype=NamedNodeToBe(self.profile.resolve('xsd:boolean')))
-    
+
     def langtag_string(self, values):
         return LiteralToBe(values[0], language=values[1], datatype=None)
-    
+
     def typed_string(self, values):
         return LiteralToBe(values[0], language=None, datatype=values[1])
-    
+
     def bare_string(self, values):
         return LiteralToBe(values[0], language=None,
                            datatype=NamedNodeToBe(self.profile.resolve('xsd:string')))
 
     def create_named_node(self, iri):
         return NamedNodeToBe(iri)
-    
+
     def create_blank_node(self, name=None):
         if name is None:
             return self.env.createBlankNode()
         return self._call_state.bnodes[name]
-    
+
     def create_anon_node(self, anon_tokens):
         return self.env.createBlankNode()
-    
+
     def create_rdf_type(self, values):
         return self.profile.resolve('rdf:type')
-    
+
     def resolve_prefixed_name(self, values):
         if values[0] == ':':
             pname = ''
@@ -541,23 +582,24 @@ class TurtleParser(BaseLeplParser):
         else:
             pname = values[0]
             local = values[2]
+
         return NamedNodeToBe(PrefixReference(pname, local))
-    
+
     def bind_prefixed_name(self, values):
         iri = values.pop()
         assert values.pop() == ':'
         pname = values.pop() if values else ''
         return BindPrefix(pname, iri)
-    
+
     def set_base(self, base_iri):
         return SetBase(base_iri)
-        
+
     def make_object(self, values):
         return values
-    
+
     def make_object_list(self, values):
         return list(discrete_pairs(values))
-    
+
     def make_blank_node_property_list(self, values):
         subject = self.env.createBlankNode()
         predicate_objects = []
@@ -565,13 +607,16 @@ class TurtleParser(BaseLeplParser):
             for obj in objects:
                 predicate_objects.append(PredicateObject(predicate, obj))
         return TriplesClause(subject, predicate_objects)
-    
+
     def make_triples(self, values):
         subject = values[0]
-        predicate_objects = [PredicateObject(predicate, obj) for
-                             predicate, objects in values[1] for obj in objects]
-        return TriplesClause(subject, predicate_objects)
-    
+        if len(values) == 2:
+            predicate_objects = [PredicateObject(predicate, obj) for
+                                 predicate, objects in values[1] for obj in objects]
+            return TriplesClause(subject, predicate_objects)
+        else:
+            return subject
+
     def make_collection(self, values):
         prev_node = TriplesClause(self.profile.resolve('rdf:nil'), [])
         for value in reversed(values):
@@ -580,18 +625,18 @@ class TurtleParser(BaseLeplParser):
                 [PredicateObject(self.profile.resolve('rdf:first'), value),
                  PredicateObject(self.profile.resolve('rdf:rest'), prev_node)])
         return prev_node
-    
+
     def _interpret_parse(self, data, sink):
         for line in data:
             if isinstance(line, BindPrefix):
-                self._call_state.prefixes[line.prefix] = urljoin(
-                    self._call_state.base_iri, line.iri, allow_fragments=False)
+                self._call_state.prefixes[line.prefix] = smart_urljoin(
+                    self._call_state.base_iri, line.iri)
             elif isinstance(line, SetBase):
-                self._call_state.base_iri = urljoin(
-                    self._call_state.base_iri, line.iri, allow_fragments=False)
+                self._call_state.base_iri = smart_urljoin(
+                    self._call_state.base_iri, line.iri)
             else:
                 self._interpret_triples_clause(line)
-                
+
     def _interpret_triples_clause(self, triples_clause):
         assert isinstance(triples_clause, TriplesClause)
         subject = self._resolve_node(triples_clause.subject)
@@ -600,16 +645,15 @@ class TurtleParser(BaseLeplParser):
                 subject, self._resolve_node(predicate_object.predicate),
                 self._resolve_node(predicate_object.object)))
         return subject
-    
+
     def _resolve_node(self, node):
         if isinstance(node, NamedNodeToBe):
             if isinstance(node.iri, PrefixReference):
                 return self.env.createNamedNode(
                     self._call_state.prefixes[node.iri.prefix] + node.iri.local)
             else:
-                return self.env.createNamedNode(
-                    urljoin(self._call_state.base_iri, node.iri, 
-                            allow_fragments=False))
+                resolved = smart_urljoin(self._call_state.base_iri, node.iri)
+                return self.env.createNamedNode(resolved)
         elif isinstance(node, TriplesClause):
             return self._interpret_triples_clause(node)
         elif isinstance(node, LiteralToBe):
@@ -620,8 +664,11 @@ class TurtleParser(BaseLeplParser):
                 return self.env.createLiteral(node.value, language=node.language)
         else:
             return node
-    
+
     def parse(self, data, sink = None, base = ''):
+        if isinstance(data, str):
+            data = data.decode('utf8')
+
         if sink is None:
             sink = self._make_graph()
         self._base = base
@@ -633,9 +680,9 @@ class TurtleParser(BaseLeplParser):
 
     def parse_string(self, string, sink = None):
         return self.parse(string, sink)
-    
+
 turtle_parser = TurtleParser()
-        
+
 scheme_re = re.compile(r'[a-zA-Z](?:[a-zA-Z0-9]|\+|-|\.)*')
 
 class RDFXMLParser(object):
@@ -731,8 +778,8 @@ class PyLDLoader(BaseLeplParser):
         self.process_jobj(jobj)
         self._cleanup_parse()
 
-        return sink        
-    
+        return sink
+
     def make_quad(self, values):
         quad = self.env.createQuad(*values)
         self._call_state.graph.add(quad)
@@ -744,7 +791,7 @@ class PyLDLoader(BaseLeplParser):
     def __init__(self, *args, **kwargs):
         self.document = self._Loader(self)
         super(PyLDLoader, self).__init__(*args, **kwargs)
-    
+
     def process_triple_fragment(self, triple_fragment):
         if triple_fragment['type'] == 'IRI':
             return self.env.createNamedNode(triple_fragment['value'])
@@ -771,6 +818,6 @@ class PyLDLoader(BaseLeplParser):
                      graph_iri,
                      )
                 )
-                
+
 jsonld_parser = PyLDLoader()
 

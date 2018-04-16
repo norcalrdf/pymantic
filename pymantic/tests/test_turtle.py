@@ -1,78 +1,147 @@
 import os.path
+from urlparse import urljoin
 import unittest
 from pymantic.parsers import turtle_parser, ntriples_parser
 import pymantic.rdf as rdf
 
-turtle_tests_url = 'http://dvcs.w3.org/hg/rdf/raw-file/default/rdf-turtle/tests/'
+turtle_tests_url =\
+    'http://www.w3.org/2013/TurtleTests/'
 
 prefixes = {
     'mf': 'http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#',
     'qt': 'http://www.w3.org/2001/sw/DataAccess/tests/test-query#',
+    'rdft': 'http://www.w3.org/ns/rdftest#',
 }
+
+
+def isomorph_triple(triple):
+    from pymantic.primitives import (
+        BlankNode,
+        Literal,
+        NamedNode,
+    )
+
+    if isinstance(triple.subject, BlankNode):
+        triple = triple._replace(subject=None)
+    if isinstance(triple.object, BlankNode):
+        triple = triple._replace(object=None)
+    if isinstance(triple.object, Literal) and triple.object.datatype is None:
+        triple = triple._replace(object=triple.object._replace(
+            datatype=NamedNode('http://www.w3.org/2001/XMLSchema#string')))
+
+    return triple
+
+
+def isomorph(graph):
+    return {
+        isomorph_triple(t) for t in graph._triples
+    }
+
 
 @rdf.register_class('mf:Manifest')
 class Manifest(rdf.Resource):
     prefixes = prefixes
 
-    scalars = frozenset(('rdfs:comment','mf:entries'))
+    scalars = frozenset(('rdfs:comment', 'mf:entries'))
 
-class ManifestEntry(rdf.Resource):
+
+@rdf.register_class('rdft:TestTurtleEval')
+class TestTurtleEval(rdf.Resource):
     prefixes = prefixes
 
     scalars = frozenset(('mf:name', 'rdfs:comment', 'mf:action', 'mf:result'))
 
-class Action(rdf.Resource):
+    def execute(self, test_case):
+        with open(unicode(self['mf:action']), 'r') as f:
+            in_data = f.read()
+
+        with open(unicode(self['mf:result']), 'r') as f:
+            compare_data = f.read()
+
+        base = urljoin(turtle_tests_url,
+                       os.path.basename(unicode(self['mf:action'])))
+
+        test_graph = turtle_parser.parse(in_data, base=base)
+        compare_graph = ntriples_parser.parse_string(compare_data)
+        test_case.assertEqual(
+            isomorph(test_graph),
+            isomorph(compare_graph),
+        )
+
+
+@rdf.register_class('rdft:TestTurtlePositiveSyntax')
+class TestTurtlePositiveSyntax(rdf.Resource):
     prefixes = prefixes
 
-    scalars = frozenset(('qt:data',))
+    scalars = frozenset(('mf:name', 'rdfs:comment', 'mf:action'))
 
-class MetaRDFTest(type):
-    def __new__(mcs, name, bases, dict):
-        manifest_name = dict['manifest']
-        with open(manifest_name, 'r') as f:
-            manifest_turtle = f.read()
-        manifest_graph = turtle_parser.parse(manifest_turtle, base=dict['base'])
-        manifest = Manifest(manifest_graph, dict['base'])
-        entries = manifest['mf:entries'].as_(rdf.List)
-        for entry in entries:
-            entry = entry.as_(ManifestEntry)
-            test_name = entry['mf:name'].value.replace('-', '_')
-            if not test_name.startswith('test_'):
-                test_name = 'test_' + test_name
-            dict[test_name] = lambda self, entry=entry: self.execute(entry)
-            # Doesn't look right in tracebacks, but looks fine in nose output.
-            dict[test_name].func_name = test_name
-        return type.__new__(mcs, name, bases, dict)
+    def execute(self, test_case):
+        with open(unicode(self['mf:action']), 'r') as f:
+            in_data = f.read()
+
+        base = urljoin(turtle_tests_url,
+                       os.path.basename(unicode(self['mf:action'])))
+        test_graph = turtle_parser.parse(in_data, base=base)
+
+
+@rdf.register_class('rdft:TestTurtleNegativeSyntax')
+class TestTurtleNegativeSyntax(rdf.Resource):
+    prefixes = prefixes
+
+    scalars = frozenset(('mf:name', 'rdfs:comment', 'mf:action'))
+
+    def execute(self, test_case):
+        with open(unicode(self['mf:action']), 'r') as f:
+            in_data = f.read()
+
+        base = urljoin(turtle_tests_url,
+                       os.path.basename(unicode(self['mf:action'])))
+        with test_case.assertRaises(Exception):
+            turtle_parser.parse(in_data, base=base)
+
+
+@rdf.register_class('rdft:TestTurtleNegativeEval')
+class TestTurtleNegativeEval(rdf.Resource):
+    prefixes = prefixes
+
+    scalars = frozenset(('mf:name', 'rdfs:comment', 'mf:action'))
+
+    def execute(self, test_case):
+        with open(unicode(self['mf:action']), 'r') as f:
+            in_data = f.read()
+
+        base = urljoin(turtle_tests_url,
+                       os.path.basename(unicode(self['mf:action'])))
+        with test_case.assertRaises(Exception):
+            turtle_parser.parse(in_data, base=base)
+
+
+base = os.path.join(os.path.dirname(__file__), 'TurtleTests/')
+
+manifest_name = os.path.join(base, 'manifest.ttl')
+
+with open(manifest_name, 'r') as f:
+    manifest_turtle = f.read()
+
+manifest_graph = turtle_parser.parse(manifest_turtle, base=base)
+
+manifest = Manifest(manifest_graph, base)
+
 
 class TurtleTests(unittest.TestCase):
-    __metaclass__ = MetaRDFTest
+    @classmethod
+    def _make_test_case(cls, test_case):
+        def test_method(self):
+            return test_case.execute(self)
 
-    base = os.path.join(os.path.dirname(__file__), 'turtle_tests/')
+        test_name = 'test_' + test_case['mf:name'].value.replace('-', '_')
+        test_method.func_name = test_name.encode('utf8')
+        test_method.func_doc = u'{} ({})'.format(
+            test_case['rdfs:comment'].value,
+            test_name,
+        )
+        setattr(cls, test_name, test_method)
 
-    manifest = os.path.join(base, 'manifest.ttl')
 
-    def execute(self, entry):
-        with open(unicode(entry['mf:action'].as_(Action)['qt:data']), 'r') as f:
-            in_data = f.read()
-        with open(unicode(entry['mf:result'])) as f:
-            compare_data = f.read()
-        test_graph = turtle_parser.parse(in_data)
-        compare_graph = ntriples_parser.parse_string(compare_data)
-
-class BadTurtleTests(unittest.TestCase):
-    __metaclass__ = MetaRDFTest
-
-    base = os.path.join(os.path.dirname(__file__), 'turtle_tests/')
-
-    manifest = os.path.join(base, 'manifest-bad.ttl')
-
-    def execute(self, entry):
-        with open(unicode(entry['mf:action'].as_(Action)['qt:data']), 'r') as f:
-            in_data = f.read()
-            print in_data
-        try:
-            test_graph = turtle_parser.parse(in_data)
-        except:
-            pass
-        else:
-            self.fail('should not have parsed')
+for test_case in list(manifest['mf:entries'].as_(rdf.List)):
+    TurtleTests._make_test_case(test_case)

@@ -24,7 +24,7 @@ def one_or_none(values):
         raise ValueError('Got more than one value.')
     return values[0]
 
-percent_encoding_re = re.compile(r'(?:%[a-fA-F0-9][a-fA-F0-9])+')
+percent_encoding_re = re.compile(r'(?:%(?![01][0-9a-fA-F])(?!20)[a-fA-F0-9][a-fA-F0-9])+')
 
 reserved_in_iri = ["%", ":", "/", "?", "#", "[", "]", "@", "!", "$", "&", "'",\
                    "(", ")", "*", "+", ",", ";", "="]
@@ -54,3 +54,15 @@ def quote_normalized_iri(normalized_iri):
     normalized_uri = ''.join(percent_encode(char) if ord(char) > 127 else char for\
                              char in normalized_iri)
     return quote(normalized_uri, safe=''.join(reserved_in_iri))
+
+
+def smart_urljoin(base, url):
+    """urljoin, only an empty fragment from the relative(?) URL will be
+    preserved.
+    """
+    from urlparse import urljoin
+
+    joined = urljoin(base, url)
+    if url.endswith('#') and not joined.endswith('#'):
+        joined += '#'
+    return joined

@@ -1,6 +1,7 @@
 import urllib
 import unittest
 from nose import SkipTest
+raise SkipTest
 
 import mock_http
 
@@ -8,16 +9,15 @@ import mock_http
 
 class TestSparql(unittest.TestCase):
     def setUp(self):
-        raise SkipTest
         self.mock_port = 48558
         self.mock_endpoint = mock_http.MockHTTP(self.mock_port)
-    
+
     def testMockSPARQL(self):
         """Test a SPARQL query against a mocked-up endpoint."""
         test_query = """PREFIX dc: <http://purl.org/dc/terms/>
         SELECT ?product ?title WHERE { ?product dc:title ?title } LIMIT 10"""
         test_json = '{"head": {"vars": ["product", "title"]}, "results": {"bindings": [{"product": {"type": "uri", "value": "test_product"}, "title": {"xml:lang": "en", "type": "literal", "value": "Test Title"}}]}}'
-        
+
         self.mock_endpoint.expects(
             method='POST', times=mock_http.once, path='/tenuki/sparql',
             headers={'Content-Type': 'application/x-www-form-urlencoded',},
@@ -32,7 +32,7 @@ class TestSparql(unittest.TestCase):
                          'test_product')
         self.assertEqual(results['results']['bindings'][0]['title']['value'],
                          'Test Title')
-    
+
     def testMockSPARQLError(self):
         """Test a SPARQL query against a mocked-up endpoint."""
         test_query = """PREFIX dc: <http://purl.org/dc/terms/>

@@ -24,7 +24,7 @@ def one_or_none(values):
         raise ValueError('Got more than one value.')
     return values[0]
 
-percent_encoding_re = re.compile(r'(?:%[a-fA-F0-9][a-fA-F0-9])+')
+percent_encoding_re = re.compile(r'(?:%(?![01][0-9a-fA-F])(?!20)[a-fA-F0-9][a-fA-F0-9])+')
 
 reserved_in_iri = ["%", ":", "/", "?", "#", "[", "]", "@", "!", "$", "&", "'",\
                    "(", ")", "*", "+", ",", ";", "="]

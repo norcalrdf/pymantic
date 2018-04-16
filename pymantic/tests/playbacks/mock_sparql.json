@@ -1,0 +1,32 @@
+{
+    "http_interactions": [
+        {
+            "request": {
+                "uri": "http://localhost/tenuki/sparql",
+                "method": "POST",
+                "headers": {
+                    "Content-Length": ["165"],
+                    "Accept-Encoding": ["gzip, deflate"],
+                    "Accept": ["application/sparql-results+json,application/rdf+xml,application/sparql-results+xml"],
+                    "Content-Type": ["application/x-www-form-urlencoded"]
+                },
+                "body": {
+                    "base64_string": "cXVlcnk9UFJFRklYK2RjJTNBKyUzQ2h0dHAlM0ElMkYlMkZwdXJsLm9yZyUyRmRjJTJGdGVybXMl\nMkYlM0UlMEErKysrKysrK1NFTEVDVCslM0Zwcm9kdWN0KyUzRnRpdGxlK1dIRVJFKyU3QislM0Zw\ncm9kdWN0K2RjJTNBdGl0bGUrJTNGdGl0bGUrJTdEK0xJTUlUKzEwJm91dHB1dD1qc29u\n", "encoding": "utf-8"
+                }
+            },
+            "response": {
+                "url": "http://localhost/tenuki/sparql",
+                "status": { "message": "OK", "code": 200 },
+                "headers": {
+                    "content-type": ["application/sparql-results+json"],
+                    "content-length": ["193"]
+                },
+                "body": {
+                    "base64_string": "eyJoZWFkIjogeyJ2YXJzIjogWyJwcm9kdWN0IiwgInRpdGxlIl19LCAicmVzdWx0cyI6IHsiYmlu\nZGluZ3MiOiBbeyJwcm9kdWN0IjogeyJ0eXBlIjogInVyaSIsICJ2YWx1ZSI6ICJ0ZXN0X3Byb2R1\nY3QifSwgInRpdGxlIjogeyJ4bWw6bGFuZyI6ICJlbiIsICJ0eXBlIjogImxpdGVyYWwiLCAidmFs\ndWUiOiAiVGVzdCBUaXRsZSJ9fV19fQ==\n", "encoding": "utf-8"
+                }
+            },
+            "recorded_at": "2018-01-19T00:07:57"
+        }
+    ],
+    "recorded_with": "betamax/0.8.1"
+}

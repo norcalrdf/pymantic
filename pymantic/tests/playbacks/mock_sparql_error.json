@@ -1,0 +1,29 @@
+{
+    "http_interactions": [
+        {
+            "request": {
+                "uri": "http://localhost/tenuki/sparql",
+                "method": "POST",
+                "headers": {
+                    "Content-Length": ["165"],
+                    "Accept-Encoding": ["gzip, deflate"],
+                    "Accept": ["application/sparql-results+json,application/rdf+xml,application/sparql-results+xml"],
+                    "Content-Type": ["application/x-www-form-urlencoded"]
+                },
+                "body": {
+                    "base64_string": "cXVlcnk9UFJFRklYK2RjJTNBKyUzQ2h0dHAlM0ElMkYlMkZwdXJsLm9yZyUyRmRjJTJGdGVybXMl\nMkYlM0UlMEErKysrKysrK1NFTEVDVCslM0Zwcm9kdWN0KyUzRnRpdGxlK1dIRVJFKyU3QislM0Zw\ncm9kdWN0K2RjJTNBdGl0bGUrJTNGdGl0bGUrJTdEK0xJTUlUKzEwJm91dHB1dD1qc29u\n", "encoding": "utf-8"
+                }
+            },
+            "response": {
+                "url": "http://localhost/tenuki/sparql",
+                "status": { "message": "Not Ok", "code": 500 },
+                "headers": {},
+                "body": {
+                    "base64_string": "", "encoding": "utf-8"
+                }
+            },
+            "recorded_at": "2018-01-19T00:07:57"
+        }
+    ],
+    "recorded_with": "betamax/0.8.1"
+}

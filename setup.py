@@ -2,6 +2,15 @@ from setuptools import setup
 
 from pymantic import version
 
+tests_require = [
+    'betamax',
+    ]
+
+testing_extras = tests_require + [
+    'nose',
+    'coverage',
+    ]
+
 setup(name='pymantic',
       version=version,
       description="Semantic Web and RDF library for Python",
@@ -28,8 +37,10 @@ setup(name='pymantic',
           'pytz',
           'rdflib',
           'lepl',
-          'betamax',
           ],
+      extras_require={
+          'testing': testing_extras,
+          },
       entry_points="""
       # -*- Entry points: -*-
       """,

@@ -6,3 +6,5 @@ lib
 share
 docs/_build
 build
+.tox
+nosetests-*.xml

@@ -112,8 +112,9 @@ class TestTurtleSerializer(TestCase):
         f.seek(0)
         graph2 = self.turtle_parser.parse(f.read())
         f.seek(0)
-        self.assertEqual(f.read().strip(), """@prefix ex: <http://example.com/> .
+        self.assertEqual(f.read().strip(), """
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix ex: <http://example.com/> .
 @prefix dc: <http://purl.org/dc/terms/> .
 ex:bar dc:title "Bar" ;
        .
@@ -122,8 +123,9 @@ ex:baz dc:subject ex:foo ;
        .
 
 ex:foo dc:title "Foo" ;
-       .""")
-    
+       .
+       """.strip())
+
     def testMultiplePredicates(self):
         from cStringIO import StringIO
         basic_turtle = """@prefix dc: <http://purl.org/dc/terms/> .
@@ -132,7 +134,7 @@ ex:foo dc:title "Foo" ;
         example:foo dc:title "Foo" ;
                     dc:author "Bar" ;
                     dc:subject example:yesfootoo .
-        
+
         example:garply dc:title "Garply" ;
                     dc:author "Baz" ;
                     dc:subject example:thegarply ."""
@@ -145,8 +147,9 @@ ex:foo dc:title "Foo" ;
         f.seek(0)
         graph2 = self.turtle_parser.parse(f.read())
         f.seek(0)
-        self.assertEqual(f.read().strip(), """@prefix ex: <http://example.com/> .
+        self.assertEqual(f.read().strip(), """
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix ex: <http://example.com/> .
 @prefix dc: <http://purl.org/dc/terms/> .
 ex:foo dc:author "Bar" ;
        dc:subject ex:yesfootoo ;
@@ -156,7 +159,7 @@ ex:foo dc:author "Bar" ;
 ex:garply dc:author "Baz" ;
           dc:subject ex:thegarply ;
           dc:title "Garply" ;
-          .""")
+          .""".strip())
 
     def testListSerialization(self):
         from cStringIO import StringIO
@@ -175,9 +178,9 @@ ex:garply dc:author "Baz" ;
         f.seek(0)
         graph2 = self.turtle_parser.parse(f.read())
         f.seek(0)
-        self.assertEqual(f.read().strip(), """@prefix ex: <http://example.com/> .
+        self.assertEqual(f.read().strip(), """
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix ex: <http://example.com/> .
 @prefix dc: <http://purl.org/dc/terms/> .
 ex:foo dc:author ("Foo" "Bar" "Baz") ;
-       .""")
-    
+       .""".strip())

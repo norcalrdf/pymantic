@@ -1,7 +1,25 @@
-sudo: false
 language: python
-python:
-        - "2.7"
-install: "pip install -e ."
-script: nosetests
+sudo: false
 
+matrix:
+    include:
+        - python: 2.7
+          env: TOXENV=py27
+        - python: 3.5
+          env: TOXENV=py35
+        - python: 3.6
+          env: TOXENV=py36
+    allow_failures:
+        - env: TOXENV=py36
+        - env: TOXENV=py35
+        - env: TOXENV=py37
+
+install:
+  - travis_retry pip install tox
+
+script:
+  - travis_retry tox
+
+cache:
+  directories:
+    - $HOME/.cache/pip

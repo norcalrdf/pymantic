@@ -560,7 +560,7 @@ class Dataset(object):
 # RDF Enviroment Interfaces
 
 
-class PrefixMap(dict):
+class PrefixMap(collections.OrderedDict):
     """A map of prefixes to IRIs, and provides methods to
     turn one in to the other.
 

@@ -1,13 +1,20 @@
 __all__ = ['Triple', 'Quad', 'q_as_t', 't_as_q', 'Literal', 'NamedNode',
-           'Prefix', 'BlankNode', 'Graph', 'Dataset', 'PrefixMap', 'TermMap', 
+           'Prefix', 'BlankNode', 'Graph', 'Dataset', 'PrefixMap', 'TermMap',
            'parse_curie', 'is_language', 'lang_match', 'to_curie', 'Profile',
            ]
 
 import collections
+from collections import defaultdict
+
 import datetime
 from operator import itemgetter
-import urllib
-import urlparse
+from .compat import (
+    text_type,
+    string_types,
+    iteritems,
+    itervalues,
+    iterkeys,
+)
 
 import pymantic.uri_schemes as uri_schemes
 
@@ -32,7 +39,7 @@ def lang_match(lang1, lang2):
         return False
     lang1 = lang1.partition('-')
     lang2 = lang2.partition('-')
-    return lang1[0] == lang2[0] and (lang1[2] == '' or lang2[2] == '' or\
+    return lang1[0] == lang2[0] and (lang1[2] == '' or lang2[2] == '' or
                                      lang1[2] == lang2[2])
 
 
@@ -64,8 +71,9 @@ def parse_curie(curie, prefixes):
     if prefix in prefixes:
         return Prefix(prefixes[prefix])(reference)
     else:
-        raise ValueError('Could not parse CURIE prefix %s from prefixes %s' %
-                        (prefix, prefixes))
+        raise ValueError(
+            'Could not parse CURIE prefix {} from prefixes {}'.format(
+                prefix, prefixes))
 
 
 def parse_curies(curies, namespaces):
@@ -231,7 +239,7 @@ class Literal(tuple):
     }
 
     def __new__(_cls, value, language=None, datatype=None):
-        if not isinstance(value, str) and not isinstance(value, unicode):
+        if not isinstance(value, string_types):
             value, auto_datatype = _cls.types[type(value)](value)
             if datatype is None:
                 datatype = auto_datatype
@@ -270,7 +278,7 @@ class Literal(tuple):
     interfaceName = "Literal"
 
     def __str__(self):
-        return unicode(self.value)
+        return text_type(self.value)
 
     def toNT(self):
         quoted = '"' + nt_escape(self.value) + '"'
@@ -282,7 +290,7 @@ class Literal(tuple):
             return quoted
 
 
-class NamedNode(unicode):
+class NamedNode(text_type):
     """A node identified by an IRI."""
 
     interfaceName = "NamedNode"
@@ -307,8 +315,9 @@ class Prefix(NamedNode):
     def __call__(self, name):
         return NamedNode(self + name)
 
-    
+
 XSD = Prefix("http://www.w3.org/2001/XMLSchema#")
+
 
 class BlankNode(object):
     """A BlankNode is a reference to an unnamed resource (one for which an IRI
@@ -333,9 +342,6 @@ class BlankNode(object):
 
     def toNT(self):
         return str(self)
-
-
-from collections import defaultdict
 
 
 def Index():
@@ -407,28 +413,28 @@ class Graph(object):
                     if Triple(subject, predicate, object) in self:
                         yield Triple(subject, predicate, object)
                 else:  # s, p, ?var
-                    for triple in self._spo[subject][predicate].itervalues():
+                    for triple in itervalues(self._spo[subject][predicate]):
                         yield triple
             else:  # s, ?var, ???
                 if object:  # s, ?var, o
-                    for triple in self._osp[object][subject].itervalues():
+                    for triple in itervalues(self._osp[object][subject]):
                         yield triple
                 else:  # s, ?var, ?var
                     for predicate in self._spo[subject]:
                         for triple in \
-                          self._spo[subject][predicate].itervalues():
+                          itervalues(self._spo[subject][predicate]):
                             yield triple
         elif predicate:  # ?var, p, ???
             if object:  # ?var, p, o
-                for triple in self._pos[predicate][object].itervalues():
+                for triple in itervalues(self._pos[predicate][object]):
                     yield triple
             else:  # ?var, p, ?var
                 for object in self._pos[predicate]:
-                    for triple in self._pos[predicate][object].itervalues():
+                    for triple in itervalues(self._pos[predicate][object]):
                         yield triple
         elif object:  # ?var, ?var, o
             for subject in self._osp[object]:
-                for triple in self._osp[object][subject].itervalues():
+                for triple in itervalues(self._osp[object][subject]):
                     yield triple
         else:
             for triple in self._triples:
@@ -470,18 +476,19 @@ class Graph(object):
     def toArray(self):
         """Return the set of :py:class:`Triple` within the :py:class:`Graph`"""
         return frozenset(self._triples)
-    
+
     def subjects(self):
         """Returns an iterator over subjects in the graph."""
-        return self._spo.iterkeys()
-    
+        return iterkeys(self._spo)
+
     def predicates(self):
         """Returns an iterator over predicates in the graph."""
-        return self._pos.iterkeys()
-    
+        return iterkeys(self._pos)
+
     def objects(self):
         """Returns an iterator over objects in the graph."""
-        return self._osp.iterkeys()
+        return iterkeys(self._osp)
+
 
 class Dataset(object):
 
@@ -516,7 +523,7 @@ class Dataset(object):
             for match in matches:
                 yield t_as_q(graph, match)
         else:
-            for graph_uri, graph in self._graphs.iteritems():
+            for graph_uri, graph in iteritems(self._graphs):
                 for match in graph.match(subject, predicate, object):
                     yield t_as_q(graph_uri, match)
 
@@ -544,12 +551,12 @@ class Dataset(object):
                 graph = self._graphs[item.graph]
                 return q_as_t(item) in graph
         else:
-            for graph in self._graphs.itervalues():
+            for graph in itervalues(self._graphs):
                 if item in graph:
                     return True
 
     def __iter__(self):
-        for graph in self._graphs.itervalues():
+        for graph in itervalues(self._graphs):
             for triple in graph:
                 yield t_as_q(graph.uri, triple)
 
@@ -611,7 +618,7 @@ class PrefixMap(collections.OrderedDict):
         if override:
             self.update(other)
         else:
-            for key, value in other.iteritems():
+            for key, value in iteritems(other):
                 if key not in self:
                     self[key] = value
         return self
@@ -661,7 +668,7 @@ u"http://www.w3.org/2000/01/rdf-schema#label"
         if override:
             self.update(other)
         else:
-            for key, value in other.iteritems():
+            for key, value in iteritems(other):
                 if key not in self:
                     self[key] = value
         return self
@@ -692,7 +699,7 @@ u"http://www.w3.org/2000/01/rdf-schema#label"
         "http://www.w3.org/2000/01/rdf-schema#label") this method returns a
         term (for example "label"), if no term is known the original IRI is
         returned."""
-        for term, v in self.iteritems():
+        for term, v in iteritems(self):
             if v == iri:
                 return term
         return iri
@@ -710,9 +717,9 @@ class Profile(object):
                 'http://www.w3.org/1999/02/22-rdf-syntax-ns#'
         if 'xsd' not in self.prefixes:
             self.prefixes['xsd'] = 'http://www.w3.org/2001/XMLSchema#'
-    
+
     def resolve(self, toresolve):
-        """Given an Term or CURIE this method will return an IRI, or null if it 
+        """Given an Term or CURIE this method will return an IRI, or null if it
         cannot be resolved.
 
         If toresolve contains a : (colon) then this method returns the result
@@ -754,7 +761,7 @@ class Profile(object):
         merging of different profiles.
 
         This method returns the instance on which it was called."""
-        self.prefixes.addAll(profile.prefixes, overide)
+        self.prefixes.addAll(profile.prefixes, override)
         self.terms.addAll(profile.terms, override)
         return self
 

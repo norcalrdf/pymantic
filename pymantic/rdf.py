@@ -2,14 +2,19 @@
 Python objects."""
 
 import os.path
-import urlparse
+from .compat.moves.urllib import parse as urlparse
 import re
 import logging
-from cStringIO import StringIO
+from .compat.moves import cStringIO as StringIO
 from string import Template
 
 import pymantic.util as util
 from pymantic.primitives import *
+from .compat import (
+    add_metaclass,
+    string_types,
+    text_type,
+)
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +39,8 @@ class MetaResource(type):
             for scalar in dct['scalars']:
                 scalars.add(parse_curie(scalar, prefixes))
         dct['scalars'] = frozenset(scalars)
+        dct['_meta_resource'] = cls
+
         return type.__new__(cls, name, bases, dct)
 
 def register_class(rdf_type):
@@ -50,6 +57,8 @@ class URLRetrievalError(Exception):
     than 200 OK."""
     pass
 
+
+@add_metaclass(MetaResource)
 class Resource(object):
     """Provides necessary context and utility methods for accessing a Resource
     in an RDF graph. Resources can be used as-is, but are likely somewhat
@@ -88,8 +97,6 @@ class Resource(object):
     Automatic retrieval of resources with no type information is currently
     implemented here, but is likely to be refactored into a separate persistence
     layer in the near future."""
-
-    __metaclass__ = MetaResource
 
     prefixes = {'rdf': 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
                   'rdfs': 'http://www.w3.org/2000/01/rdf-schema#'}
@@ -148,9 +155,8 @@ class Resource(object):
     def __eq__(self, other):
         if isinstance(other, Resource):
             return self.subject == other.subject
-        elif isinstance(other, NamedNode) or isinstance(other, str) or\
-             isinstance(other, unicode):
-            return unicode(self.subject) == unicode(other)
+        elif isinstance(other, NamedNode) or isinstance(other, string_types):
+            return text_type(self.subject) == text_type(other)
         return NotImplemented
 
     def __ne__(self, other):
@@ -321,7 +327,7 @@ class Resource(object):
         if objects:
             return True
         return False
-    
+
     def __iter__(self):
         for s, p, o in self.graph.match(self.subject, None, None):
             yield p, o
@@ -364,21 +370,21 @@ class Resource(object):
                 return Resource(graph, obj)
         types = frozenset([t.object for t in graph.match(
             obj, cls.resolve('rdf:type'), None)])
-        python_classes = tuple(cls.__metaclass__._classes[t] for t in types if\
-                               t in cls.__metaclass__._classes)
+        python_classes = tuple(cls._meta_resource._classes[t] for t in types if\
+                               t in cls._meta_resource._classes)
         if len(python_classes) == 0:
             return Resource(graph, obj)
         elif len(python_classes) == 1:
             return python_classes[0](graph, obj)
         else:
-            if types not in cls.__metaclass__._classes:
-                the_class = cls.__metaclass__.__new__(
-                    cls.__metaclass__, ''.join(python_class.__name__ for\
+            if types not in cls._meta_resource._classes:
+                the_class = cls._meta_resource.__new__(
+                    cls._meta_resource, ''.join(python_class.__name__ for\
                                                python_class in python_classes),
                     python_classes, {'_autocreate': True})
-                cls.__metaclass__._classes[types] = the_class
+                cls._meta_resource._classes[types] = the_class
                 the_class.rdf_classes = frozenset(types)
-            return cls.__metaclass__._classes[types](graph, obj)
+            return cls._meta_resource._classes[types](graph, obj)
 
     def _interpret_key(self, key):
         """Break up a key into a predicate name and optional language or
@@ -488,10 +494,10 @@ class Resource(object):
         for t in self.graph.match(self.subject, None, None):
             self.graph.add((target_subject, t.predicate, t.object))
         return self.classify(self.graph, target_subject)
-    
+
     def as_(self, target_class):
         return target_class(self.graph, self.subject)
-    
+
 
 class List(Resource):
     """Convenience class for dealing with RDF lists.
@@ -508,13 +514,13 @@ class List(Resource):
             current = current['rdf:rest']
             if current.subject != self.resolve('rdf:nil'):
                 current = current.as_(type(self))
-    
+
     @classmethod
     def is_list(cls, node, graph):
         """Determine if a given node is plausibly the subject of a list element."""
         return bool(list(graph.match(
             subject = node, predicate = cls.resolve('rdf:rest'))))
-            
+
 
 def literalize(graph, value, lang, datatype):
     """Convert either a value or a sequence of values to either a Literal or
@@ -532,7 +538,7 @@ def objectify_value(graph, value, lang = None, datatype = None):
         return Resource.classify(graph, value)
     elif isinstance(value, Literal) or isinstance(value, Resource):
         return value
-    elif isinstance(value, str) or isinstance(value, unicode):
+    elif isinstance(value, string_types):
         return Literal(value, language = lang, datatype = datatype)
     else:
         return Literal(value)

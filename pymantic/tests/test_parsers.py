@@ -1,4 +1,4 @@
-from cStringIO import StringIO
+from pymantic.compat.moves import cStringIO as StringIO
 from nose.tools import *
 from nose.plugins.skip import Skip, SkipTest
 from pymantic.parsers import *
@@ -87,7 +87,7 @@ _:A1 <http://example.com/predicates/2> <http://example.com/objects/1> .
     #assert Triple(NamedNode('http://example.com/objects/2'),
                   #NamedNode('http://example.com/predicates/2'),
                   #NamedNode('http://example.com/objects/1')) in g
-                  
+
 def test_parse_turtle_example_1():
     ttl = """@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix dc: <http://purl.org/dc/elements/1.1/> .

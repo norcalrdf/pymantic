@@ -5,6 +5,8 @@
 [1] http://www.w3.org/Consortium/Legal/2002/copyright-software-20021231
 """
 
+from __future__ import print_function
+
 import re
 import sys
 import argparse
@@ -50,7 +52,7 @@ def to_HTML(lines):
                 productions.append(row)
             else:
                 terminals.append(row)
-    print TABLE_TEMPLATE.render(productions=productions, terminals=terminals, prefix=prefix)
+    print(TABLE_TEMPLATE.render(productions=productions, terminals=terminals, prefix=prefix))
 
 
 ROW_TEMPLATE =  Template("""<tr id="${prefix + "-" if prefix else ''}grammar-production-${sym}" data-grammar-original="${orig}" data-grammar-expression="${expr}" ${"class='grammar-token'" if isToken else ""}>
@@ -121,7 +123,7 @@ def each_rule(lines):
 
     a line that starts with [ or @ starts a new rule
     """
-    
+
     r = ''
     for l in lines:
         if l.startswith("/*"): continue
@@ -140,7 +142,7 @@ def rule_parts(r):
     ('2', 'Prolog', (',', [('?', ('id', 'BaseDecl')), ('*', ('id', 'PrefixDecl'))]))
 
     """
-    
+
     assert r.find(']') > 0
     num, r = r.split(']', 1)
     num = num[1:]
@@ -166,13 +168,13 @@ def ebnf(s):
 
     >>> ebnf("a b | c d")
     (('|', [(',', [('id', 'a'), ('id', 'b')]), (',', [('id', 'c'), ('id', 'd')])]), '')
-    
+
     >>> ebnf("a | b | c")
     (('|', [('id', 'a'), ('id', 'b'), ('id', 'c')]), '')
-    
+
     >>> ebnf("a) b c")
     (('id', 'a'), ' b c')
-    
+
     >>> ebnf("BaseDecl? PrefixDecl*")
     ((',', [('?', ('id', 'BaseDecl')), ('*', ('id', 'PrefixDecl'))]), '')
 
@@ -256,7 +258,7 @@ def diff(s):
                     return ('-', [e1, e2]), s
                 else:
                     raise SyntaxError
-            
+
     return e1, s
 
 
@@ -277,7 +279,7 @@ def postfix(s):
         t, ss = token(s)
         if t[0] in '?*+':
             return (t[0], e), ss
-        
+
     return e, s
 
 def primary(s):
@@ -304,7 +306,7 @@ def token(s):
 
     A token is represented as a tuple whose 1st item gives the type;
     some types have additional info in the tuple.
-    
+
     >>> token("'abc' def")
     (("'", 'abc'), ' def')
     """
@@ -339,6 +341,6 @@ def token(s):
 def escape(s):
     escape_map_full = {ord('&'): u'&amp;', ord('<'): u'&lt;', ord('>'): u'&gt;', ord('"'): u'&quot;', ord('\''): u'&#x27;'}
     return unicode(s).translate(escape_map_full)
-    
+
 if __name__ == '__main__':
     main()

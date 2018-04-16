@@ -1,9 +1,9 @@
 """Provide an interface to SPARQL query endpoints."""
 
-from cStringIO import StringIO
+from .compat.moves import cStringIO as StringIO
 import datetime
 import urllib
-import urlparse
+from .compat.moves.urllib import parse as urlparse
 
 from lxml import objectify
 import pytz
@@ -144,9 +144,7 @@ class _Select(_SelectOrUpdate):
             graph.parse(StringIO(response.content), self.query_url, format=format)
             return graph
         elif response.headers['content-type'].startswith('application/sparql-results+json'):
-            # See http://stackoverflow.com/a/19366580/2276263
-            # for justification of unicode() below
-            return json.loads(unicode(response.content, "utf-8"))
+            return json.loads(response.content.decode("utf-8"))
         elif response.headers['content-type'].startswith('application/sparql-results+xml'):
             return objectify.parse(StringIO(response.content))
         else:

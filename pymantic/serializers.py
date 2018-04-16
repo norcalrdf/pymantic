@@ -2,6 +2,10 @@ from collections import OrderedDict
 
 import re
 import warnings
+from .compat import (
+    iteritems,
+    text_type,
+)
 
 def nt_escape(node_string):
     """Properly escape strings for n-triples and n-quads serialization."""
@@ -20,7 +24,7 @@ def nt_escape(node_string):
         elif char >= u'\u0020' and char <= u'\u0021' or\
              char >= u'\u0023' and char <= u'\u005B' or\
              char >= u'\u005D' and char <= u'\u007E':
-            output_string += char.encode('utf-8')
+            output_string += char
         elif char >= u'\u007F' and char <= u'\uFFFF':
             output_string += '\\u%04X' % ord(char)
         elif char >= u'\U00010000' and char <= u'\U0010FFFF':
@@ -51,7 +55,7 @@ def turtle_string_escape(string):
     """Escape a string appropriately for output in turtle form."""
     from pymantic.parsers import TurtleParser
 
-    for escaped, value in TurtleParser.echar_map.iteritems():
+    for escaped, value in iteritems(TurtleParser.echar_map):
         string = string.replace(value, '\\' + escaped)
     return '"' + string + '"'
 
@@ -60,7 +64,7 @@ def turtle_repr(node, profile, name_map, bnode_name_maker):
     if node.interfaceName == 'NamedNode':
         name = profile.prefixes.shrink(node)
         if name == node:
-            name = '<' + unicode(node) + '>'
+            name = '<' + text_type(node) + '>'
         else:
             escape_prefix_local(name)
     elif node.interfaceName == 'BlankNode':
@@ -106,10 +110,10 @@ def serialize_turtle(graph, f, base=None, profile=None,
     if profile is None:
         from pymantic.primitives import Profile
         profile = Profile()
-    for prefix, iri in profile.prefixes.iteritems():
+    for prefix, iri in iteritems(profile.prefixes):
         if prefix != 'rdf':
             f.write('@prefix ' + prefix + ': <' + iri + '> .\n')
-    
+
     name_map = OrderedDict()
     output_order = []
     bnode_name_maker = bnode_name_generator()

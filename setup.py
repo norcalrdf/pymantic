@@ -1,5 +1,3 @@
-import sys, os
-
 from setuptools import setup
 
 from pymantic import version
@@ -14,7 +12,7 @@ setup(name='pymantic',
                    'Topic :: Internet :: WWW/HTTP',
                    'Topic :: Scientific/Engineering :: Information Analysis',
                    'Topic :: Text Processing :: Markup',
-                   ], # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
+                   ],  # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
       keywords='RDF N3 Turtle Semantics Web3.0',
       author='Gavin Carothers, Nick Pilon',
       author_email='gavin@carothers.name, npilon@gmail.com',
@@ -25,7 +23,7 @@ setup(name='pymantic',
       zip_safe=False,
       test_suite='nose.collector',
       install_requires=[
-          'httplib2',
+          'requests',
           'lxml',
           'mock_http',
           'pytz',
@@ -35,8 +33,7 @@ setup(name='pymantic',
       entry_points="""
       # -*- Entry points: -*-
       """,
-      scripts = [
+      scripts=[
           'pymantic/scripts/named_graph_to_nquads',
           'pymantic/scripts/bnf2html',
-      ],
-)
+      ])

@@ -85,10 +85,15 @@ class BaseLeplParser(object):
         return sink
 
     def parse_string(self, string, sink = None):
+        from StringIO import StringIO
+
+        if isinstance(string, str):
+            string = string.decode('utf8')
+
         if sink is None:
             sink = self._make_graph()
         self._prepare_parse(sink)
-        self.document.parse(string)
+        self.document.parse(StringIO(string))
         self._cleanup_parse()
 
         return sink

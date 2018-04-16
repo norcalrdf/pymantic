@@ -6,7 +6,10 @@ from lxml import etree
 import re
 from threading import local
 from urlparse import urljoin
-from pymantic.util import normalize_iri
+from pymantic.util import (
+    normalize_iri,
+    smart_urljoin
+)
 import pymantic.primitives
 
 def discrete_pairs(iterable):
@@ -580,18 +583,18 @@ class TurtleParser(BaseLeplParser):
                 [PredicateObject(self.profile.resolve('rdf:first'), value),
                  PredicateObject(self.profile.resolve('rdf:rest'), prev_node)])
         return prev_node
-    
+
     def _interpret_parse(self, data, sink):
         for line in data:
             if isinstance(line, BindPrefix):
-                self._call_state.prefixes[line.prefix] = urljoin(
-                    self._call_state.base_iri, line.iri, allow_fragments=False)
+                self._call_state.prefixes[line.prefix] = smart_urljoin(
+                    self._call_state.base_iri, line.iri)
             elif isinstance(line, SetBase):
-                self._call_state.base_iri = urljoin(
-                    self._call_state.base_iri, line.iri, allow_fragments=False)
+                self._call_state.base_iri = smart_urljoin(
+                    self._call_state.base_iri, line.iri)
             else:
                 self._interpret_triples_clause(line)
-                
+
     def _interpret_triples_clause(self, triples_clause):
         assert isinstance(triples_clause, TriplesClause)
         subject = self._resolve_node(triples_clause.subject)
@@ -600,16 +603,15 @@ class TurtleParser(BaseLeplParser):
                 subject, self._resolve_node(predicate_object.predicate),
                 self._resolve_node(predicate_object.object)))
         return subject
-    
+
     def _resolve_node(self, node):
         if isinstance(node, NamedNodeToBe):
             if isinstance(node.iri, PrefixReference):
                 return self.env.createNamedNode(
                     self._call_state.prefixes[node.iri.prefix] + node.iri.local)
             else:
-                return self.env.createNamedNode(
-                    urljoin(self._call_state.base_iri, node.iri, 
-                            allow_fragments=False))
+                resolved = smart_urljoin(self._call_state.base_iri, node.iri)
+                return self.env.createNamedNode(resolved)
         elif isinstance(node, TriplesClause):
             return self._interpret_triples_clause(node)
         elif isinstance(node, LiteralToBe):

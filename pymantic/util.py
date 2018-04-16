@@ -54,3 +54,15 @@ def quote_normalized_iri(normalized_iri):
     normalized_uri = ''.join(percent_encode(char) if ord(char) > 127 else char for\
                              char in normalized_iri)
     return quote(normalized_uri, safe=''.join(reserved_in_iri))
+
+
+def smart_urljoin(base, url):
+    """urljoin, only an empty fragment from the relative(?) URL will be
+    preserved.
+    """
+    from urlparse import urljoin
+
+    joined = urljoin(base, url)
+    if url.endswith('#') and not joined.endswith('#'):
+        joined += '#'
+    return joined

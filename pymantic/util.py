@@ -3,7 +3,8 @@
 __all__ = ['en', 'de', 'one_or_none', 'normalize_iri', 'quote_normalized_iri',]
 
 import re
-from urllib import quote
+from .compat.moves.urllib.parse import quote
+from .compat import int2byte
 
 def en(value):
     """Returns an RDF literal from the en language for the given value."""
@@ -30,9 +31,9 @@ reserved_in_iri = ["%", ":", "/", "?", "#", "[", "]", "@", "!", "$", "&", "'",\
                    "(", ")", "*", "+", ",", ";", "="]
 
 def percent_decode(regmatch):
-    encoded = ''
+    encoded = b''
     for group in regmatch.group(0)[1:].split('%'):
-        encoded += chr(int(group, 16))
+        encoded += int2byte(int(group, 16))
     uni = encoded.decode('utf-8')
     for res in reserved_in_iri:
         uni = uni.replace(res, '%%%02X' % ord(res))
@@ -42,10 +43,13 @@ def normalize_iri(iri):
     """Normalize an IRI using the Case Normalization (5.3.2.1) and
     Percent-Encoding Normalization (5.3.2.3) from RFC 3987. The IRI should be a
     unicode object."""
+
     return percent_encoding_re.sub(percent_decode, iri)
 
 def percent_encode(char):
-    return ''.join('%%%02X' % ord(char) for char in char.encode('utf-8'))
+    from .compat import ordbyte
+
+    return ''.join('%%%02X' % ordbyte(char) for char in char.encode('utf-8'))
 
 def quote_normalized_iri(normalized_iri):
     """Percent-encode a normalized IRI; IE, all reserved characters are presumed
@@ -60,7 +64,7 @@ def smart_urljoin(base, url):
     """urljoin, only an empty fragment from the relative(?) URL will be
     preserved.
     """
-    from urlparse import urljoin
+    from .compat.moves.urllib.parse import urljoin
 
     joined = urljoin(base, url)
     if url.endswith('#') and not joined.endswith('#'):

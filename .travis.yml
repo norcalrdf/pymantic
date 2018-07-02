@@ -10,8 +10,6 @@ matrix:
         - python: 3.6
           env: TOXENV=py36
     allow_failures:
-        - env: TOXENV=py36
-        - env: TOXENV=py35
         - env: TOXENV=py37
 
 install:

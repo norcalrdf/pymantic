@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from cStringIO import StringIO
+from pymantic.compat.moves import cStringIO
 from nose.tools import *
 from pymantic.parsers import *
 from pymantic.primitives import *
@@ -11,8 +11,8 @@ def test_parse_ntriples_named_nodes():
 <http://example.com/objects/2> <http://example.com/predicates/2> <http://example.com/objects/1> .
 """
     g = Graph()
-    ntriples_parser.parse(StringIO(test_ntriples), g)
-    f = StringIO()
+    ntriples_parser.parse(cStringIO(test_ntriples), g)
+    f = cStringIO()
     serialize_ntriples(g, f)
     f.seek(0)
     g2 = Graph()
@@ -32,53 +32,53 @@ class TestTurtleRepresentation(TestCase):
         import pymantic.primitives
         self.primitives = pymantic.primitives
         self.profile = self.primitives.Profile()
-    
+
     def test_integer(self):
         lit = self.primitives.Literal(value='42', datatype=self.profile.resolve('xsd:integer'))
         name = self.turtle_repr(node = lit, profile = self.profile, name_map = None, bnode_name_maker = None)
         self.assertEqual(name, '42')
-    
+
     def test_decimal(self):
         lit = self.primitives.Literal(value='4.2', datatype=self.profile.resolve('xsd:decimal'))
         name = self.turtle_repr(node = lit, profile = self.profile, name_map = None, bnode_name_maker = None)
         self.assertEqual(name, '4.2')
-    
+
     def test_double(self):
         lit = self.primitives.Literal(value='4.2e1', datatype=self.profile.resolve('xsd:double'))
         name = self.turtle_repr(node = lit, profile = self.profile, name_map = None, bnode_name_maker = None)
         self.assertEqual(name, '4.2e1')
-    
+
     def test_boolean(self):
         lit = self.primitives.Literal(value='true', datatype=self.profile.resolve('xsd:boolean'))
         name = self.turtle_repr(node = lit, profile = self.profile, name_map = None, bnode_name_maker = None)
         self.assertEqual(name, 'true')
-    
+
     def test_bare_string(self):
         lit = self.primitives.Literal(value='Foo', datatype=self.profile.resolve('xsd:string'))
         name = self.turtle_repr(node = lit, profile = self.profile, name_map = None, bnode_name_maker = None)
         self.assertEqual(name, '"Foo"')
-    
+
     def test_language_string(self):
         lit = self.primitives.Literal(value='Foo', language="en")
         name = self.turtle_repr(node = lit, profile = self.profile, name_map = None, bnode_name_maker = None)
         self.assertEqual(name, '"Foo"@en')
-    
+
     def test_random_datatype_bare_url(self):
         lit = self.primitives.Literal(value='Foo', datatype=self.primitives.NamedNode("http://example.com/garply"))
         name = self.turtle_repr(node = lit, profile = self.profile, name_map = None, bnode_name_maker = None)
         self.assertEqual(name, '"Foo"^<http://example.com/garply>')
-    
+
     def test_random_datatype_prefixed(self):
         self.profile.setPrefix('ex', self.primitives.NamedNode('http://example.com/'))
         lit = self.primitives.Literal(value='Foo', datatype=self.primitives.NamedNode("http://example.com/garply"))
         name = self.turtle_repr(node = lit, profile = self.profile, name_map = None, bnode_name_maker = None)
         self.assertEqual(name, '"Foo"^ex:garply')
-    
+
     def test_named_node_bare(self):
         node = self.primitives.NamedNode('http://example.com/foo')
         name = self.turtle_repr(node = node, profile = self.profile, name_map = None, bnode_name_maker = None)
         self.assertEqual(name, '<http://example.com/foo>')
-    
+
     def test_named_node_prefixed(self):
         self.profile.setPrefix('ex', self.primitives.NamedNode('http://example.com/'))
         node = self.primitives.NamedNode('http://example.com/foo')
@@ -94,9 +94,8 @@ class TestTurtleSerializer(TestCase):
         import pymantic.primitives
         self.primitives = pymantic.primitives
         self.profile = self.primitives.Profile()
-    
+
     def testSimpleSerialization(self):
-        from cStringIO import StringIO
         basic_turtle = """@prefix dc: <http://purl.org/dc/terms/> .
         @prefix example: <http://example.com/> .
 
@@ -105,7 +104,7 @@ class TestTurtleSerializer(TestCase):
         example:baz dc:subject example:foo ."""
 
         graph = self.turtle_parser.parse(basic_turtle)
-        f = StringIO()
+        f = cStringIO()
         self.profile.setPrefix('ex', self.primitives.NamedNode('http://example.com/'))
         self.profile.setPrefix('dc', self.primitives.NamedNode('http://purl.org/dc/terms/'))
         self.serialize_turtle(graph = graph, f = f, profile = self.profile)
@@ -127,7 +126,6 @@ ex:foo dc:title "Foo" ;
        """.strip())
 
     def testMultiplePredicates(self):
-        from cStringIO import StringIO
         basic_turtle = """@prefix dc: <http://purl.org/dc/terms/> .
         @prefix example: <http://example.com/> .
 
@@ -140,7 +138,7 @@ ex:foo dc:title "Foo" ;
                     dc:subject example:thegarply ."""
 
         graph = self.turtle_parser.parse(basic_turtle)
-        f = StringIO()
+        f = cStringIO()
         self.profile.setPrefix('ex', self.primitives.NamedNode('http://example.com/'))
         self.profile.setPrefix('dc', self.primitives.NamedNode('http://purl.org/dc/terms/'))
         self.serialize_turtle(graph = graph, f = f, profile = self.profile)
@@ -162,19 +160,16 @@ ex:garply dc:author "Baz" ;
           .""".strip())
 
     def testListSerialization(self):
-        from cStringIO import StringIO
         basic_turtle = """@prefix dc: <http://purl.org/dc/terms/> .
         @prefix example: <http://example.com/> .
 
         example:foo dc:author ("Foo" "Bar" "Baz") ."""
 
         graph = self.turtle_parser.parse(basic_turtle)
-        f = StringIO()
+        f = cStringIO()
         self.profile.setPrefix('ex', self.primitives.NamedNode('http://example.com/'))
         self.profile.setPrefix('dc', self.primitives.NamedNode('http://purl.org/dc/terms/'))
         self.serialize_turtle(graph = graph, f = f, profile = self.profile)
-        f.seek(0)
-        print f.read()
         f.seek(0)
         graph2 = self.turtle_parser.parse(f.read())
         f.seek(0)

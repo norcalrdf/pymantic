@@ -5,10 +5,14 @@ from lepl import *
 from lxml import etree
 import re
 from threading import local
-from urlparse import urljoin
+from .compat.moves.urllib.parse import urljoin
 from pymantic.util import (
     normalize_iri,
     smart_urljoin
+)
+from pymantic.compat import (
+    binary_type,
+    unichr,
 )
 import pymantic.primitives
 
@@ -27,7 +31,10 @@ unicode_re = re.compile(r'\\u([0-9A-Za-z]{4})|\\U([0-9A-Za-z]{8})')
 def nt_unescape(nt_string):
     """Un-do nt escaping style."""
     output_string = u''
-    nt_string = nt_string.decode('utf-8')
+
+    if isinstance(nt_string, binary_type):
+        nt_string = nt_string.decode('utf-8')
+
     nt_string = nt_string.replace('\\t', u'\u0009')
     nt_string = nt_string.replace('\\n', u'\u000A')
     nt_string = nt_string.replace('\\r', u'\u000D')
@@ -85,9 +92,9 @@ class BaseLeplParser(object):
         return sink
 
     def parse_string(self, string, sink = None):
-        from StringIO import StringIO
+        from .compat.moves import cStringIO as StringIO
 
-        if isinstance(string, str):
+        if isinstance(string, binary_type):
             string = string.decode('utf8')
 
         if sink is None:
@@ -178,161 +185,6 @@ class NQuadsParser(BaseNParser):
 
 nquads_parser = NQuadsParser()
 
-class ClassicTurtleParser(BaseLeplParser):
-
-    def __init__(self, environment=None):
-        super(ClassicTurtleParser, self).__init__(environment)
-
-        self.absolute_uri_re = re.compile('^[^/]+:')
-
-        # White space is significant in the following rules.
-        hex_ = Any('0123456789ABCDEF')
-        character_escape = Or(And(Literal('r\u'), hex_[4]),
-                              And(Literal(r'\U'), hex_[8]),
-                              Literal(r'\\'))
-        character = Or(character_escape,
-                       Regexp(ur'[\u0020-\u005B\]-\U0010FFFF]'))
-        echaracter = character | Any('\t\n\r')
-        ucharacter = Or(character_escape,
-                        Regexp(ur'[\u0020-\u003D\u003F-\u005B\]-\U0010FFFF]')) | r'\>'
-        scharacter = Or(character_escape,
-                        Regexp(ur'[\u0020-\u0021\u0023-\u005B\]-\U0010FFFF]')) | r'\"'
-        lcharacter = echaracter | '\"' | '\u009' | '\u000A' | '\u000D'
-        longString = ~Literal('"""') & lcharacter[:,...] & ~Literal('"""')
-        string = ~Literal('"') & scharacter[:,...] & ~Literal('"')
-        quotedString = longString | string > 'quotedString'
-        relativeURI = ucharacter[...]
-        prefixStartChar = Regexp(ur'[A-Z]') | Regexp(ur'[a-z]') | Regexp(ur'[\u00C0-\u00D6]') | Regexp(ur'[\u00D8-\u00F6]') | Regexp(ur'[\u00F8-\u02FF]') | Regexp(ur'[\u0370-\u037D]') | Regexp(ur'[\u037F-\u1FFF]') | Regexp(ur'[\u200C-\u200D]') | Regexp(ur'[\u2070-\u218F]') | Regexp(ur'[\u2C00-\u2FEF]') | Regexp(ur'[\u3001-\uD7FF]') | Regexp(ur'[\uF900-\uFDCF]') | Regexp(ur'[\uFDF0-\uFFFD]') | Regexp(ur'[\U00010000-\U000EFFFF]')
-        nameStartChar = prefixStartChar | "_"
-        nameChar = nameStartChar | '-' | Regexp(ur'[0-9]') | '\u00B7' | Regexp(ur'[\u0300-\u036F]') | Regexp(ur'[\u203F-\u2040]')
-        name = (nameStartChar & nameChar[:])[...] > 'name'
-        prefixName = (prefixStartChar & nameChar[:])[...] > 'prefixName'
-        language = Regexp(r'[a-z]+ (?:-[a-z0-9]+)*') > 'language'
-        qname = ((Optional(prefixName) & ~Literal(':') & Optional(name) > dict) > self.resolve_prefix) > 'qname'
-        nodeID = ~Literal('_:') & name > self.make_blank_node
-        self.comment = '#' & Regexp(r'[^\n\r]*') & Newline()
-
-        # Whie space is not significant in the following rules.
-        with Separator(~Star(Any(' \t\n\r'))):
-            uriref = (And(~Literal('<'), relativeURI, ~Literal('>')) > self.resolve_relative_uri) > 'uriref'
-            resource = (uriref | qname > dict) > self.make_named_node
-            self.ws = ws = ~Whitespace() | ~self.comment
-
-            blank = Delayed()
-            integer = Regexp(r'(?:-|\+)?[0-9]+') > self.make_integer_literal
-            decimal = Regexp(r'(?:-|\+)?(?:[0-9]+\.[0-9]*|\.(?:[0-9])+)') > self.make_decimal_literal
-            exponent = r'[eE](?:-|\+)?[0-9]+'
-            double = Regexp(r'(?:-|\+)?(?:[0-9]+\.[0-9]*' + exponent + r'|\.[0-9]+' + exponent + r'|[0-9]+' + exponent + ')') > self.make_double_literal
-            boolean = Literal('true') | Literal('false') > self.make_boolean_literal
-            datatypeString = quotedString & "^^" & (resource > 'dataType') > self.make_datatype_literal
-            literal = Or ( datatypeString,
-                           quotedString & Optional(~Literal('@') & language) > self.make_language_literal,
-                           double,
-                           decimal,
-                           integer,
-                           boolean )
-            object_ = resource | blank | literal
-            predicate = resource
-            subject = resource | blank > 'subject'
-            verb = predicate | Literal('a') > 'predicate'
-            collection = ~Literal('(') & object_[:] & ~Literal(')') > self.make_collection
-            objectList = (object_ & (~Literal(',') & object_)[:] > List) > 'objectList'
-            predicateObjectList = ((verb & objectList > Node) & (~Literal(';') & (verb & objectList > Node))[:] & ~Optional(';') > List) > 'predicateObjectList'
-            blank += Or (nodeID, collection,
-                         (~Literal('[') & ~Literal(']') > self.make_triples),
-                         (~Literal('[') & predicateObjectList & ~Literal(']') > self.make_triples)
-                         )
-            triples = subject & predicateObjectList > self.make_triples
-            base = (~Literal('@base') & Plus(ws) & uriref > dict) > self.record_base
-            prefixId = (~Literal('@prefix') & Plus(ws) & Optional(prefixName) & ~Literal(':') & uriref > dict) > self.record_prefix
-            directive = prefixId | base
-            statement = Or (directive & '.', triples & '.', Plus(ws))
-            self.document = Star(statement)
-
-    def _prepare_parse(self, graph):
-        super(TurtleParser, self)._prepare_parse(graph)
-        self._call_state.prefixes = self.env.createPrefixMap(empty=True)
-        self._call_state.base_uri = None
-
-    def record_base(self, values):
-        self._call_state.base_uri = values[0]['uriref']
-        return ''
-
-    def record_prefix(self, values):
-        prefix = values[0]
-        self._call_state.prefixes[prefix.get('prefixName', '')] = prefix['uriref']
-        return ''
-
-    def resolve_relative_uri(self, values):
-        relative_uri = values[0]
-        if self.absolute_uri_re.match(relative_uri):
-            return relative_uri
-        else:
-            return self._call_state.base_uri + relative_uri
-
-    def resolve_prefix(self, values):
-        qname = values[0]
-        return self._call_state.prefixes[qname.get('prefixName', '')] + qname.get('name', '')
-
-    def make_named_node(self, values):
-        resource = values[0]
-        return super(TurtleParser, self).make_named_node(
-            (resource.get('uriref') or resource.get('qname'),))
-
-    def make_triples(self, values):
-        triples = dict(values)
-        subject = triples.get('subject')
-        if not subject:
-            subject = self.env.createBlankNode()
-        for predicate_object_node in triples.get('predicateObjectList', ()):
-            predicate = predicate_object_node.predicate[0]
-            for object_ in predicate_object_node.objectList[0]:
-                self._call_state.graph.add(self.env.createTriple(subject, predicate, object_))
-        return subject
-
-    def make_collection(self, values):
-        prior = self.env.resolve('rdf:nil')
-        for element in reversed(values):
-            this = self.env.createBlankNode()
-            self._call_state.graph.add(self.env.createTriple(
-                subject=this, predicate=self.env.resolve('rdf:first'),
-                object=element))
-            self._call_state.graph.add(self.env.createTriple(
-                subject=this, predicate=self.env.resolve('rdf:rest'), object=prior))
-            prior = this
-        return prior
-
-    def _make_graph(self):
-        return self.env.createGraph()
-
-    def make_datatype_literal(self, values):
-        datatyped = dict(values)
-        return self.env.createLiteral(datatyped['quotedString'],
-                                      datatype = datatyped['dataType'])
-
-    def make_integer_literal(self, values):
-        return self.env.createLiteral(values[0],
-                                      datatype = self.env.resolve('xsd:integer'))
-
-    def make_decimal_literal(self, values):
-        return self.env.createLiteral(values[0],
-                                      datatype = self.env.resolve('xsd:decimal'))
-
-    def make_double_literal(self, values):
-        return self.env.createLiteral(values[0],
-                                      datatype = self.env.resolve('xsd:double'))
-
-    def make_boolean_literal(self, values):
-        return self.env.createLiteral(values[0],
-                                      datatype = self.env.resolve('xsd:boolean'))
-
-    def make_language_literal(self, values):
-        languageable = dict(values)
-        return self.env.createLiteral(languageable['quotedString'],
-                                      language = languageable.get('language'))
-
-classic_turtle_parser = ClassicTurtleParser()
-
 TriplesClause = namedtuple('TriplesClause', ['subject', 'predicate_objects'])
 
 PredicateObject = namedtuple('PredicateObject', ['predicate', 'object'])
@@ -366,19 +218,19 @@ class TurtleParser(BaseLeplParser):
     def __init__(self, environment=None):
         super(TurtleParser, self).__init__(environment)
 
-        UCHAR = (Regexp(ur'\\u([0-9a-fA-F]{4})') |\
-                 Regexp(ur'\\U([0-9a-fA-F]{8})')) >> self.decode_uchar
+        UCHAR = (Regexp(r'\\u([0-9a-fA-F]{4})') |\
+                 Regexp(r'\\U([0-9a-fA-F]{8})')) >> self.decode_uchar
 
-        ECHAR = Regexp(ur'\\([tbnrf\\"\'])') >> self.decode_echar
+        ECHAR = Regexp(r'\\([tbnrf\\"\'])') >> self.decode_echar
 
-        PN_CHARS_BASE = Regexp(ur'[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF'
-                               ur'\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F'
-                               ur'\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD'
-                               ur'\U00010000-\U000EFFFF]')
+        PN_CHARS_BASE = Regexp(u'[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF'
+                               u'\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F'
+                               u'\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD'
+                               u'\U00010000-\U000EFFFF]')
 
         PN_CHARS_U = PN_CHARS_BASE | Literal('_')
 
-        PN_CHARS = PN_CHARS_U | Regexp(ur'[\-0-9\u00B7\u0300-\u036F\u203F-\u2040]')
+        PN_CHARS = PN_CHARS_U | Regexp(u'[\-0-9\u00B7\u0300-\u036F\u203F-\u2040]')
 
         PN_PREFIX = PN_CHARS_BASE & Optional(Star(PN_CHARS | Literal(".")) & PN_CHARS ) > ''.join
 
@@ -395,37 +247,37 @@ class TurtleParser(BaseLeplParser):
             (PN_CHARS | Literal(':') | PLX)
         ) > ''.join
 
-        WS = Regexp(ur'[\t\n\r ]')
+        WS = Regexp(r'[\t\n\r ]')
 
         ANON = ~(Literal('[') & Star(WS) & Literal(']'))
 
         NIL = Literal('(') & Star(WS) & Literal(')')
 
         STRING_LITERAL1 = (Literal("'") &\
-                           Star(Regexp(ur"[^'\\\n\r]") | ECHAR | UCHAR ) &\
+                           Star(Regexp(r"[^'\\\n\r]") | ECHAR | UCHAR ) &\
                            Literal("'")) > self.string_contents
 
         STRING_LITERAL2 = (Literal('"') &\
-                           Star(Regexp(ur'[^"\\\n\r]') | ECHAR | UCHAR ) &\
+                           Star(Regexp(r'[^"\\\n\r]') | ECHAR | UCHAR ) &\
                            Literal('"')) > self.string_contents
 
         STRING_LITERAL_LONG1 = (Literal("'''") &\
                                 Star(Optional( Regexp("''?")) &\
-                                     ( Regexp(ur"[^'\\]") | ECHAR | UCHAR ) ) &\
+                                     ( Regexp(r"[^'\\]") | ECHAR | UCHAR ) ) &\
                                 Literal("'''")) > self.string_contents
 
         STRING_LITERAL_LONG2 = (Literal('"""') &\
-                                Star(Optional( Regexp(ur'""?') ) &\
-                                     ( Regexp(ur'[^\"\\]') | ECHAR | UCHAR ) ) &\
+                                Star(Optional( Regexp(r'""?') ) &\
+                                     ( Regexp(r'[^\"\\]') | ECHAR | UCHAR ) ) &\
                                 Literal('"""')) > self.string_contents
 
-        INTEGER = Regexp(ur'[+-]?[0-9]+')
+        INTEGER = Regexp(r'[+-]?[0-9]+')
 
-        DECIMAL = Regexp(ur'[+-]?(?:[0-9]+\.[0-9]+|\.[0-9]+)')
+        DECIMAL = Regexp(r'[+-]?(?:[0-9]+\.[0-9]+|\.[0-9]+)')
 
-        DOUBLE = Regexp(ur'[+-]?(?:[0-9]+\.[0-9]*|\.[0-9]+|[0-9]+)[eE][+-]?[0-9]+')
+        DOUBLE = Regexp(r'[+-]?(?:[0-9]+\.[0-9]*|\.[0-9]+|[0-9]+)[eE][+-]?[0-9]+')
 
-        IRI_REF = (~Literal('<') & (Star(Regexp(ur'[^<>"{}|^`\\\u0000-\u0020]') | UCHAR | ECHAR) > ''.join) & ~Literal('>')) >> self.check_iri_chars
+        IRI_REF = (~Literal('<') & (Star(Regexp(u'[^<>"{}|^`\\\\\u0000-\u0020]') | UCHAR | ECHAR) > ''.join) & ~Literal('>')) >> self.check_iri_chars
 
         PNAME_NS = Optional(PN_PREFIX) & Literal(":")
 
@@ -434,9 +286,9 @@ class TurtleParser(BaseLeplParser):
         BLANK_NODE_LABEL = ~Literal("_:") & PN_LOCAL
 
         LANGTAG = ~Literal("@") & (Literal('base') | Literal('prefix') |\
-                                   Regexp(ur'[a-zA-Z]+(?:-[a-zA-Z0-9]+)*'))
+                                   Regexp(r'[a-zA-Z]+(?:-[a-zA-Z0-9]+)*'))
 
-        intertoken = ~Regexp(ur'[ \t\r\n]+|#[^\r\n]+')[:]
+        intertoken = ~Regexp(r'[ \t\r\n]+|#[^\r\n]+')[:]
         with Separator(intertoken):
             BlankNode = (BLANK_NODE_LABEL >> self.create_blank_node) |\
                 (ANON > self.create_anon_node)
@@ -513,9 +365,7 @@ class TurtleParser(BaseLeplParser):
     def check_iri_chars(self, iri):
         from lepl.matchers.error import make_error
 
-        print repr(iri), re.search(ur'[\u0000-\u0020]', iri)
-
-        if re.search(ur'[\u0000-\u0020<>"{}|^`\\]', iri):
+        if re.search(u'[\u0000-\u0020<>"{}|^`\\\\]', iri):
             return make_error('Invalid \\u-sequence in IRI')
 
         return iri
@@ -666,7 +516,7 @@ class TurtleParser(BaseLeplParser):
             return node
 
     def parse(self, data, sink = None, base = ''):
-        if isinstance(data, str):
+        if isinstance(data, binary_type):
             data = data.decode('utf8')
 
         if sink is None:

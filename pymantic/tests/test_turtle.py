@@ -1,8 +1,9 @@
 import os.path
-from urlparse import urljoin
+from pymantic.compat.moves.urllib.parse import urljoin
 import unittest
 from pymantic.parsers import turtle_parser, ntriples_parser
 import pymantic.rdf as rdf
+from pymantic.compat import text_type
 
 turtle_tests_url =\
     'http://www.w3.org/2013/TurtleTests/'
@@ -52,14 +53,14 @@ class TestTurtleEval(rdf.Resource):
     scalars = frozenset(('mf:name', 'rdfs:comment', 'mf:action', 'mf:result'))
 
     def execute(self, test_case):
-        with open(unicode(self['mf:action']), 'r') as f:
+        with open(text_type(self['mf:action']), 'rb') as f:
             in_data = f.read()
 
-        with open(unicode(self['mf:result']), 'r') as f:
+        with open(text_type(self['mf:result']), 'rb') as f:
             compare_data = f.read()
 
         base = urljoin(turtle_tests_url,
-                       os.path.basename(unicode(self['mf:action'])))
+                       os.path.basename(text_type(self['mf:action'])))
 
         test_graph = turtle_parser.parse(in_data, base=base)
         compare_graph = ntriples_parser.parse_string(compare_data)
@@ -76,11 +77,11 @@ class TestTurtlePositiveSyntax(rdf.Resource):
     scalars = frozenset(('mf:name', 'rdfs:comment', 'mf:action'))
 
     def execute(self, test_case):
-        with open(unicode(self['mf:action']), 'r') as f:
+        with open(text_type(self['mf:action']), 'rb') as f:
             in_data = f.read()
 
         base = urljoin(turtle_tests_url,
-                       os.path.basename(unicode(self['mf:action'])))
+                       os.path.basename(text_type(self['mf:action'])))
         test_graph = turtle_parser.parse(in_data, base=base)
 
 
@@ -91,11 +92,11 @@ class TestTurtleNegativeSyntax(rdf.Resource):
     scalars = frozenset(('mf:name', 'rdfs:comment', 'mf:action'))
 
     def execute(self, test_case):
-        with open(unicode(self['mf:action']), 'r') as f:
+        with open(text_type(self['mf:action']), 'rb') as f:
             in_data = f.read()
 
         base = urljoin(turtle_tests_url,
-                       os.path.basename(unicode(self['mf:action'])))
+                       os.path.basename(text_type(self['mf:action'])))
         with test_case.assertRaises(Exception):
             turtle_parser.parse(in_data, base=base)
 
@@ -107,11 +108,11 @@ class TestTurtleNegativeEval(rdf.Resource):
     scalars = frozenset(('mf:name', 'rdfs:comment', 'mf:action'))
 
     def execute(self, test_case):
-        with open(unicode(self['mf:action']), 'r') as f:
+        with open(text_type(self['mf:action']), 'rb') as f:
             in_data = f.read()
 
         base = urljoin(turtle_tests_url,
-                       os.path.basename(unicode(self['mf:action'])))
+                       os.path.basename(text_type(self['mf:action'])))
         with test_case.assertRaises(Exception):
             turtle_parser.parse(in_data, base=base)
 
@@ -120,7 +121,7 @@ base = os.path.join(os.path.dirname(__file__), 'TurtleTests/')
 
 manifest_name = os.path.join(base, 'manifest.ttl')
 
-with open(manifest_name, 'r') as f:
+with open(manifest_name, 'rb') as f:
     manifest_turtle = f.read()
 
 manifest_graph = turtle_parser.parse(manifest_turtle, base=base)

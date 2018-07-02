@@ -11,10 +11,14 @@ testing_extras = tests_require + [
     'coverage',
     ]
 
+from io import open
+f = open('README.rst', mode='r', encoding='utf8')
+
+
 setup(name='pymantic',
       version=version,
       description="Semantic Web and RDF library for Python",
-      long_description="""""",
+      long_description=f.read(),
       classifiers=['Development Status :: 3 - Alpha',
                    'Intended Audience :: Developers',
                    'License :: OSI Approved :: BSD License',

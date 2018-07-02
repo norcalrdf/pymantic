@@ -29,7 +29,6 @@ setup(name='pymantic',
           'Programming Language :: Python :: 2.7',
           'Programming Language :: Python :: 3.5',
           'Programming Language :: Python :: 3.6',
-          'Programming Language :: Python :: 3.7',
       ],  # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
       keywords='RDF N3 Turtle Semantics Web3.0',
       author='Gavin Carothers, Nick Pilon',

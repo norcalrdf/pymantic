@@ -45,7 +45,6 @@ HEX: /[0-9A-Fa-f]/
 
 class NTriplesTransformer(Transformer):
     def __init__(self):
-        super(NTriplesTransformer, self).__init__()
         self.blank_node_labels = {}
 
     def blank_node_label(self, children):

@@ -78,9 +78,10 @@ def turtle_repr(node, profile, name_map, bnode_name_maker):
             # Simple string.
             name = turtle_string_escape(node.value)
         elif node.datatype == None:
-            # String with language.
+            # String with language?
             name = turtle_string_escape(node.value)
-            name += '@' + node.language
+            if node.language:
+                name += '@' + node.language
         elif node.datatype == profile.resolve('xsd:integer'):
             name = node.value
         elif node.datatype == profile.resolve('xsd:decimal'):

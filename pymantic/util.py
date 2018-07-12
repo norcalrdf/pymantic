@@ -82,10 +82,12 @@ def grouper(iterable, n, fillvalue=None):
 
 
 def process_escape(escape):
+    from .compat import unichr
+
     escape = escape.group(0)[1:]
 
     if escape[0] in ('u', 'U'):
-        return chr(int(escape[1:], 16))
+        return unichr(int(escape[1:], 16))
     else:
         return {
             't': '\t',

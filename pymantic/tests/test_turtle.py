@@ -136,7 +136,7 @@ class TurtleTests(unittest.TestCase):
             return test_case.execute(self)
 
         test_name = 'test_' + test_case['mf:name'].value.replace('-', '_')
-        test_method.__name__ = test_name
+        test_method.__name__ = text_type(test_name)
         test_method.func_name = test_name.encode('utf8')
         test_method.func_doc = u'{} ({})'.format(
             test_case['rdfs:comment'].value,

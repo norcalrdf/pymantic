@@ -1,4 +1,5 @@
 import codecs
+from collections import defaultdict
 
 from lark import (
     Lark,
@@ -45,11 +46,11 @@ HEX: /[0-9A-Fa-f]/
 
 class NTriplesTransformer(Transformer):
     def __init__(self):
-        self.blank_node_labels = {}
+        self.blank_node_labels = defaultdict(BlankNode)
 
     def blank_node_label(self, children):
         bn_label, = children
-        return self.blank_node_labels.get(bn_label, BlankNode())
+        return self.blank_node_labels[bn_label.value]
 
     def iriref(self, children):
         iri = ''.join(children)
@@ -82,7 +83,7 @@ class NTriplesTransformer(Transformer):
                 yield child
 
     def reset(self):
-        self.blank_node_labels = {}
+        self.blank_node_labels = defaultdict(BlankNode)
 
 
 nt_lark = Lark(grammar, parser='lalr', transformer=NTriplesTransformer())

@@ -2,6 +2,7 @@
 
 __all__ = ['en', 'de', 'one_or_none', 'normalize_iri', 'quote_normalized_iri',]
 
+import itertools
 import re
 from .compat.moves.urllib.parse import quote
 from .compat import int2byte
@@ -70,3 +71,10 @@ def smart_urljoin(base, url):
     if url.endswith('#') and not joined.endswith('#'):
         joined += '#'
     return joined
+
+
+def grouper(iterable, n, fillvalue=None):
+    "Collect data into fixed-length chunks or blocks"
+    # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
+    args = [iter(iterable)] * n
+    return itertools.zip_longest(*args, fillvalue=fillvalue)

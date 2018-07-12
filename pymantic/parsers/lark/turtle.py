@@ -45,7 +45,7 @@ grammar = r"""turtle_doc: statement*
 ?statement: directive | triples "."
 directive: prefix_id | base | sparql_prefix | sparql_base
 prefix_id: "@prefix" PNAME_NS IRIREF "."
-base: "@base" IRIREF "."
+base: BASE_DIRECTIVE IRIREF "."
 sparql_base: /BASE/i IRIREF
 sparql_prefix: /PREFIX/i PNAME_NS IRIREF
 triples: subject predicate_object_list
@@ -70,6 +70,7 @@ iri: IRIREF | prefixed_name
 prefixed_name: PNAME_LN | PNAME_NS
 blank_node: BLANK_NODE_LABEL | ANON
 
+BASE_DIRECTIVE: "@base"
 IRIREF: "<" (/[^\x00-\x20<>"{}|^`\\]/ | UCHAR)* ">"
 PNAME_NS: PN_PREFIX? ":"
 PNAME_LN: PNAME_NS PN_LOCAL
@@ -103,7 +104,7 @@ COMMENT: "#" /[^\n]/*
 %ignore COMMENT
 """
 
-turtle_lark = Lark(grammar, start="turtle_doc")
+turtle_lark = Lark(grammar, start="turtle_doc", parser="lalr")
 
 
 LEGAL_IRI = re.compile(r'^[^\x00-\x20<>"{}|^`\\]*$')
@@ -193,14 +194,19 @@ class TurtleTransformer(Transformer):
         return self.prefix_id(children[1:])
 
     def base(self, children):
-        base_iriref, = children
+        base_directive, base_iriref = children
+
+        # Workaround for lalr parser token ambiguity in python 2.7
+        if base_directive.startswith('@') and base_directive != '@base':
+            raise ValueError('Unexpected @base: ' + base_directive)
+
         self.base_iri = smart_urljoin(
             self.base_iri, self.decode_iriref(base_iriref))
 
         return []
 
     def sparql_base(self, children):
-        return self.base(children[1:])
+        return self.base(children)
 
     def blank_node(self, children):
         bn, = children

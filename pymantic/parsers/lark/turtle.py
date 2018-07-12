@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 import re
 
 from lark import (
@@ -82,7 +84,7 @@ STRING_LITERAL_QUOTE: "\"" (/[^\x22\x5C\x0A\x0D]/ | ECHAR | UCHAR)* "\""
 STRING_LITERAL_SINGLE_QUOTE: "'" (/[^\x27\x5C\x0A\x0D]/ | ECHAR | UCHAR)* "'"
 STRING_LITERAL_LONG_SINGLE_QUOTE: "'''" (/'|''/? (/[^'\\]/ | ECHAR | UCHAR))* "'''"
 STRING_LITERAL_LONG_QUOTE: "\"\"\"" (/"|""/? (/[^"\\]/ | ECHAR | UCHAR))* "\"\"\""
-UCHAR: "\\u" HEX~4 | "\U" HEX~8
+UCHAR: "\\u" HEX~4 | "\\U" HEX~8
 ECHAR: "\\" /[tbnrf"'\\]/
 WS: /[\x20\x09\x0D\x0A]/
 ANON: "[" WS* "]"

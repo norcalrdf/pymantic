@@ -78,3 +78,29 @@ def grouper(iterable, n, fillvalue=None):
     # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
     args = [iter(iterable)] * n
     return itertools.zip_longest(*args, fillvalue=fillvalue)
+
+
+def process_escape(escape):
+    escape = escape.group(0)[1:]
+
+    if escape[0] in ('u', 'U'):
+        return chr(int(escape[1:], 16))
+    else:
+        return {
+            't': '\t',
+            'b': '\b',
+            'n': '\n',
+            'r': '\r',
+            'f': '\f',
+            '"': '\"',
+            "'": "\'",
+            "\\": "\\",
+        }.get(escape[0], escape[0])
+
+
+def decode_literal(literal):
+    return re.sub(
+        r'\\u[a-fA-F0-9]{4}|\\U[a-fA-F0-9]{8}|\\[^uU]',
+        process_escape,
+        literal,
+    )

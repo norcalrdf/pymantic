@@ -1,9 +1,9 @@
 import json
 
-from .base import BaseLeplParser
+from .base import BaseParser
 
 
-class PyLDLoader(BaseLeplParser):
+class PyLDLoader(BaseParser):
     class _Loader(object):
         def __init__(self, pyld_loader):
             self.pyld_loader = pyld_loader
@@ -43,11 +43,13 @@ class PyLDLoader(BaseLeplParser):
         elif triple_fragment['type'] == 'blank node':
             return self._call_state.bnodes[triple_fragment['value']]
         elif triple_fragment['type'] == 'literal':
+            language = None
             if 'language' in triple_fragment:
-                raise NotImplemented('Languages not supported yet')
+                language = triple_fragment['language']
             return self.env.createLiteral(
                 value=triple_fragment['value'],
                 datatype=self.env.createNamedNode(triple_fragment['datatype']),
+                language=language
             )
 
     def process_jobj(self, jobj):

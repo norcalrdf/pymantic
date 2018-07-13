@@ -103,3 +103,19 @@ def test_parse_turtle_example_1():
     turtle_parser.parse(ttl, g)
     assert len(g) == 4
 
+
+def test_jsonld_basic():
+    import json
+    jsonld = """[{
+  "@id": "http://example.com/id1",
+  "@type": ["http://example.com/t1"],
+  "http://example.com/term1": ["v1"],
+  "http://example.com/term2": [{"@value": "v2", "@type": "http://example.com/t2"}],
+  "http://example.com/term3": [{"@value": "v3", "@language": "en"}],
+  "http://example.com/term4": [4],
+  "http://example.com/term5": [50, 51]
+}]
+"""
+    g = Graph()
+    jsonld_parser.parse_json(json.loads(jsonld), g)
+    assert len(g) == 7

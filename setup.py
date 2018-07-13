@@ -47,6 +47,7 @@ setup(name='pymantic',
           'rdflib',
           'lepl',
           'lark-parser',
+          'pyld',
           ],
       extras_require={
           'testing': testing_extras,

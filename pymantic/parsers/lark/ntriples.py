@@ -1,4 +1,3 @@
-import codecs
 from collections import defaultdict
 
 from lark import (
@@ -15,6 +14,9 @@ from pymantic.primitives import (
     Literal,
     NamedNode,
     Triple,
+)
+from pymantic.util import (
+    decode_literal,
 )
 
 
@@ -54,7 +56,7 @@ class NTriplesTransformer(Transformer):
 
     def iriref(self, children):
         iri = ''.join(children)
-        iri = codecs.decode(iri, 'unicode-escape')
+        iri = decode_literal(iri)
         return NamedNode(iri)
 
     def literal(self, children):
@@ -63,7 +65,7 @@ class NTriplesTransformer(Transformer):
         type_ = None
 
         quoted_literal = quoted_literal[1:-1]  # Remove ""s
-        literal = codecs.decode(quoted_literal, 'unicode-escape')
+        literal = decode_literal(quoted_literal)
 
         if len(children) == 2 and isinstance(children[1], NamedNode):
             type_ = children[1]

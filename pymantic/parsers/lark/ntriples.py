@@ -1,17 +1,9 @@
-from collections import defaultdict
-
 from lark import (
     Lark,
     Transformer,
 )
 
-from pymantic.compat import (
-    binary_type,
-)
 from pymantic.primitives import (
-    BlankNode,
-    Graph,
-    Literal,
     NamedNode,
     Triple,
 )
@@ -19,15 +11,27 @@ from pymantic.util import (
     decode_literal,
 )
 
+from pymantic.parsers.base import (
+    BaseParser,
+)
+from .base import (
+    LarkParser,
+)
 
-grammar = r"""start: triple? (EOL triple)* EOL?
+
+grammar = r"""triples_start: triple? (EOL triple)* EOL?
 triple: subject predicate object "."
+
+quads_start: quad? (EOL quad)* EOL?
+quad: subject predicate object graph "."
+
 ?subject: iriref
         | BLANK_NODE_LABEL -> blank_node_label
 ?predicate: iriref
 ?object: iriref
        | BLANK_NODE_LABEL -> blank_node_label
        | literal
+?graph: iriref
 literal: STRING_LITERAL_QUOTE ("^^" iriref | LANGTAG)?
 
 LANGTAG: "@" /[a-zA-Z]/+ ("-" /[a-zA-Z0_9]/+)*
@@ -46,79 +50,44 @@ HEX: /[0-9A-Fa-f]/
 """
 
 
-class NTriplesTransformer(Transformer):
-    def __init__(self):
-        self.blank_node_labels = defaultdict(BlankNode)
-
+class NTriplesTransformer(Transformer, BaseParser):
     def blank_node_label(self, children):
         bn_label, = children
-        return self.blank_node_labels[bn_label.value]
+        return self.make_blank_node((bn_label.value,))
 
     def iriref(self, children):
         iri = ''.join(children)
         iri = decode_literal(iri)
-        return NamedNode(iri)
+        return self.make_named_node((iri,))
 
     def literal(self, children):
         quoted_literal = children[0]
-        lang = None
-        type_ = None
 
         quoted_literal = quoted_literal[1:-1]  # Remove ""s
         literal = decode_literal(quoted_literal)
 
         if len(children) == 2 and isinstance(children[1], NamedNode):
             type_ = children[1]
+            return self.make_datatype_literal((literal, type_))
         elif len(children) == 2 and children[1].type == 'LANGTAG':
             lang = children[1][1:]  # Remove @
-
-        return Literal(literal, language=lang, datatype=type_)
+            return self.make_language_literal((literal, lang))
+        else:
+            return self.make_datatype_literal((literal, None))
 
     def triple(self, children):
         subject, predicate, object_ = children
-        t = Triple(subject, predicate, object_)
-        return t
+        return self.make_triple(subject, predicate, object_)
 
-    def start(self, children):
+    def triples_start(self, children):
         for child in children:
             if isinstance(child, Triple):
                 yield child
 
-    def reset(self):
-        self.blank_node_labels = defaultdict(BlankNode)
 
+nt_lark = Lark(
+    grammar, start='triples_start', parser='lalr',
+    transformer=NTriplesTransformer(),
+)
 
-nt_lark = Lark(grammar, parser='lalr', transformer=NTriplesTransformer())
-
-
-def triple_producer(stream):
-    for line in stream:  # Equivalent to readline
-        if line:
-            yield next(nt_lark.parse(line))
-
-
-def parse(string_or_stream, graph=None):
-    if graph is None:
-        graph = Graph()
-
-    try:
-        if hasattr(string_or_stream, 'readline'):
-            triples = triple_producer(string_or_stream)
-        else:
-            # Presume string.
-            triples = nt_lark.parse(string_or_stream)
-
-        graph.addAll(triples)
-    finally:
-        nt_lark.options.transformer.reset()
-
-    return graph
-
-
-def parse_string(string_or_bytes, graph=None):
-    if isinstance(string_or_bytes, binary_type):
-        string = string_or_bytes.decode('utf-8')
-    else:
-        string = string_or_bytes
-
-    return parse(string, graph)
+ntriples_parser = LarkParser(nt_lark)

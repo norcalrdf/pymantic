@@ -35,9 +35,13 @@ class BaseParser(object):
         return self.env.createNamedNode(normalize_iri(values[0]))
 
     def make_blank_node(self, values):
-        if values[0] not in self._call_state.bnodes:
-            self._call_state.bnodes[values[0]] = self.env.createBlankNode()
         return self._call_state.bnodes[values[0]]
+
+    def make_triple(self, subject, predicate, object):
+        return self.env.createTriple(subject, predicate, object)
+
+    def make_quad(self, subject, predicate, object, graph):
+        return self.env.createQuad(subject, predicate, object, graph)
 
     def _prepare_parse(self, graph):
         self._call_state.bnodes = defaultdict(self.env.createBlankNode)

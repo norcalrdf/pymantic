@@ -88,6 +88,22 @@ _:A1 <http://example.com/predicates/2> <http://example.com/objects/1> .
                   #NamedNode('http://example.com/predicates/2'),
                   #NamedNode('http://example.com/objects/1')) in g
 
+def test_parse_nquads_named_nodes():
+    test_nquads = """<http://example.com/objects/1> <http://example.com/predicates/1> <http://example.com/objects/2> <http://example.com/graphs/1> .
+<http://example.com/objects/2> <http://example.com/predicates/2> <http://example.com/objects/1> <http://example.com/graphs/1> .
+"""
+    g = Graph()
+    nquads_parser.parse(StringIO(test_nquads), g)
+    assert len(g) == 2
+    assert Quad(NamedNode('http://example.com/objects/1'),
+                NamedNode('http://example.com/predicates/1'),
+                NamedNode('http://example.com/objects/2'),
+                NamedNode('http://example.com/graphs/1')) in g
+    assert Quad(NamedNode('http://example.com/objects/2'),
+                NamedNode('http://example.com/predicates/2'),
+                NamedNode('http://example.com/objects/1'),
+                NamedNode('http://example.com/graphs/1')) in g
+
 def test_parse_turtle_example_1():
     ttl = """@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix dc: <http://purl.org/dc/elements/1.1/> .

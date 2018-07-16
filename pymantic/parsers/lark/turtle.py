@@ -14,12 +14,13 @@ from lark.lexer import (
 from pymantic.compat import (
     binary_type,
 )
+from pymantic.parsers.base import (
+    BaseParser,
+)
 from pymantic.primitives import (
     BlankNode,
-    Graph,
     Literal,
     NamedNode,
-    RDFEnvironment,
     Triple,
 )
 from pymantic.util import (
@@ -32,8 +33,6 @@ RDF_TYPE = NamedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#type')
 RDF_NIL = NamedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#nil')
 RDF_FIRST = NamedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#first')
 RDF_REST = NamedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#rest')
-
-'http://www.w3.org/2001/XMLSchema#'
 
 XSD_DECIMAL = NamedNode('http://www.w3.org/2001/XMLSchema#decimal')
 XSD_DOUBLE = NamedNode('http://www.w3.org/2001/XMLSchema#double')
@@ -144,11 +143,9 @@ def unpack_predicate_object_list(subject, pol):
             yield Triple(subject, predicate, object_)
 
 
-class TurtleTransformer(Transformer):
+class TurtleTransformer(Transformer, BaseParser):
     def __init__(self, base_iri=''):
-        self.blank_nodes = {}
-        self.env = RDFEnvironment()
-        self.profile = self.env.createProfile()
+        super(TurtleTransformer, self).__init__()
         self.base_iri = base_iri
         self.prefixes = self.profile.prefixes
 
@@ -159,7 +156,7 @@ class TurtleTransformer(Transformer):
         iriref_or_pname, = children
 
         if iriref_or_pname.startswith('<'):
-            return NamedNode(smart_urljoin(
+            return self.make_named_node(smart_urljoin(
                 self.base_iri, self.decode_iriref(iriref_or_pname)))
 
         return iriref_or_pname
@@ -180,7 +177,7 @@ class TurtleTransformer(Transformer):
     def prefixed_name(self, children):
         pname, = children
         ns, _, ln = pname.partition(':')
-        return NamedNode(self.prefixes[ns] + decode_literal(ln))
+        return self.make_named_node(self.prefixes[ns] + decode_literal(ln))
 
     def prefix_id(self, children):
         ns, iriref = children
@@ -212,14 +209,14 @@ class TurtleTransformer(Transformer):
         bn, = children
 
         if bn.type == 'ANON':
-            return BlankNode()
+            return self.make_blank_node()
         elif bn.type == 'BLANK_NODE_LABEL':
-            return self.blank_nodes.setdefault(bn.value, BlankNode())
-
-        raise NotImplementedError()
+            return self.make_blank_node(bn.value)
+        else:
+            raise NotImplementedError()
 
     def blank_node_property_list(self, children):
-        pl_root = BlankNode()
+        pl_root = self.make_blank_node()
         for pl_item in unpack_predicate_object_list(pl_root, children[0]):
             yield pl_item
         yield pl_root
@@ -227,7 +224,7 @@ class TurtleTransformer(Transformer):
     def collection(self, children):
         prev_node = RDF_NIL
         for value in reversed(children):
-            this_bn = BlankNode()
+            this_bn = self.make_blank_node()
             if not isinstance(value, (NamedNode, Literal, BlankNode)):
                 for triple_or_node in value:
                     if isinstance(triple_or_node, Triple):
@@ -235,8 +232,8 @@ class TurtleTransformer(Transformer):
                     else:
                         value = triple_or_node
                         break
-            yield Triple(this_bn, RDF_FIRST, value)
-            yield Triple(this_bn, RDF_REST, prev_node)
+            yield self.make_triple(this_bn, RDF_FIRST, value)
+            yield self.make_triple(this_bn, RDF_REST, prev_node)
             prev_node = this_bn
 
         yield prev_node
@@ -245,13 +242,13 @@ class TurtleTransformer(Transformer):
         numeric, = children
 
         if numeric.type == 'DECIMAL':
-            return Literal(numeric, datatype=XSD_DECIMAL)
-        if numeric.type == 'DOUBLE':
-            return Literal(numeric, datatype=XSD_DOUBLE)
-        if numeric.type == 'INTEGER':
-            return Literal(numeric, datatype=XSD_INTEGER)
-
-        raise NotImplementedError()
+            return self.make_datatype_literal(numeric, datatype=XSD_DECIMAL)
+        elif numeric.type == 'DOUBLE':
+            return self.make_datatype_literal(numeric, datatype=XSD_DOUBLE)
+        elif numeric.type == 'INTEGER':
+            return self.make_datatype_literal(numeric, datatype=XSD_INTEGER)
+        else:
+            raise NotImplementedError()
 
     def rdf_literal(self, children):
         literal_string = children[0]
@@ -260,14 +257,16 @@ class TurtleTransformer(Transformer):
 
         if len(children) == 2 and isinstance(children[1], NamedNode):
             type_ = children[1]
+            return self.make_datatype_literal(literal_string, type_)
         elif len(children) == 2 and children[1].type == 'LANGTAG':
             lang = children[1][1:]  # Remove @
-
-        return Literal(literal_string, language=lang, datatype=type_)
+            return self.make_language_literal(literal_string, lang)
+        else:
+            return self.make_language_literal(literal_string)
 
     def boolean_literal(self, children):
         boolean, = children
-        return Literal(boolean, datatype=XSD_BOOLEAN)
+        return self.make_datatype_literal(boolean, datatype=XSD_BOOLEAN)
 
     def string(self, children):
         literal, = children
@@ -291,9 +290,6 @@ class TurtleTransformer(Transformer):
 
 
 def parse(string_or_stream, graph=None, base=''):
-    if graph is None:
-        graph = Graph()
-
     if hasattr(string_or_stream, 'readline'):
         string = string_or_stream.read()
     else:
@@ -307,6 +303,9 @@ def parse(string_or_stream, graph=None, base=''):
 
     tree = turtle_lark.parse(string)
     tr = TurtleTransformer(base_iri=base)
+    if graph is None:
+        graph = tr._make_graph()
+    tr._prepare_parse(graph)
 
     graph.addAll(tr.transform(tree))
 

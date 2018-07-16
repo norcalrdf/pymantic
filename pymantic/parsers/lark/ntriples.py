@@ -53,12 +53,12 @@ HEX: /[0-9A-Fa-f]/
 class NTriplesTransformer(Transformer, BaseParser):
     def blank_node_label(self, children):
         bn_label, = children
-        return self.make_blank_node((bn_label.value,))
+        return self.make_blank_node(bn_label.value)
 
     def iriref(self, children):
         iri = ''.join(children)
         iri = decode_literal(iri)
-        return self.make_named_node((iri,))
+        return self.make_named_node(iri)
 
     def literal(self, children):
         quoted_literal = children[0]
@@ -68,12 +68,12 @@ class NTriplesTransformer(Transformer, BaseParser):
 
         if len(children) == 2 and isinstance(children[1], NamedNode):
             type_ = children[1]
-            return self.make_datatype_literal((literal, type_))
+            return self.make_datatype_literal(literal, type_)
         elif len(children) == 2 and children[1].type == 'LANGTAG':
             lang = children[1][1:]  # Remove @
-            return self.make_language_literal((literal, lang))
+            return self.make_language_literal(literal, lang)
         else:
-            return self.make_datatype_literal((literal, None))
+            return self.make_language_literal(literal)
 
     def triple(self, children):
         subject, predicate, object_ = children

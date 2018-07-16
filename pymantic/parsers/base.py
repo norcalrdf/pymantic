@@ -1,13 +1,7 @@
 from collections import defaultdict
 from threading import local
 
-from pymantic.compat import (
-    binary_type,
-)
 import pymantic.primitives
-from pymantic.util import (
-    normalize_iri,
-)
 
 
 class BaseParser(object):
@@ -22,20 +16,23 @@ class BaseParser(object):
         self.profile = self.env.createProfile()
         self._call_state = local()
 
-    def make_datatype_literal(self, values):
-        return self.env.createLiteral(value=values[0], datatype=values[1])
+    def make_datatype_literal(self, value, datatype):
+        return self.env.createLiteral(value=value, datatype=datatype)
 
-    def make_language_literal(self, values):
-        if len(values) == 2:
-            return self.env.createLiteral(value=values[0], language=values[1])
+    def make_language_literal(self, value, lang=None):
+        if lang:
+            return self.env.createLiteral(value=value, language=lang)
         else:
-            return self.env.createLiteral(value=values[0])
+            return self.env.createLiteral(value=value)
 
-    def make_named_node(self, values):
-        return self.env.createNamedNode(normalize_iri(values[0]))
+    def make_named_node(self, iri):
+        return self.env.createNamedNode(iri)
 
-    def make_blank_node(self, values):
-        return self._call_state.bnodes[values[0]]
+    def make_blank_node(self, label=None):
+        if label:
+            return self._call_state.bnodes[label]
+        else:
+            return self.env.createBlankNode()
 
     def make_triple(self, subject, predicate, object):
         return self.env.createTriple(subject, predicate, object)

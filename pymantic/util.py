@@ -81,6 +81,23 @@ def grouper(iterable, n, fillvalue=None):
     return zip_longest(*args, fillvalue=fillvalue)
 
 
+ESCAPE_MAP = {
+    't': '\t',
+    'b': '\b',
+    'n': '\n',
+    'r': '\r',
+    'f': '\f',
+    '"': '\"',
+    "'": "\'",
+    "\\": "\\",
+}
+
+
+ECHAR_MAP = {
+    v: '\\' + k for k, v in ESCAPE_MAP.items()
+}
+
+
 def process_escape(escape):
     from .compat import unichr
 
@@ -89,16 +106,7 @@ def process_escape(escape):
     if escape[0] in ('u', 'U'):
         return unichr(int(escape[1:], 16))
     else:
-        return {
-            't': '\t',
-            'b': '\b',
-            'n': '\n',
-            'r': '\r',
-            'f': '\f',
-            '"': '\"',
-            "'": "\'",
-            "\\": "\\",
-        }.get(escape[0], escape[0])
+        return ESCAPE_MAP.get(escape[0], escape[0])
 
 
 def decode_literal(literal):

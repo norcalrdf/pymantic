@@ -53,9 +53,9 @@ def escape_prefix_local(prefix):
 
 def turtle_string_escape(string):
     """Escape a string appropriately for output in turtle form."""
-    from pymantic.parsers.lepl.turtle import TurtleParser
+    from pymantic.util import ECHAR_MAP
 
-    for escaped, value in iteritems(TurtleParser.echar_map):
+    for escaped, value in iteritems(ECHAR_MAP):
         string = string.replace(value, '\\' + escaped)
     return '"' + string + '"'
 

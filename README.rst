@@ -25,7 +25,7 @@ Quick Start
 Requirements
 ============
 
-Pymantic requires Python 2.7 or higher. Lepl is used for the Turtle and NTriples parser. Python requests library is used for HTTP
+Pymantic requires Python 2.7 or higher. lark is used for the Turtle and NTriples parser. Python requests library is used for HTTP
 requests and the SPARQL client. lxml and rdflib are required by the SPARQL client as well.
 
 

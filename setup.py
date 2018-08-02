@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 from pymantic import version
 
@@ -36,7 +36,7 @@ setup(name='pymantic',
       author_email='gavin@carothers.name, npilon@gmail.com',
       url='https://github.com/norcalrdf/pymantic/',
       license='BSD',
-      packages=['pymantic'],
+      packages=find_packages(),
       include_package_data=True,
       zip_safe=False,
       test_suite='nose.collector',

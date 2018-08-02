@@ -8,13 +8,14 @@ Semantic Web and RDF library for Python
 
 Quick Start
 ===========
-:: 
+::
 
+    >>> from __future__ import print_function
     >>> from pymantic.rdf import *
     >>> from pymantic.parsers import turtle_parser
-    >>> from urllib2 import urlopen
+    >>> import requests
     >>> Resource.prefixes['foaf'] = Prefix('http://xmlns.com/foaf/0.1/')
-    >>> graph = turtle_parser.parse(urlopen('https://raw.github.com/norcalrdf/pymantic/master/examples/foaf-bond.ttl'))
+    >>> graph = turtle_parser.parse(requests.get('https://raw.github.com/norcalrdf/pymantic/master/examples/foaf-bond.ttl').text)
     >>> bond_james = Resource(graph, 'http://example.org/stuff/Bond')
     >>> print "%s knows:" % (bond_james.get_scalar('foaf:name'),)
     >>> for person in bond_james['foaf:knows']:
@@ -25,18 +26,20 @@ Quick Start
 Requirements
 ============
 
-Pymantic requires Python 2.7 or higher. lark is used for the Turtle and NTriples parser. Python requests library is used for HTTP
-requests and the SPARQL client. lxml and rdflib are required by the SPARQL client as well.
+``Pymantic`` requires Python 2.7 or higher.
+``lark`` is used for the Turtle and NTriples parser.
+The ``requests`` library is used for HTTP requests and the SPARQL client.
+``lxml`` and ``rdflib`` are required by the SPARQL client as well.
 
 
 Install
 =======
 
-:: 
+::
 
-    $ python setup.py install
+    $ oip install pymantic
 
-This will install Pymantic and all its dependencies.
+This will install ``Pymantic`` and all its dependencies.
 
 
 Documentation

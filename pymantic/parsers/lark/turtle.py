@@ -1,3 +1,17 @@
+"""Parse RDF serialized as turtle files.
+
+Usage::
+
+  from pymantic.parsers.lark import turtle_parser
+  graph = turtle_parser.parse(io.open('a_file.ttl', mode='rt'))
+  graph2 = turtle_parser.parse(\"\"\"@prefix p: <http://a.example/s>.
+  p: <http://a.example/p> <http://a.example/o> .\"\"\")
+
+Unlike :mod:`pymantic.parsers.lark.ntriples`, this parser cannot efficiently
+parse turtle line by line. If a file-like object is provided, the entire file
+will be read into memory and parsed there.
+"""
+
 from __future__ import unicode_literals
 
 import re

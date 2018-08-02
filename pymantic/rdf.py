@@ -502,8 +502,8 @@ class Resource(object):
 class List(Resource):
     """Convenience class for dealing with RDF lists.
 
-    Requires considerable use of as_, due to the utter lack of type information
-    on said lists."""
+    Requires considerable use of ``as_``, due to the utter lack of type
+    information on said lists."""
     scalars = frozenset(('rdf:first', 'rdf:rest'))
 
     def __iter__(self):

@@ -1,3 +1,11 @@
+"""Parse RDF serialized as jsonld
+
+Usage::
+
+  from pymantic.parsers.jsonld import jsonld_parser
+  graph = jsonld_parser.parse_json(json.load(io.open('file.jsonld', mode='rt')))
+"""
+
 import json
 
 from .base import BaseParser

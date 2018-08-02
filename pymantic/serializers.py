@@ -32,10 +32,12 @@ def nt_escape(node_string):
     return output_string
 
 def serialize_ntriples(graph, f):
+    """Serialize some graph to f as ntriples."""
     for triple in graph:
         f.write(str(triple))
 
 def serialize_nquads(dataset, f):
+    """Serialize some graph to f as nquads."""
     for quad in dataset:
         f.write(str(quad))
 
@@ -102,7 +104,7 @@ def turtle_sorted_names(l, name_maker):
 
 def serialize_turtle(graph, f, base=None, profile=None,
                      bnode_name_generator=default_bnode_name_generator):
-    """Serialize some turtle from a graph to f, optionally using base IRI base
+    """Serialize a graph to f as turtle, optionally using base IRI base
     and prefix map from profile. If provided, subject_key will be used to order
     subjects, and predicate_key predicates within a subject."""
 

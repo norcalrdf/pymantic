@@ -8,7 +8,9 @@ Pymantic documentation contents
     index
     modules/primitives
     modules/rdf
-    
+    modules/parsers
+    modules/serializers
+
 
 Indices, glossary and tables
 ============================

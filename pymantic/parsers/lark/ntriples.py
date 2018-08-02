@@ -1,3 +1,15 @@
+"""Parse RDF serialized as ntriples files.
+
+Usage::
+
+  from pymantic.parsers.lark import ntriples_parser
+  graph = ntriples_parser.parse(io.open('a_file.nt', mode='rt'))
+  graph2 = ntriples_parser.parse("<http://a.example/s> <http://a.example/p> <http://a.example/o> .")
+
+If ``.parse()`` is called with a file-like object implementing ``readline``,
+it will efficiently parse line by line rather than parsing the entire file.
+"""
+
 from lark import (
     Lark,
     Transformer,
@@ -51,6 +63,8 @@ HEX: /[0-9A-Fa-f]/
 
 
 class NTriplesTransformer(Transformer, BaseParser):
+    """Transform the tokenized ntriples into RDF primitives.
+    """
     def blank_node_label(self, children):
         bn_label, = children
         return self.make_blank_node(bn_label.value)
@@ -90,4 +104,5 @@ nt_lark = Lark(
     transformer=NTriplesTransformer(),
 )
 
+#! A fully-instantiated ntriples parser
 ntriples_parser = LarkParser(nt_lark)

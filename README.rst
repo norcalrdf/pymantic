@@ -17,9 +17,9 @@ Quick Start
     >>> Resource.prefixes['foaf'] = Prefix('http://xmlns.com/foaf/0.1/')
     >>> graph = turtle_parser.parse(requests.get('https://raw.github.com/norcalrdf/pymantic/master/examples/foaf-bond.ttl').text)
     >>> bond_james = Resource(graph, 'http://example.org/stuff/Bond')
-    >>> print "%s knows:" % (bond_james.get_scalar('foaf:name'),)
+    >>> print("%s knows:" % (bond_james.get_scalar('foaf:name'),))
     >>> for person in bond_james['foaf:knows']:
-            print person.get_scalar('foaf:name')
+            print(person.get_scalar('foaf:name'))
 
 
 
@@ -49,6 +49,6 @@ Generating a local copy of the documentation requires Sphinx:
 
 ::
 
-    $ easy_install Sphinx
+    $ pip install Sphinx
 
 

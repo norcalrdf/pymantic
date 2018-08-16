@@ -52,6 +52,7 @@ XSD_DECIMAL = NamedNode('http://www.w3.org/2001/XMLSchema#decimal')
 XSD_DOUBLE = NamedNode('http://www.w3.org/2001/XMLSchema#double')
 XSD_INTEGER = NamedNode('http://www.w3.org/2001/XMLSchema#integer')
 XSD_BOOLEAN = NamedNode('http://www.w3.org/2001/XMLSchema#boolean')
+XSD_STRING = NamedNode('http://www.w3.org/2001/XMLSchema#string')
 
 
 grammar = r"""turtle_doc: statement*
@@ -276,7 +277,8 @@ class TurtleTransformer(Transformer, BaseParser):
             lang = children[1][1:]  # Remove @
             return self.make_language_literal(literal_string, lang)
         else:
-            return self.make_language_literal(literal_string)
+            return self.make_datatype_literal(
+                literal_string, datatype=XSD_STRING)
 
     def boolean_literal(self, children):
         boolean, = children

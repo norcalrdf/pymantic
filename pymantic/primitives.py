@@ -711,13 +711,44 @@ u"http://www.w3.org/2000/01/rdf-schema#label"
         return iri
 
 
+class Base(dict):
+    """A map that stores bases and provides helper methods to transform IRIs
+    with bases.
+
+Example usage:
+
+>>> base = Base()
+
+Add a mapping for the base:
+
+>>> base['base'] = 'https://example.com/foo#'
+
+Shrink an IRI with base to only the non-base elements
+
+>>> base.shrink('https://example.com/foo#bar')
+u"#bar"
+
+    """
+
+    def shrink(self, iri):
+        """Given an IRI with a particular base -- for example IRI
+        'https://example.com/foo#bar' and base 'https://example.com/foo#' --
+        this method returns '#bar'. If no base is known the original IRI is
+        returned."""
+        for term, v in iteritems(self):
+            if v in iri:
+                return iri.replace(v, "#")
+        return iri
+
+
 class Profile(object):
     """Profiles provide an easy to use context for negotiating between CURIEs,
     Terms and IRIs."""
 
-    def __init__(self, prefixes=None, terms=None):
+    def __init__(self, prefixes=None, terms=None, base=None):
         self.prefixes = prefixes or PrefixMap()
         self.terms = terms or TermMap()
+        self.base = base or Base()
         if 'rdf' not in self.prefixes:
             self.prefixes['rdf'] = \
                 'http://www.w3.org/1999/02/22-rdf-syntax-ns#'

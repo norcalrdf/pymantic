@@ -69,6 +69,9 @@ def turtle_repr(node, profile, name_map, bnode_name_maker, base=None):
             name = '<' + text_type(node) + '>'
         else:
             escape_prefix_local(name)
+        if base:
+            profile.base['base'] = base
+            name = profile.base.shrink(name)
     elif node.interfaceName == 'BlankNode':
         if node in name_map:
             name = name_map[node]
@@ -96,8 +99,6 @@ def turtle_repr(node, profile, name_map, bnode_name_maker, base=None):
             # Unrecognized data-type.
             name = turtle_string_escape(node.value)
             name += '^' + turtle_repr(node.datatype, profile, None, None)
-    if base and base in name:
-        name = name.replace(base, "#")
     return name
 
 def turtle_sorted_names(l, name_maker):

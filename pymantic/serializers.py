@@ -61,7 +61,7 @@ def turtle_string_escape(string):
         string = string.replace(value, '\\' + escaped)
     return '"' + string + '"'
 
-def turtle_repr(node, profile, name_map, bnode_name_maker):
+def turtle_repr(node, profile, name_map, bnode_name_maker, base=None):
     """Turn a node in an RDF graph into its turtle representation."""
     if node.interfaceName == 'NamedNode':
         name = profile.prefixes.shrink(node)
@@ -96,6 +96,8 @@ def turtle_repr(node, profile, name_map, bnode_name_maker):
             # Unrecognized data-type.
             name = turtle_string_escape(node.value)
             name += '^' + turtle_repr(node.datatype, profile, None, None)
+    if base and base in name:
+        name = name.replace(base, "#")
     return name
 
 def turtle_sorted_names(l, name_maker):
@@ -121,7 +123,7 @@ def serialize_turtle(graph, f, base=None, profile=None,
     output_order = []
     bnode_name_maker = bnode_name_generator()
 
-    name_maker = lambda n: turtle_repr(n, profile, name_map, bnode_name_maker)
+    name_maker = lambda n: turtle_repr(n, profile, name_map, bnode_name_maker, base)
 
     from pymantic.rdf import List
 

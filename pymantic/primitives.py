@@ -413,29 +413,35 @@ class Graph(object):
                     if Triple(subject, predicate, object) in self:
                         yield Triple(subject, predicate, object)
                 else:  # s, p, ?var
-                    for triple in itervalues(self._spo[subject][predicate]):
-                        yield triple
+                    if subject in self._spo and predicate in self._spo[subject]:
+                        for triple in itervalues(self._spo[subject][predicate]):
+                            yield triple
             else:  # s, ?var, ???
                 if object:  # s, ?var, o
-                    for triple in itervalues(self._osp[object][subject]):
-                        yield triple
-                else:  # s, ?var, ?var
-                    for predicate in self._spo[subject]:
-                        for triple in \
-                          itervalues(self._spo[subject][predicate]):
+                    if object in self._osp and subject in self._osp[object]:
+                        for triple in itervalues(self._osp[object][subject]):
                             yield triple
+                else:  # s, ?var, ?var
+                    if subject in self._spo:
+                        for predicate in self._spo[subject]:
+                            for triple in \
+                              itervalues(self._spo[subject][predicate]):
+                                yield triple
         elif predicate:  # ?var, p, ???
             if object:  # ?var, p, o
-                for triple in itervalues(self._pos[predicate][object]):
-                    yield triple
-            else:  # ?var, p, ?var
-                for object in self._pos[predicate]:
+                if predicate in self._pos and object in self._pos[predicate]:
                     for triple in itervalues(self._pos[predicate][object]):
                         yield triple
+            else:  # ?var, p, ?var
+                if predicate in self._pos:
+                    for object in self._pos[predicate]:
+                        for triple in itervalues(self._pos[predicate][object]):
+                            yield triple
         elif object:  # ?var, ?var, o
-            for subject in self._osp[object]:
-                for triple in itervalues(self._osp[object][subject]):
-                    yield triple
+            if object in self._osp:
+                for subject in self._osp[object]:
+                    for triple in itervalues(self._osp[object][subject]):
+                        yield triple
         else:
             for triple in self._triples:
                 yield triple

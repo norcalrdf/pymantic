@@ -85,6 +85,13 @@ class TestTurtleRepresentation(TestCase):
         name = self.turtle_repr(node = node, profile = self.profile, name_map = None, bnode_name_maker = None)
         self.assertEqual(name, 'ex:foo')
 
+    def test_named_node_with_base(self):
+        node = self.primitives.NamedNode('https://example.com/foo#bar')
+        name = self.turtle_repr(node = node, profile = self.profile, name_map = None, bnode_name_maker = None,
+                                base='https://example.com/foo#')
+        self.assertEqual(name, '<#bar>')
+
+
 class TestTurtleSerializer(TestCase):
     def setUp(self):
         from pymantic.parsers import turtle_parser

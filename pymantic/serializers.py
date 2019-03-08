@@ -64,14 +64,11 @@ def turtle_string_escape(string):
 def turtle_repr(node, profile, name_map, bnode_name_maker, base=None):
     """Turn a node in an RDF graph into its turtle representation."""
     if node.interfaceName == 'NamedNode':
-        name = profile.prefixes.shrink(node)
-        if name == node:
-            name = '<' + text_type(node) + '>'
+        name = profile.prefixes.shrink(node, base)
+        if name == node or (base and name.startswith("#")):
+            name = '<' + text_type(name) + '>'
         else:
             escape_prefix_local(name)
-        if base:
-            profile.base['base'] = base
-            name = profile.base.shrink(name)
     elif node.interfaceName == 'BlankNode':
         if node in name_map:
             name = name_map[node]

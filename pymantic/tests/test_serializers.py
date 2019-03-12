@@ -85,11 +85,23 @@ class TestTurtleRepresentation(TestCase):
         name = self.turtle_repr(node = node, profile = self.profile, name_map = None, bnode_name_maker = None)
         self.assertEqual(name, 'ex:foo')
 
-    def test_named_node_with_base(self):
+    def test_named_node_with_hash_base(self):
         node = self.primitives.NamedNode('https://example.com/foo#bar')
         name = self.turtle_repr(node = node, profile = self.profile, name_map = None, bnode_name_maker = None,
                                 base='https://example.com/foo#')
         self.assertEqual(name, '<#bar>')
+
+    def test_named_node_with_path_base(self):
+        node = self.primitives.NamedNode('https://example.com/foo')
+        name = self.turtle_repr(node = node, profile = self.profile, name_map = None, bnode_name_maker = None,
+                                base='https://example.com/')
+        self.assertEqual(name, '<foo>')
+
+    def test_named_node_with_multi_path_base(self):
+        node = self.primitives.NamedNode('https://example.com/foo/bar')
+        name = self.turtle_repr(node = node, profile = self.profile, name_map = None, bnode_name_maker = None,
+                                base='https://example.com/')
+        self.assertEqual(name, '<foo/bar>')
 
 
 class TestTurtleSerializer(TestCase):
@@ -119,6 +131,70 @@ class TestTurtleSerializer(TestCase):
         graph2 = self.turtle_parser.parse(f.read())
         f.seek(0)
         self.assertEqual(f.read().strip(), """
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix ex: <http://example.com/> .
+@prefix dc: <http://purl.org/dc/terms/> .
+ex:bar dc:title "Bar" ;
+       .
+
+ex:baz dc:subject ex:foo ;
+       .
+
+ex:foo dc:title "Foo" ;
+       .
+       """.strip())
+
+    def testBaseSerialization(self):
+        basic_turtle = """@prefix dc: <http://purl.org/dc/terms/> .
+        @prefix example: <http://example.com/> .
+
+        example:foo dc:title "Foo" .
+        example:bar dc:title "Bar" .
+        example:baz dc:subject example:foo ."""
+
+        graph = self.turtle_parser.parse(basic_turtle)
+        f = cStringIO()
+        self.profile.setPrefix('dc', self.primitives.NamedNode('http://purl.org/dc/terms/'))
+        self.serialize_turtle(
+            graph = graph, f = f, profile = self.profile,
+            base = 'http://example.com/',
+        )
+        f.seek(0)
+        graph2 = self.turtle_parser.parse(f.read())
+        f.seek(0)
+        self.assertEqual(f.read().strip(), """@base <http://example.com/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dc: <http://purl.org/dc/terms/> .
+<bar> dc:title "Bar" ;
+      .
+
+<baz> dc:subject <foo> ;
+      .
+
+<foo> dc:title "Foo" ;
+      .
+       """.strip())
+
+    def testBaseAndPrefixSerialization(self):
+        basic_turtle = """@prefix dc: <http://purl.org/dc/terms/> .
+        @prefix example: <http://example.com/> .
+
+        example:foo dc:title "Foo" .
+        example:bar dc:title "Bar" .
+        example:baz dc:subject example:foo ."""
+
+        graph = self.turtle_parser.parse(basic_turtle)
+        f = cStringIO()
+        self.profile.setPrefix('ex', self.primitives.NamedNode('http://example.com/'))
+        self.profile.setPrefix('dc', self.primitives.NamedNode('http://purl.org/dc/terms/'))
+        self.serialize_turtle(
+            graph = graph, f = f, profile = self.profile,
+            base = 'http://example.com/',
+        )
+        f.seek(0)
+        graph2 = self.turtle_parser.parse(f.read())
+        f.seek(0)
+        self.assertEqual(f.read().strip(), """@base <http://example.com/> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix ex: <http://example.com/> .
 @prefix dc: <http://purl.org/dc/terms/> .

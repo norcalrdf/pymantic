@@ -413,29 +413,35 @@ class Graph(object):
                     if Triple(subject, predicate, object) in self:
                         yield Triple(subject, predicate, object)
                 else:  # s, p, ?var
-                    for triple in itervalues(self._spo[subject][predicate]):
-                        yield triple
+                    if subject in self._spo and predicate in self._spo[subject]:
+                        for triple in itervalues(self._spo[subject][predicate]):
+                            yield triple
             else:  # s, ?var, ???
                 if object:  # s, ?var, o
-                    for triple in itervalues(self._osp[object][subject]):
-                        yield triple
-                else:  # s, ?var, ?var
-                    for predicate in self._spo[subject]:
-                        for triple in \
-                          itervalues(self._spo[subject][predicate]):
+                    if object in self._osp and subject in self._osp[object]:
+                        for triple in itervalues(self._osp[object][subject]):
                             yield triple
+                else:  # s, ?var, ?var
+                    if subject in self._spo:
+                        for predicate in self._spo[subject]:
+                            for triple in \
+                              itervalues(self._spo[subject][predicate]):
+                                yield triple
         elif predicate:  # ?var, p, ???
             if object:  # ?var, p, o
-                for triple in itervalues(self._pos[predicate][object]):
-                    yield triple
-            else:  # ?var, p, ?var
-                for object in self._pos[predicate]:
+                if predicate in self._pos and object in self._pos[predicate]:
                     for triple in itervalues(self._pos[predicate][object]):
                         yield triple
+            else:  # ?var, p, ?var
+                if predicate in self._pos:
+                    for object in self._pos[predicate]:
+                        for triple in itervalues(self._pos[predicate][object]):
+                            yield triple
         elif object:  # ?var, ?var, o
-            for subject in self._osp[object]:
-                for triple in itervalues(self._osp[object][subject]):
-                    yield triple
+            if object in self._osp:
+                for subject in self._osp[object]:
+                    for triple in itervalues(self._osp[object][subject]):
+                        yield triple
         else:
             for triple in self._triples:
                 yield triple
@@ -607,12 +613,18 @@ class PrefixMap(collections.OrderedDict):
         "http://www.w3.org/2000/01/rdf-schema#label")"""
         return parse_curie(curie, self)
 
-    def shrink(self, iri):
+    def shrink(self, iri, base=None):
         """Given an IRI for which a prefix is known (for example
         "http://www.w3.org/2000/01/rdf-schema#label") this method returns a
-        CURIE (for example "rdfs:label"), if no prefix is known the original
-        IRI is returned."""
-        return to_curie(iri, self)
+        CURIE (for example "rdfs:label"). If no prefix is known the original
+        IRI is returned. If a base is provided and IRI starts with that base,
+        the base is stripped out; an initial `#` is added if needed."""
+        curie = to_curie(iri, self)
+        if base and curie.startswith(base):
+            if base.endswith("#"):
+                return curie.replace(base, "#")
+            return curie.replace(base, "")
+        return curie
 
     def addAll(self, other, override=False):
         if override:

@@ -618,12 +618,13 @@ class PrefixMap(collections.OrderedDict):
         "http://www.w3.org/2000/01/rdf-schema#label") this method returns a
         CURIE (for example "rdfs:label"). If no prefix is known the original
         IRI is returned. If a base is provided and IRI starts with that base,
-        the base is stripped out and replaced with '#'."""
+        the base is stripped out; an initial `#` is added if needed."""
         curie = to_curie(iri, self)
         if base and curie.startswith(base):
-            return curie.replace(base, "#")
-        else:
-            return curie
+            if base.endswith("#"):
+                return curie.replace(base, "#")
+            return curie.replace(base, "")
+        return curie
 
     def addAll(self, other, override=False):
         if override:

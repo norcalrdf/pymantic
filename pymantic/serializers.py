@@ -65,7 +65,7 @@ def turtle_repr(node, profile, name_map, bnode_name_maker, base=None):
     """Turn a node in an RDF graph into its turtle representation."""
     if node.interfaceName == 'NamedNode':
         name = profile.prefixes.shrink(node, base)
-        if name == node or (base and name.startswith("#")):
+        if name == node or (base and node.startswith(base)):
             name = '<' + text_type(name) + '>'
         else:
             escape_prefix_local(name)

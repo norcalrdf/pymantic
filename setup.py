@@ -45,7 +45,7 @@ setup(name='pymantic',
           'lxml',
           'pytz',
           'rdflib',
-          'lark-parser',
+          'lark-parser<0.7.0',
           'pyld',
           ],
       extras_require={

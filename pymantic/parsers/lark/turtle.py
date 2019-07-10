@@ -95,8 +95,8 @@ DECIMAL: /[+-]?[0-9]*/ "." /[0-9]+/
 DOUBLE: /[+-]?/ (/[0-9]+/ "." /[0-9]*/ EXPONENT
       | "." /[0-9]+/ EXPONENT | /[0-9]+/ EXPONENT)
 EXPONENT: /[eE][+-]?[0-9]+/
-STRING_LITERAL_QUOTE: "\"" (/[^\x22\x5C\x0A\x0D]/ | ECHAR | UCHAR)* "\""
-STRING_LITERAL_SINGLE_QUOTE: "'" (/[^\x27\x5C\x0A\x0D]/ | ECHAR | UCHAR)* "'"
+STRING_LITERAL_QUOTE: "\"" (/[^\x22\\\x0A\x0D]/ | ECHAR | UCHAR)* "\""
+STRING_LITERAL_SINGLE_QUOTE: "'" (/[^\x27\\\x0A\x0D]/ | ECHAR | UCHAR)* "'"
 STRING_LITERAL_LONG_SINGLE_QUOTE: "'''" (/'|''/? (/[^'\\]/ | ECHAR | UCHAR))* "'''"
 STRING_LITERAL_LONG_QUOTE: "\"\"\"" (/"|""/? (/[^"\\]/ | ECHAR | UCHAR))* "\"\"\""
 UCHAR: "\\u" HEX~4 | "\\U" HEX~8

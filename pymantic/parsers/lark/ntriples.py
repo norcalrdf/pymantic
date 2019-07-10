@@ -49,7 +49,7 @@ literal: STRING_LITERAL_QUOTE ("^^" iriref | LANGTAG)?
 LANGTAG: "@" /[a-zA-Z]/+ ("-" /[a-zA-Z0_9]/+)*
 EOL: /[\r\n]/+
 iriref: "<" (/[^\x00-\x20<>"{}|^`\\]/ | UCHAR)* ">"
-STRING_LITERAL_QUOTE: "\"" (/[^\x22\x5C\x0A\x0D]/ | ECHAR | UCHAR)* "\""
+STRING_LITERAL_QUOTE: "\"" (/[^\x22\\\x0A\x0D]/ | ECHAR | UCHAR)* "\""
 BLANK_NODE_LABEL: "_:" (PN_CHARS_U | "0".."9") ((PN_CHARS | ".")* PN_CHARS)?
 UCHAR: "\\u" HEX~4 | "\\U" HEX~8
 ECHAR: "\\" /[tbnrf"'\\]/

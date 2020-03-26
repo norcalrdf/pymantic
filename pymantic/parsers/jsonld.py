@@ -60,9 +60,9 @@ class PyLDLoader(BaseParser):
                 language=language
             )
 
-    def process_jobj(self, jobj):
+    def process_jobj(self, jobj, options=None):
         from pyld.jsonld import to_rdf
-        dataset = to_rdf(jobj)
+        dataset = to_rdf(jobj, options=options)
         for graph_name, triples in dataset.items():
             graph_iri = (
                 self.env.createNamedNode(graph_name) if

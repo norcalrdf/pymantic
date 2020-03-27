@@ -24,11 +24,11 @@ class PyLDLoader(BaseParser):
             jobj = json.loads(string)
             self.pyld_loader.process_jobj(jobj)
 
-    def parse_json(self, jobj, sink=None):
+    def parse_json(self, jobj, sink=None, options=None):
         if sink is None:
             sink = self._make_graph()
         self._prepare_parse(sink)
-        self.process_jobj(jobj)
+        self.process_jobj(jobj, options)
         self._cleanup_parse()
 
         return sink
@@ -60,9 +60,9 @@ class PyLDLoader(BaseParser):
                 language=language
             )
 
-    def process_jobj(self, jobj):
+    def process_jobj(self, jobj, options=None):
         from pyld.jsonld import to_rdf
-        dataset = to_rdf(jobj)
+        dataset = to_rdf(jobj, options=options)
         for graph_name, triples in dataset.items():
             graph_iri = (
                 self.env.createNamedNode(graph_name) if

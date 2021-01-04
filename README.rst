@@ -10,7 +10,6 @@ Quick Start
 ===========
 ::
 
-    >>> from __future__ import print_function
     >>> from pymantic.rdf import *
     >>> from pymantic.parsers import turtle_parser
     >>> import requests
@@ -26,7 +25,7 @@ Quick Start
 Requirements
 ============
 
-``pymantic`` requires Python 2.7 or higher.
+``pymantic`` requires Python 3.6 or higher.
 ``lark`` is used for the Turtle and NTriples parser.
 The ``requests`` library is used for HTTP requests and the SPARQL client.
 ``lxml`` and ``rdflib`` are required by the SPARQL client as well.

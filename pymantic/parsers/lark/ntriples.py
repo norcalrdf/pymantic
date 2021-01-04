@@ -62,7 +62,7 @@ HEX: /[0-9A-Fa-f]/
 """
 
 
-class NTriplesTransformer(Transformer, BaseParser):
+class NTriplesTransformer(BaseParser, Transformer):
     """Transform the tokenized ntriples into RDF primitives.
     """
     def blank_node_label(self, children):

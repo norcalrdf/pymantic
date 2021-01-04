@@ -12,6 +12,7 @@ class BaseParser(object):
     """
 
     def __init__(self, environment=None):
+        super().__init__()
         self.env = environment or pymantic.primitives.RDFEnvironment()
         self.profile = self.env.createProfile()
         self._call_state = local()

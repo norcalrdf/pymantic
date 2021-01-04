@@ -43,16 +43,16 @@ from pymantic.util import (
     decode_literal,
 )
 
-RDF_TYPE = NamedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#type')
-RDF_NIL = NamedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#nil')
-RDF_FIRST = NamedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#first')
-RDF_REST = NamedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#rest')
+RDF_TYPE = NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+RDF_NIL = NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#nil")
+RDF_FIRST = NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#first")
+RDF_REST = NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#rest")
 
-XSD_DECIMAL = NamedNode('http://www.w3.org/2001/XMLSchema#decimal')
-XSD_DOUBLE = NamedNode('http://www.w3.org/2001/XMLSchema#double')
-XSD_INTEGER = NamedNode('http://www.w3.org/2001/XMLSchema#integer')
-XSD_BOOLEAN = NamedNode('http://www.w3.org/2001/XMLSchema#boolean')
-XSD_STRING = NamedNode('http://www.w3.org/2001/XMLSchema#string')
+XSD_DECIMAL = NamedNode("http://www.w3.org/2001/XMLSchema#decimal")
+XSD_DOUBLE = NamedNode("http://www.w3.org/2001/XMLSchema#double")
+XSD_INTEGER = NamedNode("http://www.w3.org/2001/XMLSchema#integer")
+XSD_BOOLEAN = NamedNode("http://www.w3.org/2001/XMLSchema#boolean")
+XSD_STRING = NamedNode("http://www.w3.org/2001/XMLSchema#string")
 
 
 grammar = r"""turtle_doc: statement*
@@ -126,7 +126,7 @@ LEGAL_IRI = re.compile(r'^[^\x00-\x20<>"{}|^`\\]*$')
 
 def validate_iri(iri):
     if not LEGAL_IRI.match(iri):
-        raise ValueError('Illegal characters in IRI: ' + iri)
+        raise ValueError("Illegal characters in IRI: " + iri)
     return iri
 
 
@@ -141,7 +141,7 @@ def unpack_predicate_object_list(subject, pol):
 
     for predicate, object_ in grouper(pol, 2):
         if isinstance(predicate, Token):
-            if predicate.value != 'a':
+            if predicate.value != "a":
                 raise ValueError(predicate)
             predicate = RDF_TYPE
 
@@ -158,9 +158,9 @@ def unpack_predicate_object_list(subject, pol):
             yield Triple(subject, predicate, object_)
 
 
-class TurtleTransformer(Transformer, BaseParser):
-    def __init__(self, base_iri=''):
-        super(TurtleTransformer, self).__init__()
+class TurtleTransformer(BaseParser, Transformer):
+    def __init__(self, base_iri=""):
+        super().__init__()
         self.base_iri = base_iri
         self.prefixes = self.profile.prefixes
 
@@ -168,11 +168,12 @@ class TurtleTransformer(Transformer, BaseParser):
         return validate_iri(decode_literal(iriref[1:-1]))
 
     def iri(self, children):
-        iriref_or_pname, = children
+        (iriref_or_pname,) = children
 
-        if iriref_or_pname.startswith('<'):
-            return self.make_named_node(smart_urljoin(
-                self.base_iri, self.decode_iriref(iriref_or_pname)))
+        if iriref_or_pname.startswith("<"):
+            return self.make_named_node(
+                smart_urljoin(self.base_iri, self.decode_iriref(iriref_or_pname))
+            )
 
         return iriref_or_pname
 
@@ -190,8 +191,8 @@ class TurtleTransformer(Transformer, BaseParser):
                     yield triple_or_node
 
     def prefixed_name(self, children):
-        pname, = children
-        ns, _, ln = pname.partition(':')
+        (pname,) = children
+        ns, _, ln = pname.partition(":")
         return self.make_named_node(self.prefixes[ns] + decode_literal(ln))
 
     def prefix_id(self, children):
@@ -209,11 +210,10 @@ class TurtleTransformer(Transformer, BaseParser):
         base_directive, base_iriref = children
 
         # Workaround for lalr parser token ambiguity in python 2.7
-        if base_directive.startswith('@') and base_directive != '@base':
-            raise ValueError('Unexpected @base: ' + base_directive)
+        if base_directive.startswith("@") and base_directive != "@base":
+            raise ValueError("Unexpected @base: " + base_directive)
 
-        self.base_iri = smart_urljoin(
-            self.base_iri, self.decode_iriref(base_iriref))
+        self.base_iri = smart_urljoin(self.base_iri, self.decode_iriref(base_iriref))
 
         return []
 
@@ -221,11 +221,11 @@ class TurtleTransformer(Transformer, BaseParser):
         return self.base(children)
 
     def blank_node(self, children):
-        bn, = children
+        (bn,) = children
 
-        if bn.type == 'ANON':
+        if bn.type == "ANON":
             return self.make_blank_node()
-        elif bn.type == 'BLANK_NODE_LABEL':
+        elif bn.type == "BLANK_NODE_LABEL":
             return self.make_blank_node(bn.value)
         else:
             raise NotImplementedError()
@@ -254,13 +254,13 @@ class TurtleTransformer(Transformer, BaseParser):
         yield prev_node
 
     def numeric_literal(self, children):
-        numeric, = children
+        (numeric,) = children
 
-        if numeric.type == 'DECIMAL':
+        if numeric.type == "DECIMAL":
             return self.make_datatype_literal(numeric, datatype=XSD_DECIMAL)
-        elif numeric.type == 'DOUBLE':
+        elif numeric.type == "DOUBLE":
             return self.make_datatype_literal(numeric, datatype=XSD_DOUBLE)
-        elif numeric.type == 'INTEGER':
+        elif numeric.type == "INTEGER":
             return self.make_datatype_literal(numeric, datatype=XSD_INTEGER)
         else:
             raise NotImplementedError()
@@ -273,26 +273,26 @@ class TurtleTransformer(Transformer, BaseParser):
         if len(children) == 2 and isinstance(children[1], NamedNode):
             type_ = children[1]
             return self.make_datatype_literal(literal_string, type_)
-        elif len(children) == 2 and children[1].type == 'LANGTAG':
+        elif len(children) == 2 and children[1].type == "LANGTAG":
             lang = children[1][1:]  # Remove @
             return self.make_language_literal(literal_string, lang)
         else:
-            return self.make_datatype_literal(
-                literal_string, datatype=XSD_STRING)
+            return self.make_datatype_literal(literal_string, datatype=XSD_STRING)
 
     def boolean_literal(self, children):
-        boolean, = children
+        (boolean,) = children
         return self.make_datatype_literal(boolean, datatype=XSD_BOOLEAN)
 
     def string(self, children):
-        literal, = children
+        (literal,) = children
         if literal.type in (
-            'STRING_LITERAL_QUOTE', 'STRING_LITERAL_SINGLE_QUOTE',
+            "STRING_LITERAL_QUOTE",
+            "STRING_LITERAL_SINGLE_QUOTE",
         ):
             string = decode_literal(literal[1:-1])
         if literal.type in (
-            'STRING_LITERAL_LONG_SINGLE_QUOTE',
-            'STRING_LITERAL_LONG_QUOTE',
+            "STRING_LITERAL_LONG_SINGLE_QUOTE",
+            "STRING_LITERAL_LONG_QUOTE",
         ):
             string = decode_literal(literal[3:-3])
 
@@ -305,15 +305,15 @@ class TurtleTransformer(Transformer, BaseParser):
                     yield triple
 
 
-def parse(string_or_stream, graph=None, base=''):
-    if hasattr(string_or_stream, 'readline'):
+def parse(string_or_stream, graph=None, base=""):
+    if hasattr(string_or_stream, "readline"):
         string = string_or_stream.read()
     else:
         # Presume string.
         string = string_or_stream
 
     if isinstance(string_or_stream, binary_type):
-        string = string_or_stream.decode('utf-8')
+        string = string_or_stream.decode("utf-8")
     else:
         string = string_or_stream
 
@@ -328,5 +328,5 @@ def parse(string_or_stream, graph=None, base=''):
     return graph
 
 
-def parse_string(string_or_bytes, graph=None, base=''):
+def parse_string(string_or_bytes, graph=None, base=""):
     return parse(string_or_bytes, graph, base)

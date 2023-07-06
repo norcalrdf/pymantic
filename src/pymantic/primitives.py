@@ -1,20 +1,28 @@
-__all__ = ['Triple', 'Quad', 'q_as_t', 't_as_q', 'Literal', 'NamedNode',
-           'Prefix', 'BlankNode', 'Graph', 'Dataset', 'PrefixMap', 'TermMap',
-           'parse_curie', 'is_language', 'lang_match', 'to_curie', 'Profile',
-           ]
+__all__ = [
+    "Triple",
+    "Quad",
+    "q_as_t",
+    "t_as_q",
+    "Literal",
+    "NamedNode",
+    "Prefix",
+    "BlankNode",
+    "Graph",
+    "Dataset",
+    "PrefixMap",
+    "TermMap",
+    "parse_curie",
+    "is_language",
+    "lang_match",
+    "to_curie",
+    "Profile",
+]
 
 import collections
 from collections import defaultdict
 
 import datetime
 from operator import itemgetter
-from .compat import (
-    text_type,
-    string_types,
-    iteritems,
-    itervalues,
-    iterkeys,
-)
 
 import pymantic.uri_schemes as uri_schemes
 
@@ -37,10 +45,11 @@ def lang_match(lang1, lang2):
         return True
     elif lang1 is None or lang2 is None:
         return False
-    lang1 = lang1.partition('-')
-    lang2 = lang2.partition('-')
-    return lang1[0] == lang2[0] and (lang1[2] == '' or lang2[2] == '' or
-                                     lang1[2] == lang2[2])
+    lang1 = lang1.partition("-")
+    lang2 = lang2.partition("-")
+    return lang1[0] == lang2[0] and (
+        lang1[2] == "" or lang2[2] == "" or lang1[2] == lang2[2]
+    )
 
 
 def parse_curie(curie, prefixes):
@@ -58,22 +67,22 @@ def parse_curie(curie, prefixes):
     3) If the CURIE's namespace cannot be resolved, a ValueError is raised.
     """
     definitely_curie = False
-    if curie[0] == '[' and curie[-1] == ']':
+    if curie[0] == "[" and curie[-1] == "]":
         curie = curie[1:-1]
         definitely_curie = True
-    prefix, sep, reference = curie.partition(':')
+    prefix, sep, reference = curie.partition(":")
     if not definitely_curie:
         if prefix in uri_schemes.schemes:
             return NamedNode(curie)
-    if not reference and '' in prefixes:
+    if not reference and "" in prefixes:
         reference = prefix
-        return Prefix(prefixes[''])(reference)
+        return Prefix(prefixes[""])(reference)
     if prefix in prefixes:
         return Prefix(prefixes[prefix])(reference)
     else:
         raise ValueError(
-            'Could not parse CURIE prefix {} from prefixes {}'.format(
-                prefix, prefixes))
+            f"Could not parse CURIE prefix {prefix} from prefixes {prefixes}"
+        )
 
 
 def parse_curies(curies, namespaces):
@@ -100,7 +109,7 @@ def to_curie(uri, namespaces, seperator=":", explicit=False):
     if len(matches) > 0:
         prefix, namespace = sorted(matches, key=lambda pair: -len(pair[1]))[0]
         if explicit:
-            return '[' + uri.replace(namespace, prefix + seperator) + ']'
+            return f"[{uri.replace(namespace, prefix + seperator)}]"
         else:
             return uri.replace(namespace, prefix + seperator)
     return uri
@@ -111,36 +120,35 @@ class Triple(tuple):
 
     The Triple interface represents an RDF Triple. The stringification of a
     Triple results in an N-Triples.
-        """
+    """
 
     __slots__ = ()
 
-    _fields = ('subject', 'predicate', 'object')
+    _fields = ("subject", "predicate", "object")
 
     def __new__(_cls, subject, predicate, object):
         return tuple.__new__(_cls, (subject, predicate, object))
 
     @classmethod
     def _make(cls, iterable, new=tuple.__new__, len=len):
-        'Make a new Triple object from a sequence or iterable'
+        "Make a new Triple object from a sequence or iterable"
         result = new(cls, iterable)
         if len(result) != 3:
-            raise TypeError('Expected 3 arguments, got %d' % len(result))
+            raise TypeError("Expected 3 arguments, got %d" % len(result))
         return result
 
     def __repr__(self):
-        return 'Triple(subject=%r, predicate=%r, object=%r)' % self
+        return "Triple(subject=%r, predicate=%r, object=%r)" % self
 
     def _asdict(t):
-        'Return a new dict which maps field names to their values'
-        return {'subject': t[0], 'predicate': t[1], 'object': t[2]}
+        "Return a new dict which maps field names to their values"
+        return {"subject": t[0], "predicate": t[1], "object": t[2]}
 
     def _replace(_self, **kwds):
-        'Return a new Triple object replacing specified fields with new values'
-        result = _self._make(map(kwds.pop, ('subject', 'predicate', 'object'),
-                                 _self))
+        "Return a new Triple object replacing specified fields with new values"
+        result = _self._make(map(kwds.pop, ("subject", "predicate", "object"), _self))
         if kwds:
-            raise ValueError('Got unexpected field names: %r' % kwds.keys())
+            raise ValueError("Got unexpected field names: %r" % kwds.keys())
         return result
 
     def __getnewargs__(self):
@@ -151,45 +159,49 @@ class Triple(tuple):
     object = property(itemgetter(2))
 
     def __str__(self):
-        return self.subject.toNT() + ' ' + self.predicate.toNT() + ' ' + \
-               self.object.toNT() + ' .\n'
+        return f"{self.subject.toNT()} {self.predicate.toNT()} {self.object.toNT()} .\n"
 
     def toString(self):
         return str(self)
 
 
 class Quad(tuple):
-    'Quad(subject, predicate, object, graph)'
+    "Quad(subject, predicate, object, graph)"
 
     __slots__ = ()
 
-    _fields = ('subject', 'predicate', 'object', 'graph')
+    _fields = ("subject", "predicate", "object", "graph")
 
     def __new__(_cls, subject, predicate, object, graph):
         return tuple.__new__(_cls, (subject, predicate, object, graph))
 
     @classmethod
     def _make(cls, iterable, new=tuple.__new__, len=len):
-        'Make a new Quad object from a sequence or iterable'
+        "Make a new Quad object from a sequence or iterable"
         result = new(cls, iterable)
         if len(result) != 4:
-            raise TypeError('Expected 4 arguments, got %d' % len(result))
+            raise TypeError("Expected 4 arguments, got %d" % len(result))
         return result
 
     def __repr__(self):
-        return 'Quad(subject=%r, predicate=%r, object=%r, graph=%r)' % self
+        return "Quad(subject=%r, predicate=%r, object=%r, graph=%r)" % self
 
     def _asdict(t):
-        'Return a new dict which maps field names to their values'
-        return {'subject': t[0], 'predicate': t[1], 'object': t[2],
-                'graph': t[3], }
+        "Return a new dict which maps field names to their values"
+        return {
+            "subject": t[0],
+            "predicate": t[1],
+            "object": t[2],
+            "graph": t[3],
+        }
 
     def _replace(_self, **kwds):
-        'Return a new Quad object replacing specified fields with new values'
-        result = _self._make(map(kwds.pop, ('subject', 'predicate', 'object',
-                                            'graph'), _self))
+        "Return a new Quad object replacing specified fields with new values"
+        result = _self._make(
+            map(kwds.pop, ("subject", "predicate", "object", "graph"), _self)
+        )
         if kwds:
-            raise ValueError('Got unexpected field names: %r' % kwds.keys())
+            raise ValueError("Got unexpected field names: %r" % kwds.keys())
         return result
 
     def __getnewargs__(self):
@@ -201,8 +213,7 @@ class Quad(tuple):
     graph = property(itemgetter(3))
 
     def __str__(self):
-        return str(self.subject) + ' ' + str(self.predicate) + ' ' + \
-               str(self.object) + ' ' + str(self.graph) + ' .\n'
+        return f"{str(self.subject)} {str(self.predicate)} {str(self.object)} {str(self.graph)} .\n"
 
 
 def q_as_t(quad):
@@ -231,15 +242,15 @@ class Literal(tuple):
 
     __slots__ = ()
 
-    _fields = ('value', 'language', 'datatype')
+    _fields = ("value", "language", "datatype")
 
     types = {
-        int: lambda v: (str(v), XSD('integer')),
-        datetime.datetime: lambda v: (v.isoformat(), XSD('dateTime'))
+        int: lambda v: (str(v), XSD("integer")),
+        datetime.datetime: lambda v: (v.isoformat(), XSD("dateTime")),
     }
 
     def __new__(_cls, value, language=None, datatype=None):
-        if not isinstance(value, string_types):
+        if not isinstance(value, str):
             value, auto_datatype = _cls.types[type(value)](value)
             if datatype is None:
                 datatype = auto_datatype
@@ -247,25 +258,24 @@ class Literal(tuple):
 
     @classmethod
     def _make(cls, iterable, new=tuple.__new__, len=len):
-        'Make a new Literal object from a sequence or iterable'
+        "Make a new Literal object from a sequence or iterable"
         result = new(cls, iterable)
         if len(result) != 3:
-            raise TypeError('Expected 3 arguments, got %d' % len(result))
+            raise TypeError("Expected 3 arguments, got %d" % len(result))
         return result
 
     def __repr__(self):
-        return 'Literal(value=%r, language=%r, datatype=%r)' % self
+        return "Literal(value=%r, language=%r, datatype=%r)" % self
 
     def _asdict(t):
-        'Return a new dict which maps field names to their values'
-        return {'value': t[0], 'language': t[1], 'datatype': t[2]}
+        "Return a new dict which maps field names to their values"
+        return {"value": t[0], "language": t[1], "datatype": t[2]}
 
     def _replace(_self, **kwds):
-        'Return a new Literal object replacing specified fields with new value'
-        result = _self._make(map(kwds.pop, ('value', 'language', 'datatype'),
-                                 _self))
+        "Return a new Literal object replacing specified fields with new value"
+        result = _self._make(map(kwds.pop, ("value", "language", "datatype"), _self))
         if kwds:
-            raise ValueError('Got unexpected field names: %r' % kwds.keys())
+            raise ValueError("Got unexpected field names: %r" % kwds.keys())
         return result
 
     def __getnewargs__(self):
@@ -278,19 +288,19 @@ class Literal(tuple):
     interfaceName = "Literal"
 
     def __str__(self):
-        return text_type(self.value)
+        return str(self.value)
 
     def toNT(self):
         quoted = '"' + nt_escape(self.value) + '"'
         if self.language:
-            return quoted + '@' + self.language
+            return f'{quoted}@{self.language}'
         elif self.datatype:
-            return quoted + '^^' + self.datatype.toNT()
+            return f'{quoted}^^{self.datatype.toNT()}'
         else:
             return quoted
 
 
-class NamedNode(text_type):
+class NamedNode(str):
     """A node identified by an IRI."""
 
     interfaceName = "NamedNode"
@@ -300,18 +310,19 @@ class NamedNode(text_type):
         return self
 
     def __repr__(self):
-        return 'NamedNode(' + self.toNT() + ')'
+        return f"NamedNode({self.toNT()})"
 
     def __str__(self):
         return self.value
 
     def toNT(self):
-        return '<' + nt_escape(quote_normalized_iri(self.value)) + '>'
+        return f"<{nt_escape(quote_normalized_iri(self.value))}>"
 
 
 class Prefix(NamedNode):
     """Node that when called returns the the argument conctantated with
     self."""
+
     def __call__(self, name):
         return NamedNode(self + name)
 
@@ -332,13 +343,13 @@ class BlankNode(object):
 
     @property
     def value(self):
-        return ''.join(chr(ord(c) + 17) for c in hex(id(self))[2:])
+        return "".join(chr(ord(c) + 17) for c in hex(id(self))[2:])
 
     def __repr__(self):
-        return 'BlankNode()'
+        return "BlankNode()"
 
     def __str__(self):
-        return '_:' + self.value
+        return "_:" + self.value
 
     def toNT(self):
         return str(self)
@@ -414,33 +425,32 @@ class Graph(object):
                         yield Triple(subject, predicate, object)
                 else:  # s, p, ?var
                     if subject in self._spo and predicate in self._spo[subject]:
-                        for triple in itervalues(self._spo[subject][predicate]):
+                        for triple in self._spo[subject][predicate].values():
                             yield triple
             else:  # s, ?var, ???
                 if object:  # s, ?var, o
                     if object in self._osp and subject in self._osp[object]:
-                        for triple in itervalues(self._osp[object][subject]):
+                        for triple in self._osp[object][subject].values():
                             yield triple
                 else:  # s, ?var, ?var
                     if subject in self._spo:
                         for predicate in self._spo[subject]:
-                            for triple in \
-                              itervalues(self._spo[subject][predicate]):
+                            for triple in self._spo[subject][predicate].values():
                                 yield triple
         elif predicate:  # ?var, p, ???
             if object:  # ?var, p, o
                 if predicate in self._pos and object in self._pos[predicate]:
-                    for triple in itervalues(self._pos[predicate][object]):
+                    for triple in self._pos[predicate][object].values():
                         yield triple
             else:  # ?var, p, ?var
                 if predicate in self._pos:
                     for object in self._pos[predicate]:
-                        for triple in itervalues(self._pos[predicate][object]):
+                        for triple in self._pos[predicate][object].values():
                             yield triple
         elif object:  # ?var, ?var, o
             if object in self._osp:
                 for subject in self._osp[object]:
-                    for triple in itervalues(self._osp[object][subject]):
+                    for triple in self._osp[object][subject].values():
                         yield triple
         else:
             for triple in self._triples:
@@ -485,19 +495,18 @@ class Graph(object):
 
     def subjects(self):
         """Returns an iterator over subjects in the graph."""
-        return iterkeys(self._spo)
+        return self._spo.keys()
 
     def predicates(self):
         """Returns an iterator over predicates in the graph."""
-        return iterkeys(self._pos)
+        return self._pos.keys()
 
     def objects(self):
         """Returns an iterator over objects in the graph."""
-        return iterkeys(self._osp)
+        return self._osp.keys()
 
 
 class Dataset(object):
-
     def __init__(self):
         self._graphs = defaultdict(Graph)
 
@@ -529,12 +538,11 @@ class Dataset(object):
             for match in matches:
                 yield t_as_q(graph, match)
         else:
-            for graph_uri, graph in iteritems(self._graphs):
+            for graph_uri, graph in self._graphs.items():
                 for match in graph.match(subject, predicate, object):
                     yield t_as_q(graph_uri, match)
 
-    def removeMatches(self, subject=None, predicate=None, object=None,
-                      graph=None):
+    def removeMatches(self, subject=None, predicate=None, object=None, graph=None):
         """This method removes those triples in the current graph which match
         the given arguments."""
         for quad in self.match(subject, predicate, object, graph):
@@ -557,12 +565,12 @@ class Dataset(object):
                 graph = self._graphs[item.graph]
                 return q_as_t(item) in graph
         else:
-            for graph in itervalues(self._graphs):
+            for graph in self._graphs.values():
                 if item in graph:
                     return True
 
     def __iter__(self):
-        for graph in itervalues(self._graphs):
+        for graph in self._graphs.values():
             for triple in graph:
                 yield t_as_q(graph.uri, triple)
 
@@ -624,7 +632,7 @@ class PrefixMap(collections.OrderedDict):
         if override:
             self.update(other)
         else:
-            for key, value in iteritems(other):
+            for key, value in other.items():
                 if key not in self:
                     self[key] = value
         return self
@@ -632,49 +640,48 @@ class PrefixMap(collections.OrderedDict):
     def setDefault(self, iri):
         """Set the iri to be used when resolving CURIEs without a prefix, for
         example ":this"."""
-        self[''] = iri
+        self[""] = iri
 
 
 class TermMap(dict):
     """A map of simple string terms to IRIs, and provides methods to turn one
-    in to the other.
+        in to the other.
 
-Example usage:
+    Example usage:
 
->>> terms = TermMap()
+    >>> terms = TermMap()
 
-Create a new term mapping for the term "member"
+    Create a new term mapping for the term "member"
 
->>> terms['member'] = "http://www.w3.org/ns/org#member"
+    >>> terms['member'] = "http://www.w3.org/ns/org#member"
 
-Resolve a known term to an IRI
+    Resolve a known term to an IRI
 
->>> terms.resolve("member")
-u"http://www.w3.org/ns/org#member"
+    >>> terms.resolve("member")
+    u"http://www.w3.org/ns/org#member"
 
-Shrink an IRI for a known term to a term
+    Shrink an IRI for a known term to a term
 
->>> terms.shrink("http://www.w3.org/ns/org#member")
-u"member"
+    >>> terms.shrink("http://www.w3.org/ns/org#member")
+    u"member"
 
-Attempt to resolve an unknown term
+    Attempt to resolve an unknown term
 
->>> terms.resolve("label")
-None
+    >>> terms.resolve("label")
+    None
 
-Set the default term vocabulary and then attempt to resolve an unknown term
+    Set the default term vocabulary and then attempt to resolve an unknown term
 
->>> terms.setDefault("http://www.w3.org/2000/01/rdf-schema#")
->>> terms.resolve("label")
-u"http://www.w3.org/2000/01/rdf-schema#label"
-
-"""
+    >>> terms.setDefault("http://www.w3.org/2000/01/rdf-schema#")
+    >>> terms.resolve("label")
+    u"http://www.w3.org/2000/01/rdf-schema#label"
+    """
 
     def addAll(self, other, override=False):
         if override:
             self.update(other)
         else:
-            for key, value in iteritems(other):
+            for key, value in other.items():
                 if key not in self:
                     self[key] = value
         return self
@@ -689,7 +696,7 @@ u"http://www.w3.org/2000/01/rdf-schema#label"
 
         If no term is known and no default is set, then this method returns
         null."""
-        if hasattr(self, 'default'):
+        if hasattr(self, "default"):
             return self.get(term, self.default + term)
         else:
             return self.get(term)
@@ -705,7 +712,7 @@ u"http://www.w3.org/2000/01/rdf-schema#label"
         "http://www.w3.org/2000/01/rdf-schema#label") this method returns a
         term (for example "label"), if no term is known the original IRI is
         returned."""
-        for term, v in iteritems(self):
+        for term, v in self.items():
             if v == iri:
                 return term
         return iri
@@ -718,11 +725,10 @@ class Profile(object):
     def __init__(self, prefixes=None, terms=None):
         self.prefixes = prefixes or PrefixMap()
         self.terms = terms or TermMap()
-        if 'rdf' not in self.prefixes:
-            self.prefixes['rdf'] = \
-                'http://www.w3.org/1999/02/22-rdf-syntax-ns#'
-        if 'xsd' not in self.prefixes:
-            self.prefixes['xsd'] = 'http://www.w3.org/2001/XMLSchema#'
+        if "rdf" not in self.prefixes:
+            self.prefixes["rdf"] = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+        if "xsd" not in self.prefixes:
+            self.prefixes["xsd"] = "http://www.w3.org/2001/XMLSchema#"
 
     def resolve(self, toresolve):
         """Given an Term or CURIE this method will return an IRI, or null if it
@@ -733,7 +739,7 @@ class Profile(object):
 
         otherwise this method returns the result of calling
         terms.resolve(toresolve)"""
-        if ':' in toresolve:
+        if ":" in toresolve:
             return self.prefixes.resolve(toresolve)
         else:
             return self.terms.resolve(toresolve)
@@ -775,6 +781,7 @@ class Profile(object):
 class RDFEnvironment(Profile):
     """The RDF Environment is an interface which exposes a high level API for
     working with RDF in a programming environment."""
+
     def createBlankNode(self):
         """Creates a new :py:class:`BlankNode`."""
         return BlankNode()
@@ -804,7 +811,7 @@ class RDFEnvironment(Profile):
         return g
 
     def createAction(self, test, action):
-        raise NotImplemented
+        raise NotImplementedError()
 
     def createProfile(self, empty=False):
         if empty:

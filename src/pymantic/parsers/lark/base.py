@@ -1,8 +1,3 @@
-from pymantic.compat import (
-    binary_type,
-)
-
-
 class LarkParser(object):
     """Provide a consistent interface for parsing serialized RDF using one
     of the lark parsers.
@@ -42,7 +37,7 @@ class LarkParser(object):
     def parse_string(self, string_or_bytes, graph=None):
         """Parse a string, decoding it from bytes to UTF-8 if necessary.
         """
-        if isinstance(string_or_bytes, binary_type):
+        if isinstance(string_or_bytes, bytes):
             string = string_or_bytes.decode('utf-8')
         else:
             string = string_or_bytes

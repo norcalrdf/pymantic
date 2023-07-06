@@ -1,8 +1,13 @@
-from pymantic.compat.moves import cStringIO as StringIO
-from nose.tools import *
-from nose.plugins.skip import Skip, SkipTest
-from pymantic.parsers import *
-from pymantic.primitives import *
+from io import StringIO
+
+from pymantic.parsers import (
+    ntriples_parser,
+    nquads_parser,
+    turtle_parser,
+    jsonld_parser,
+)
+from pymantic.primitives import Graph, Triple, NamedNode, Literal, Quad
+
 
 def test_parse_ntriples_named_nodes():
     test_ntriples = """<http://example.com/objects/1> <http://example.com/predicates/1> <http://example.com/objects/2> .
@@ -11,12 +16,23 @@ def test_parse_ntriples_named_nodes():
     g = Graph()
     ntriples_parser.parse(StringIO(test_ntriples), g)
     assert len(g) == 2
-    assert Triple(NamedNode('http://example.com/objects/1'),
-                  NamedNode('http://example.com/predicates/1'),
-                  NamedNode('http://example.com/objects/2')) in g
-    assert Triple(NamedNode('http://example.com/objects/2'),
-                  NamedNode('http://example.com/predicates/2'),
-                  NamedNode('http://example.com/objects/1')) in g
+    assert (
+        Triple(
+            NamedNode("http://example.com/objects/1"),
+            NamedNode("http://example.com/predicates/1"),
+            NamedNode("http://example.com/objects/2"),
+        )
+        in g
+    )
+    assert (
+        Triple(
+            NamedNode("http://example.com/objects/2"),
+            NamedNode("http://example.com/predicates/2"),
+            NamedNode("http://example.com/objects/1"),
+        )
+        in g
+    )
+
 
 def test_parse_ntriples_bare_literals():
     test_ntriples = """<http://example.com/objects/1> <http://example.com/predicates/1> "Foo" .
@@ -25,12 +41,23 @@ def test_parse_ntriples_bare_literals():
     g = Graph()
     ntriples_parser.parse(StringIO(test_ntriples), g)
     assert len(g) == 2
-    assert Triple(NamedNode('http://example.com/objects/1'),
-                  NamedNode('http://example.com/predicates/1'),
-                  Literal("Foo")) in g
-    assert Triple(NamedNode('http://example.com/objects/2'),
-                  NamedNode('http://example.com/predicates/2'),
-                  Literal("Bar")) in g
+    assert (
+        Triple(
+            NamedNode("http://example.com/objects/1"),
+            NamedNode("http://example.com/predicates/1"),
+            Literal("Foo"),
+        )
+        in g
+    )
+    assert (
+        Triple(
+            NamedNode("http://example.com/objects/2"),
+            NamedNode("http://example.com/predicates/2"),
+            Literal("Bar"),
+        )
+        in g
+    )
+
 
 def test_parse_ntriples_language_literals():
     test_ntriples = """<http://example.com/objects/1> <http://example.com/predicates/1> "Foo"@en-US .
@@ -39,12 +66,23 @@ def test_parse_ntriples_language_literals():
     g = Graph()
     ntriples_parser.parse(StringIO(test_ntriples), g)
     assert len(g) == 2
-    assert Triple(NamedNode('http://example.com/objects/1'),
-                  NamedNode('http://example.com/predicates/1'),
-                  Literal("Foo", language='en-US')) in g
-    assert Triple(NamedNode('http://example.com/objects/2'),
-                  NamedNode('http://example.com/predicates/2'),
-                  Literal("Bar", language='fr')) in g
+    assert (
+        Triple(
+            NamedNode("http://example.com/objects/1"),
+            NamedNode("http://example.com/predicates/1"),
+            Literal("Foo", language="en-US"),
+        )
+        in g
+    )
+    assert (
+        Triple(
+            NamedNode("http://example.com/objects/2"),
+            NamedNode("http://example.com/predicates/2"),
+            Literal("Bar", language="fr"),
+        )
+        in g
+    )
+
 
 def test_parse_ntriples_datatyped_literals():
     test_ntriples = """<http://example.com/objects/1> <http://example.com/predicates/1> "Foo"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -53,12 +91,27 @@ def test_parse_ntriples_datatyped_literals():
     g = Graph()
     ntriples_parser.parse(StringIO(test_ntriples), g)
     assert len(g) == 2
-    assert Triple(NamedNode('http://example.com/objects/1'),
-                  NamedNode('http://example.com/predicates/1'),
-                  Literal("Foo", datatype=NamedNode('http://www.w3.org/2001/XMLSchema#string'))) in g
-    assert Triple(NamedNode('http://example.com/objects/2'),
-                  NamedNode('http://example.com/predicates/2'),
-                  Literal("9.99", datatype=NamedNode('http://www.w3.org/2001/XMLSchema#decimal'))) in g
+    assert (
+        Triple(
+            NamedNode("http://example.com/objects/1"),
+            NamedNode("http://example.com/predicates/1"),
+            Literal(
+                "Foo", datatype=NamedNode("http://www.w3.org/2001/XMLSchema#string")
+            ),
+        )
+        in g
+    )
+    assert (
+        Triple(
+            NamedNode("http://example.com/objects/2"),
+            NamedNode("http://example.com/predicates/2"),
+            Literal(
+                "9.99", datatype=NamedNode("http://www.w3.org/2001/XMLSchema#decimal")
+            ),
+        )
+        in g
+    )
+
 
 def test_parse_ntriples_mixed_literals():
     test_ntriples = """<http://example.com/objects/1> <http://example.com/predicates/1> "Foo"@en-US .
@@ -67,12 +120,25 @@ def test_parse_ntriples_mixed_literals():
     g = Graph()
     ntriples_parser.parse(StringIO(test_ntriples), g)
     assert len(g) == 2
-    assert Triple(NamedNode('http://example.com/objects/1'),
-                  NamedNode('http://example.com/predicates/1'),
-                  Literal("Foo", language='en-US')) in g
-    assert Triple(NamedNode('http://example.com/objects/2'),
-                  NamedNode('http://example.com/predicates/2'),
-                  Literal("9.99", datatype=NamedNode('http://www.w3.org/2001/XMLSchema#decimal'))) in g
+    assert (
+        Triple(
+            NamedNode("http://example.com/objects/1"),
+            NamedNode("http://example.com/predicates/1"),
+            Literal("Foo", language="en-US"),
+        )
+        in g
+    )
+    assert (
+        Triple(
+            NamedNode("http://example.com/objects/2"),
+            NamedNode("http://example.com/predicates/2"),
+            Literal(
+                "9.99", datatype=NamedNode("http://www.w3.org/2001/XMLSchema#decimal")
+            ),
+        )
+        in g
+    )
+
 
 def test_parse_ntriples_bnodes():
     test_ntriples = """<http://example.com/objects/1> <http://example.com/predicates/1> _:A1 .
@@ -81,12 +147,13 @@ _:A1 <http://example.com/predicates/2> <http://example.com/objects/1> .
     g = Graph()
     ntriples_parser.parse(StringIO(test_ntriples), g)
     assert len(g) == 2
-    #assert Triple(NamedNode('http://example.com/objects/1'),
-                  #NamedNode('http://example.com/predicates/1'),
-                  #NamedNode('http://example.com/objects/2')) in g
-    #assert Triple(NamedNode('http://example.com/objects/2'),
-                  #NamedNode('http://example.com/predicates/2'),
-                  #NamedNode('http://example.com/objects/1')) in g
+    # assert Triple(NamedNode('http://example.com/objects/1'),
+    # NamedNode('http://example.com/predicates/1'),
+    # NamedNode('http://example.com/objects/2')) in g
+    # assert Triple(NamedNode('http://example.com/objects/2'),
+    # NamedNode('http://example.com/predicates/2'),
+    # NamedNode('http://example.com/objects/1')) in g
+
 
 def test_parse_nquads_named_nodes():
     test_nquads = """<http://example.com/objects/1> <http://example.com/predicates/1> <http://example.com/objects/2> <http://example.com/graphs/1> .
@@ -95,14 +162,25 @@ def test_parse_nquads_named_nodes():
     g = Graph()
     nquads_parser.parse(StringIO(test_nquads), g)
     assert len(g) == 2
-    assert Quad(NamedNode('http://example.com/objects/1'),
-                NamedNode('http://example.com/predicates/1'),
-                NamedNode('http://example.com/objects/2'),
-                NamedNode('http://example.com/graphs/1')) in g
-    assert Quad(NamedNode('http://example.com/objects/2'),
-                NamedNode('http://example.com/predicates/2'),
-                NamedNode('http://example.com/objects/1'),
-                NamedNode('http://example.com/graphs/1')) in g
+    assert (
+        Quad(
+            NamedNode("http://example.com/objects/1"),
+            NamedNode("http://example.com/predicates/1"),
+            NamedNode("http://example.com/objects/2"),
+            NamedNode("http://example.com/graphs/1"),
+        )
+        in g
+    )
+    assert (
+        Quad(
+            NamedNode("http://example.com/objects/2"),
+            NamedNode("http://example.com/predicates/2"),
+            NamedNode("http://example.com/objects/1"),
+            NamedNode("http://example.com/graphs/1"),
+        )
+        in g
+    )
+
 
 def test_parse_turtle_example_1():
     ttl = """@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
@@ -122,6 +200,7 @@ def test_parse_turtle_example_1():
 
 def test_jsonld_basic():
     import json
+
     jsonld = """[{
   "@id": "http://example.com/id1",
   "@type": ["http://example.com/t1"],

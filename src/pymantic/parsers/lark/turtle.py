@@ -12,8 +12,6 @@ parse turtle line by line. If a file-like object is provided, the entire file
 will be read into memory and parsed there.
 """
 
-from __future__ import unicode_literals
-
 import re
 
 from lark import (
@@ -25,9 +23,7 @@ from lark.lexer import (
     Token,
 )
 
-from pymantic.compat import (
-    binary_type,
-)
+
 from pymantic.parsers.base import (
     BaseParser,
 )
@@ -312,7 +308,7 @@ def parse(string_or_stream, graph=None, base=""):
         # Presume string.
         string = string_or_stream
 
-    if isinstance(string_or_stream, binary_type):
+    if isinstance(string_or_stream, bytes):
         string = string_or_stream.decode("utf-8")
     else:
         string = string_or_stream

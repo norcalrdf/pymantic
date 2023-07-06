@@ -43,5 +43,5 @@ nq_lark = Lark(
     transformer=NQuadsTransformer(),
 )
 
-#! A fully-instantiated nquads parser
+# A fully-instantiated nquads parser
 nquads_parser = LarkParser(nq_lark)

@@ -104,5 +104,5 @@ nt_lark = Lark(
     transformer=NTriplesTransformer(),
 )
 
-#! A fully-instantiated ntriples parser
+# A fully-instantiated ntriples parser
 ntriples_parser = LarkParser(nt_lark)

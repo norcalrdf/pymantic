@@ -64,7 +64,7 @@ class URLRetrievalError(Exception):
     pass
 
 
-class Resource(object, metaclass=MetaResource):
+class Resource(metaclass=MetaResource):
     """Provides necessary context and utility methods for accessing a Resource
     in an RDF graph. Resources can be used as-is, but are likely somewhat
     unwieldy, since all predicate access must be by complete URL and produces

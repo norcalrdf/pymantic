@@ -25,7 +25,7 @@ Quick Start
 Requirements
 ============
 
-``pymantic`` requires Python 3.6 or higher.
+``pymantic`` requires Python 3.9 or higher.
 ``lark`` is used for the Turtle and NTriples parser.
 The ``requests`` library is used for HTTP requests and the SPARQL client.
 ``lxml`` and ``rdflib`` are required by the SPARQL client as well.

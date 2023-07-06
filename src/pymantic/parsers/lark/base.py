@@ -1,4 +1,4 @@
-class LarkParser(object):
+class LarkParser:
     """Provide a consistent interface for parsing serialized RDF using one
     of the lark parsers.
     """

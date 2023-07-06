@@ -12,7 +12,7 @@ from .base import BaseParser
 
 
 class PyLDLoader(BaseParser):
-    class _Loader(object):
+    class _Loader:
         def __init__(self, pyld_loader):
             self.pyld_loader = pyld_loader
 

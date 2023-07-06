@@ -30,7 +30,7 @@ class UnknownSPARQLReturnTypeException(Exception):
     pass
 
 
-class _SelectOrUpdate(object):
+class _SelectOrUpdate:
 
     """A server that can run SPARQL queries."""
 
@@ -169,7 +169,7 @@ class _Update(_SelectOrUpdate):
         return True
 
 
-class SPARQLServer(object):
+class SPARQLServer:
 
     """A server that can run SPARQL queries."""
 

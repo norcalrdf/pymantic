@@ -15,7 +15,7 @@ from pymantic.primitives import (
 scheme_re = re.compile(r'[a-zA-Z](?:[a-zA-Z0-9]|\+|-|\.)*')
 
 
-class RDFXMLParser(object):
+class RDFXMLParser:
     RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
 
     def __init__(self):

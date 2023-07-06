@@ -1,9 +1,9 @@
 """Provide an interface to SPARQL query endpoints."""
 
-from .compat.moves import cStringIO as StringIO
+from io import StringIO
 import datetime
 import urllib
-from .compat.moves.urllib import parse as urlparse
+from urllib.parse import urlparse
 
 from lxml import objectify
 import pytz
@@ -34,7 +34,9 @@ class _SelectOrUpdate:
 
     """A server that can run SPARQL queries."""
 
-    def __init__(self, server, sparql, default_graph=None, named_graph=None, *args, **kwargs):
+    def __init__(
+        self, server, sparql, default_graph=None, named_graph=None, *args, **kwargs
+    ):
         self.server = server
         self.sparql = sparql
         self.default_graphs = default_graph
@@ -42,7 +44,7 @@ class _SelectOrUpdate:
         self.headers = dict()
         self.params = dict()
 
-# abstract methods, see Select for the idea
+    # abstract methods, see Select for the idea
     def default_graph_uri(self):
         pass
 
@@ -61,7 +63,7 @@ class _SelectOrUpdate:
     def execute(self):
         log.debug("Querying: %s with: %r", self.server.query_url, self.sparql)
 
-        sparql = self.sparql.encode('utf-8')
+        sparql = self.sparql.encode("utf-8")
 
         if self.default_graphs:
             self.params[self.default_graph_uri()] = self.default_graphs
@@ -72,61 +74,66 @@ class _SelectOrUpdate:
             self.headers["Content-Type"] = self.directContentType() + "; charset=utf-8"
             uri_params = self.params
             data = sparql
-            method = 'post'
+            method = "post"
         elif self.postQueries():
             uri_params = None
             self.params[self.query_or_update()] = sparql
             data = self.params
-            method = 'post'
+            method = "post"
         else:
             # select only
             self.params[self.query_or_update()] = sparql
             uri_params = self.params
             data = None
-            method = 'get'
+            method = "get"
 
         response = self.server.s.request(
-            method, self.server.query_url,
-            params=uri_params, headers=self.headers, data=data,
-            **self.server.requests_kwargs)
+            method,
+            self.server.query_url,
+            params=uri_params,
+            headers=self.headers,
+            data=data,
+            **self.server.requests_kwargs
+        )
         if response.status_code == 204:
             return True
         if response.status_code != 200:
-            raise SPARQLQueryException('%s: %s\nQuery: %s' %
-                                       (response.headers, response.content, self.sparql))
+            raise SPARQLQueryException(
+                "%s: %s\nQuery: %s" % (response.headers, response.content, self.sparql)
+            )
         return response
 
 
 class _Select(_SelectOrUpdate):
 
     acceptable_xml_responses = [
-        'application/rdf+xml',
-        'application/sparql-results+xml',
+        "application/rdf+xml",
+        "application/sparql-results+xml",
     ]
 
     acceptable_json_responses = [
-        'application/sparql-results+json',
-        'text/turtle',
+        "application/sparql-results+json",
+        "text/turtle",
     ]
 
-    def __init__(self, server, query, output='json', *args, **kwargs):
+    def __init__(self, server, query, output="json", *args, **kwargs):
         super(_Select, self).__init__(server, query, *args, **kwargs)
-        if output == 'xml':
-            self.headers['Accept'] = ','.join(self.acceptable_xml_responses)
+        if output == "xml":
+            self.headers["Accept"] = ",".join(self.acceptable_xml_responses)
         else:
-            self.headers['Accept'] = ','.join(self.acceptable_json_responses)
+            self.headers["Accept"] = ",".join(self.acceptable_json_responses)
 
     def default_graph_uri(self):
-        return 'default-graph-uri'
+        return "default-graph-uri"
 
     def named_graph_uri(self):
-        return 'named-graph-uri'
+        return "named-graph-uri"
 
     def query_or_update(self):
-        return 'query'
+        return "query"
 
     def directContentType(self):
-        return 'application/sparql-query'
+        return "application/sparql-query"
 
     def postQueries(self):
         return self.server.post_queries
@@ -134,36 +141,41 @@ class _Select(_SelectOrUpdate):
     def execute(self):
         response = super(_Select, self).execute()
         format = None
-        if response.headers['content-type'].startswith('application/rdf+xml'):
-            format = 'xml'
-        elif response.headers['content-type'].startswith('text/turtle'):
-            format = 'turtle'
+        if response.headers["content-type"].startswith("application/rdf+xml"):
+            format = "xml"
+        elif response.headers["content-type"].startswith("text/turtle"):
+            format = "turtle"
 
         if format:
             graph = rdflib.ConjunctiveGraph()
             graph.parse(StringIO(response.content), self.query_url, format=format)
             return graph
-        elif response.headers['content-type'].startswith('application/sparql-results+json'):
+        elif response.headers["content-type"].startswith(
+            "application/sparql-results+json"
+        ):
             return json.loads(response.content.decode("utf-8"))
-        elif response.headers['content-type'].startswith('application/sparql-results+xml'):
+        elif response.headers["content-type"].startswith(
+            "application/sparql-results+xml"
+        ):
             return objectify.parse(StringIO(response.content))
         else:
-            raise UnknownSPARQLReturnTypeException('Got content of type: %s' %
-                                                   response.headers['content-type'])
+            raise UnknownSPARQLReturnTypeException(
+                "Got content of type: %s" % response.headers["content-type"]
+            )
 
 
 class _Update(_SelectOrUpdate):
     def default_graph_uri(self):
-        return 'using-graph-uri'
+        return "using-graph-uri"
 
     def named_graph_uri(self):
-        return 'using-named-graph-uri'
+        return "using-named-graph-uri"
 
     def query_or_update(self):
-        return 'update'
+        return "update"
 
     def directContentType(self):
-        return 'application/sparql-update'
+        return "application/sparql-update"
 
     def postQueries(self):
         return True
@@ -179,14 +191,14 @@ class SPARQLServer:
         self.post_directly = post_directly
         self.requests_kwargs = {}
         if verify is not None:
-            self.requests_kwargs = {'verify': verify}
+            self.requests_kwargs = {"verify": verify}
 
         self.s = requests.Session()
 
     acceptable_sparql_responses = [
-        'application/sparql-results+json',
-        'application/rdf+xml',
-        'application/sparql-results+xml',
+        "application/sparql-results+json",
+        "application/rdf+xml",
+        "application/sparql-results+xml",
     ]
 
     def query(self, sparql, *args, **kwargs):
@@ -221,71 +233,90 @@ class UpdateableGraphStore(SPARQLServer):
         self.param_style = param_style
 
     acceptable_graph_responses = [
-        'text/plain',
-        'application/rdf+xml',
-        'text/turtle',
-        'text/rdf+n3',
+        "text/plain",
+        "application/rdf+xml",
+        "text/turtle",
+        "text/rdf+n3",
     ]
 
     def request_url(self, graph_uri):
         if self.param_style:
-            return self.dataset_url + '?' + urllib.urlencode({'graph': graph_uri})
+            return self.dataset_url + "?" + urllib.urlencode({"graph": graph_uri})
         else:
             return urlparse.urljoin(self.dataset_url, urllib.quote_plus(graph_uri))
 
     def get(self, graph_uri):
-        response = self.s.get(self.request_url(graph_uri),
-                              headers={'Accept': ','.join(self.acceptable_graph_responses)},
-                              **self.server.requests_kwargs)
+        response = self.s.get(
+            self.request_url(graph_uri),
+            headers={"Accept": ",".join(self.acceptable_graph_responses)},
+            **self.server.requests_kwargs
+        )
         if response.status_code != 200:
-            raise Exception('Error from Graph Store (%s): %s' %
-                            (response.status_code, response.content))
+            raise Exception(
+                "Error from Graph Store (%s): %s"
+                % (response.status_code, response.content)
+            )
         graph = rdflib.ConjunctiveGraph()
-        if response.headers['content-type'].startswith('text/plain'):
-            graph.parse(StringIO(response.content), publicID=graph_uri, format='nt')
-        elif response.headers['content-type'].startswith('application/rdf+xml'):
-            graph.parse(StringIO(response.content), publicID=graph_uri, format='xml')
-        elif response.headers['content-type'].startswith('text/turtle'):
-            graph.parse(StringIO(response.content), publicID=graph_uri, format='turtle')
-        elif response.headers['content-type'].startswith('text/rdf+n3'):
-            graph.parse(StringIO(response.content), publicID=graph_uri, format='n3')
+        if response.headers["content-type"].startswith("text/plain"):
+            graph.parse(StringIO(response.content), publicID=graph_uri, format="nt")
+        elif response.headers["content-type"].startswith("application/rdf+xml"):
+            graph.parse(StringIO(response.content), publicID=graph_uri, format="xml")
+        elif response.headers["content-type"].startswith("text/turtle"):
+            graph.parse(StringIO(response.content), publicID=graph_uri, format="turtle")
+        elif response.headers["content-type"].startswith("text/rdf+n3"):
+            graph.parse(StringIO(response.content), publicID=graph_uri, format="n3")
         return graph
 
     def delete(self, graph_uri):
-        response = self.s.delete(self.request_url(graph_uri),
-                                 **self.server.request_kwargs)
+        response = self.s.delete(
+            self.request_url(graph_uri), **self.server.request_kwargs
+        )
         if response.status_code not in (200, 202):
-            raise Exception('Error from Graph Store (%s): %s' %
-                            (response.status_code, response.content))
+            raise Exception(
+                "Error from Graph Store (%s): %s"
+                % (response.status_code, response.content)
+            )
 
     def put(self, graph_uri, graph):
-        graph_triples = graph.serialize(format='nt')
-        response = self.s.put(self.request_url(graph_uri),
-                              data=graph_triples,
-                              headers={'content-type': 'text/plain'},
-                              **self.server.requests_kwargs)
+        graph_triples = graph.serialize(format="nt")
+        response = self.s.put(
+            self.request_url(graph_uri),
+            data=graph_triples,
+            headers={"content-type": "text/plain"},
+            **self.server.requests_kwargs
+        )
         if response.status_code not in (200, 201, 204):
-            raise Exception('Error from Graph Store (%s): %s' %
-                            (response.status_code, response.content))
+            raise Exception(
+                "Error from Graph Store (%s): %s"
+                % (response.status_code, response.content)
+            )
 
     def post(self, graph_uri, graph):
-        graph_triples = graph.serialize(format='nt')
+        graph_triples = graph.serialize(format="nt")
         if graph_uri is not None:
-            response = self.s.post(self.request_url(graph_uri),
-                                   data=graph_triples,
-                                   headers={'content-type': 'text/plain'},
-                                   **self.server.requests_kwargs)
+            response = self.s.post(
+                self.request_url(graph_uri),
+                data=graph_triples,
+                headers={"content-type": "text/plain"},
+                **self.server.requests_kwargs
+            )
             if response.status_code not in (200, 201, 204):
-                raise Exception('Error from Graph Store (%s): %s' %
-                                (response.status_code, response.content))
+                raise Exception(
+                    "Error from Graph Store (%s): %s"
+                    % (response.status_code, response.content)
+                )
         else:
-            response = self.s.post(self.dataset_url,
-                                   data=graph_triples,
-                                   headers={'content-type': 'text/plain'},
-                                   **self.server.requests_kwargs)
+            response = self.s.post(
+                self.dataset_url,
+                data=graph_triples,
+                headers={"content-type": "text/plain"},
+                **self.server.requests_kwargs
+            )
             if response.status_code != 201:
-                raise Exception('Error from Graph Store (%s): %s' %
-                                (response.status_code, response.content))
+                raise Exception(
+                    "Error from Graph Store (%s): %s"
+                    % (response.status_code, response.content)
+                )
 
 
 class PatchableGraphStore(UpdateableGraphStore):
@@ -293,13 +324,18 @@ class PatchableGraphStore(UpdateableGraphStore):
     """A graph store that supports the optional PATCH method of updating RDF graphs."""
 
     def patch(self, graph_uri, changeset):
-        graph_xml = changeset.serialize(format='xml', encoding='utf-8')
-        response = self.s.patch(self.request_url(graph_uri), data=graph_xml,
-                                headers={'content-type': 'application/vnd.talis.changeset+xml'},
-                                **self.server.requests_kwargs)
+        graph_xml = changeset.serialize(format="xml", encoding="utf-8")
+        response = self.s.patch(
+            self.request_url(graph_uri),
+            data=graph_xml,
+            headers={"content-type": "application/vnd.talis.changeset+xml"},
+            **self.server.requests_kwargs
+        )
         if response.status_code not in (200, 201, 204):
-            raise Exception('Error from Graph Store (%s): %s' %
-                            (response.status_code, response.content))
+            raise Exception(
+                "Error from Graph Store (%s): %s"
+                % (response.status_code, response.content)
+            )
         return True
 
 
@@ -311,8 +347,13 @@ def changeset(a, b, graph_uri):
     removal, addition = differences(a, b)
     change_set = rdflib.BNode()
     graph.add((change_set, rdflib.RDF.type, cs["ChangeSet"]))
-    graph.add((change_set, cs["createdDate"],
-               rdflib.Literal(datetime.datetime.now(pytz.UTC).isoformat())))
+    graph.add(
+        (
+            change_set,
+            cs["createdDate"],
+            rdflib.Literal(datetime.datetime.now(pytz.UTC).isoformat()),
+        )
+    )
     graph.add((change_set, cs["subjectOfChange"], rdflib.URIRef(graph_uri)))
 
     for stmt in removal:
@@ -338,5 +379,7 @@ def reify(graph, statement):
 def differences(a, b, exclude=[]):
     """Return (removes,adds) excluding statements with a predicate in exclude."""
     exclude = [rdflib.URIRef(excluded) for excluded in exclude]
-    return ([s for s in a if s not in b and s[1] not in exclude],
-            [s for s in b if s not in a and s[1] not in exclude])
+    return (
+        [s for s in a if s not in b and s[1] not in exclude],
+        [s for s in b if s not in a and s[1] not in exclude],
+    )

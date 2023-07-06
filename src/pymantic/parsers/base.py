@@ -4,7 +4,7 @@ from threading import local
 import pymantic.primitives
 
 
-class BaseParser(object):
+class BaseParser:
     """Common base class for all parsers
 
     Provides shared utilities for creating RDF objects, handling IRIs, and

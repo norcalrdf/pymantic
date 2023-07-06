@@ -330,7 +330,7 @@ class Prefix(NamedNode):
 XSD = Prefix("http://www.w3.org/2001/XMLSchema#")
 
 
-class BlankNode(object):
+class BlankNode:
     """A BlankNode is a reference to an unnamed resource (one for which an IRI
     is not known), and may be used in a Triple as a unique reference to that
     unnamed resource.
@@ -359,7 +359,7 @@ def Index():
     return defaultdict(Index)
 
 
-class Graph(object):
+class Graph:
     """A `Graph` holds a set of one or more `Triple`. Implements the Python
     set/sequence API for `in`, `for`, and `len`"""
 
@@ -506,7 +506,7 @@ class Graph(object):
         return self._osp.keys()
 
 
-class Dataset(object):
+class Dataset:
     def __init__(self):
         self._graphs = defaultdict(Graph)
 
@@ -718,7 +718,7 @@ class TermMap(dict):
         return iri
 
 
-class Profile(object):
+class Profile:
     """Profiles provide an easy to use context for negotiating between CURIEs,
     Terms and IRIs."""
 

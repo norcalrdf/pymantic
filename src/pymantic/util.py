@@ -2,8 +2,8 @@
 
 __all__ = ["en", "de", "one_or_none", "normalize_iri", "quote_normalized_iri"]
 
-from urllib.parse import quote
 import re
+from urllib.parse import quote
 
 
 def en(value):

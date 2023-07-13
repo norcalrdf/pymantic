@@ -12,17 +12,10 @@ it will efficiently parse line by line rather than parsing the entire file.
 
 from lark import Lark
 
-from pymantic.primitives import (
-    Quad,
-)
+from pymantic.primitives import Quad
 
-from .base import (
-    LarkParser,
-)
-from .ntriples import (
-    grammar,
-    NTriplesTransformer,
-)
+from .base import LarkParser
+from .ntriples import NTriplesTransformer, grammar
 
 
 class NQuadsTransformer(NTriplesTransformer):

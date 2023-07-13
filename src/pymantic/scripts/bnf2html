@@ -6,13 +6,11 @@
 """
 
 from __future__ import print_function
-
-import re
-import sys
 import argparse
 import logging
-
 from mako.template import Template
+import re
+import sys
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
 

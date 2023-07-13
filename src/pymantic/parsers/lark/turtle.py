@@ -12,32 +12,13 @@ parse turtle line by line. If a file-like object is provided, the entire file
 will be read into memory and parsed there.
 """
 
+from lark import Lark, Transformer, Tree
+from lark.lexer import Token
 import re
 
-from lark import (
-    Lark,
-    Transformer,
-    Tree,
-)
-from lark.lexer import (
-    Token,
-)
-
-
-from pymantic.parsers.base import (
-    BaseParser,
-)
-from pymantic.primitives import (
-    BlankNode,
-    Literal,
-    NamedNode,
-    Triple,
-)
-from pymantic.util import (
-    grouper,
-    smart_urljoin,
-    decode_literal,
-)
+from pymantic.parsers.base import BaseParser
+from pymantic.primitives import BlankNode, Literal, NamedNode, Triple
+from pymantic.util import decode_literal, grouper, smart_urljoin
 
 RDF_TYPE = NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
 RDF_NIL = NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#nil")

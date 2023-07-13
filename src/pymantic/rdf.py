@@ -3,19 +3,19 @@ Python objects."""
 
 import logging
 
-import pymantic.util as util
 from pymantic.primitives import (
-    PrefixMap,
-    Prefix,
-    parse_curie,
-    Profile,
-    NamedNode,
     BlankNode,
-    Triple,
     Literal,
+    NamedNode,
+    Prefix,
+    PrefixMap,
+    Profile,
+    Triple,
     is_language,
     lang_match,
+    parse_curie,
 )
+import pymantic.util as util
 
 log = logging.getLogger(__name__)
 

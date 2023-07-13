@@ -1,10 +1,8 @@
-import os.path
-
 from betamax import Betamax
+import os.path
 import pytest
 
-from pymantic.sparql import SPARQLServer, SPARQLQueryException
-
+from pymantic.sparql import SPARQLQueryException, SPARQLServer
 
 with Betamax.configure() as config:
     config.cassette_library_dir = os.path.join(

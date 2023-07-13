@@ -1,12 +1,12 @@
 from io import StringIO
 
 from pymantic.parsers import (
-    ntriples_parser,
-    nquads_parser,
-    turtle_parser,
     jsonld_parser,
+    nquads_parser,
+    ntriples_parser,
+    turtle_parser,
 )
-from pymantic.primitives import Graph, Triple, NamedNode, Literal, Quad
+from pymantic.primitives import Graph, Literal, NamedNode, Quad, Triple
 
 
 def test_parse_ntriples_named_nodes():

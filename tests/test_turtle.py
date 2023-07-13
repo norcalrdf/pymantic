@@ -1,9 +1,8 @@
 import os.path
+import pytest
 from urllib.parse import urljoin
 
-import pytest
-
-from pymantic.parsers import turtle_parser, ntriples_parser
+from pymantic.parsers import ntriples_parser, turtle_parser
 import pymantic.rdf as rdf
 
 turtle_tests_url = "http://www.w3.org/2013/TurtleTests/"
@@ -16,11 +15,7 @@ prefixes = {
 
 
 def isomorph_triple(triple):
-    from pymantic.primitives import (
-        BlankNode,
-        Literal,
-        NamedNode,
-    )
+    from pymantic.primitives import BlankNode, Literal, NamedNode
 
     if isinstance(triple.subject, BlankNode):
         triple = triple._replace(subject=None)

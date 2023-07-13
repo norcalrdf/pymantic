@@ -1,16 +1,9 @@
+from lxml import etree
 import re
 from threading import local
-from urllib.parse import (
-    urljoin,
-)
+from urllib.parse import urljoin
 
-from lxml import etree
-
-from pymantic.primitives import (
-    BlankNode,
-    NamedNode,
-)
-
+from pymantic.primitives import BlankNode, NamedNode
 
 scheme_re = re.compile(r"[a-zA-Z](?:[a-zA-Z0-9]|\+|-|\.)*")
 

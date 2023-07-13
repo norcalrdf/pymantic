@@ -1,9 +1,8 @@
 from io import StringIO
-
 import pytest
 
 from pymantic.parsers import ntriples_parser
-from pymantic.primitives import Graph, Triple, NamedNode
+from pymantic.primitives import Graph, NamedNode, Triple
 from pymantic.serializers import serialize_ntriples
 
 

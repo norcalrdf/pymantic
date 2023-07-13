@@ -105,7 +105,6 @@ class _SelectOrUpdate:
 
 
 class _Select(_SelectOrUpdate):
-
     acceptable_xml_responses = [
         "application/rdf+xml",
         "application/sparql-results+xml",

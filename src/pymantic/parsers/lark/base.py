@@ -2,6 +2,7 @@ class LarkParser:
     """Provide a consistent interface for parsing serialized RDF using one
     of the lark parsers.
     """
+
     def __init__(self, lark):
         self.lark = lark
 
@@ -22,7 +23,7 @@ class LarkParser:
 
             tf._prepare_parse(graph)
 
-            if hasattr(string_or_stream, 'readline'):
+            if hasattr(string_or_stream, "readline"):
                 triples = self.line_by_line_parser(string_or_stream)
             else:
                 # Presume string.
@@ -35,10 +36,9 @@ class LarkParser:
         return graph
 
     def parse_string(self, string_or_bytes, graph=None):
-        """Parse a string, decoding it from bytes to UTF-8 if necessary.
-        """
+        """Parse a string, decoding it from bytes to UTF-8 if necessary."""
         if isinstance(string_or_bytes, bytes):
-            string = string_or_bytes.decode('utf-8')
+            string = string_or_bytes.decode("utf-8")
         else:
             string = string_or_bytes
 

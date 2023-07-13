@@ -46,36 +46,38 @@ class PyLDLoader(BaseParser):
         super(PyLDLoader, self).__init__(*args, **kwargs)
 
     def process_triple_fragment(self, triple_fragment):
-        if triple_fragment['type'] == 'IRI':
-            return self.env.createNamedNode(triple_fragment['value'])
-        elif triple_fragment['type'] == 'blank node':
-            return self._call_state.bnodes[triple_fragment['value']]
-        elif triple_fragment['type'] == 'literal':
+        if triple_fragment["type"] == "IRI":
+            return self.env.createNamedNode(triple_fragment["value"])
+        elif triple_fragment["type"] == "blank node":
+            return self._call_state.bnodes[triple_fragment["value"]]
+        elif triple_fragment["type"] == "literal":
             language = None
-            if 'language' in triple_fragment:
-                language = triple_fragment['language']
+            if "language" in triple_fragment:
+                language = triple_fragment["language"]
             return self.env.createLiteral(
-                value=triple_fragment['value'],
-                datatype=self.env.createNamedNode(triple_fragment['datatype']),
-                language=language
+                value=triple_fragment["value"],
+                datatype=self.env.createNamedNode(triple_fragment["datatype"]),
+                language=language,
             )
 
     def process_jobj(self, jobj, options=None):
         from pyld.jsonld import to_rdf
+
         dataset = to_rdf(jobj, options=options)
         for graph_name, triples in dataset.items():
             graph_iri = (
-                self.env.createNamedNode(graph_name) if
-                graph_name != '@default' else
-                None
+                self.env.createNamedNode(graph_name)
+                if graph_name != "@default"
+                else None
             )
             for triple in triples:
                 self.make_quad(
-                    (self.process_triple_fragment(triple['subject']),
-                     self.process_triple_fragment(triple['predicate']),
-                     self.process_triple_fragment(triple['object']),
-                     graph_iri,
-                     )
+                    (
+                        self.process_triple_fragment(triple["subject"]),
+                        self.process_triple_fragment(triple["predicate"]),
+                        self.process_triple_fragment(triple["object"]),
+                        graph_iri,
+                    )
                 )
 
 

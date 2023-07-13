@@ -26,8 +26,8 @@ from .ntriples import (
 
 
 class NQuadsTransformer(NTriplesTransformer):
-    """Transform the tokenized nquads into RDF primitives.
-    """
+    """Transform the tokenized nquads into RDF primitives."""
+
     def quad(self, children):
         subject, predicate, object_, graph = children
         return self.make_quad(subject, predicate, object_, graph)
@@ -39,7 +39,9 @@ class NQuadsTransformer(NTriplesTransformer):
 
 
 nq_lark = Lark(
-    grammar, start='quads_start', parser='lalr',
+    grammar,
+    start="quads_start",
+    parser="lalr",
     transformer=NQuadsTransformer(),
 )
 

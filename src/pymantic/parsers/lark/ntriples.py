@@ -63,14 +63,14 @@ HEX: /[0-9A-Fa-f]/
 
 
 class NTriplesTransformer(BaseParser, Transformer):
-    """Transform the tokenized ntriples into RDF primitives.
-    """
+    """Transform the tokenized ntriples into RDF primitives."""
+
     def blank_node_label(self, children):
-        bn_label, = children
+        (bn_label,) = children
         return self.make_blank_node(bn_label.value)
 
     def iriref(self, children):
-        iri = ''.join(children)
+        iri = "".join(children)
         iri = decode_literal(iri)
         return self.make_named_node(iri)
 
@@ -83,7 +83,7 @@ class NTriplesTransformer(BaseParser, Transformer):
         if len(children) == 2 and isinstance(children[1], NamedNode):
             type_ = children[1]
             return self.make_datatype_literal(literal, type_)
-        elif len(children) == 2 and children[1].type == 'LANGTAG':
+        elif len(children) == 2 and children[1].type == "LANGTAG":
             lang = children[1][1:]  # Remove @
             return self.make_language_literal(literal, lang)
         else:
@@ -100,7 +100,9 @@ class NTriplesTransformer(BaseParser, Transformer):
 
 
 nt_lark = Lark(
-    grammar, start='triples_start', parser='lalr',
+    grammar,
+    start="triples_start",
+    parser="lalr",
     transformer=NTriplesTransformer(),
 )
 

@@ -60,7 +60,7 @@ reserved_in_iri = [
 def percent_decode(regmatch):
     encoded = b""
     for group in regmatch.group(0)[1:].split("%"):
-        encoded += int(group, 16).to_bytes(1, 'big')
+        encoded += int(group, 16).to_bytes(1, "big")
     uni = encoded.decode("utf-8")
     for res in reserved_in_iri:
         uni = uni.replace(res, "%%%02X" % ord(res))

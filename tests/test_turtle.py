@@ -64,7 +64,9 @@ class TurtleEvalTest(rdf.Resource):
 
         test_graph = turtle_parser.parse(in_data, base=base)
         compare_graph = ntriples_parser.parse_string(compare_data)
-        assert isomorph(test_graph) == isomorph(compare_graph), self['rdfs:comment'].value
+        assert isomorph(test_graph) == isomorph(compare_graph), self[
+            "rdfs:comment"
+        ].value
 
 
 @rdf.register_class("rdft:TestTurtlePositiveSyntax")

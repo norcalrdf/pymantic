@@ -1,4 +1,13 @@
-from pymantic.primitives import Literal, to_curie, Triple, NamedNode, Graph, Quad, Dataset, BlankNode
+from pymantic.primitives import (
+    Literal,
+    to_curie,
+    Triple,
+    NamedNode,
+    Graph,
+    Quad,
+    Dataset,
+    BlankNode,
+)
 import random
 
 

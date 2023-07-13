@@ -20,14 +20,12 @@ __all__ = [
 
 import collections
 from collections import defaultdict
-
 import datetime
 from operator import itemgetter
 
-import pymantic.uri_schemes as uri_schemes
-
-from pymantic.util import quote_normalized_iri
 from pymantic.serializers import nt_escape
+import pymantic.uri_schemes as uri_schemes
+from pymantic.util import quote_normalized_iri
 
 
 def is_language(lang):

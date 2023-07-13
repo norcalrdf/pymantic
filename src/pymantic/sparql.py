@@ -1,17 +1,15 @@
 """Provide an interface to SPARQL query endpoints."""
 
-from io import StringIO
 import datetime
-import urllib
-from urllib.parse import urlparse
-
+from io import StringIO
+import json
+import logging
 from lxml import objectify
 import pytz
 import rdflib
 import requests
-import json
-
-import logging
+import urllib
+from urllib.parse import urlparse
 
 log = logging.getLogger(__name__)
 

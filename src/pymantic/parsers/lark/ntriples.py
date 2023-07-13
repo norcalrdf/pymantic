@@ -10,26 +10,13 @@ If ``.parse()`` is called with a file-like object implementing ``readline``,
 it will efficiently parse line by line rather than parsing the entire file.
 """
 
-from lark import (
-    Lark,
-    Transformer,
-)
+from lark import Lark, Transformer
 
-from pymantic.primitives import (
-    NamedNode,
-    Triple,
-)
-from pymantic.util import (
-    decode_literal,
-)
+from pymantic.parsers.base import BaseParser
+from pymantic.primitives import NamedNode, Triple
+from pymantic.util import decode_literal
 
-from pymantic.parsers.base import (
-    BaseParser,
-)
-from .base import (
-    LarkParser,
-)
-
+from .base import LarkParser
 
 grammar = r"""triples_start: triple? (EOL triple)* EOL?
 triple: subject predicate object "."

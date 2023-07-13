@@ -1,10 +1,9 @@
 import datetime
-
 import pytest
 
+from pymantic.primitives import Graph, Literal, NamedNode, Prefix, Triple
 import pymantic.rdf
 import pymantic.util
-from pymantic.primitives import Prefix, NamedNode, Graph, Triple, Literal
 
 XSD = Prefix("http://www.w3.org/2001/XMLSchema#")
 

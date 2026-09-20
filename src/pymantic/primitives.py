@@ -378,7 +378,9 @@ class Graph:
         if not isinstance(graph_uri, NamedNode):
             graph_uri = NamedNode(graph_uri)
         self._uri = graph_uri
-        self._triples = set()
+        # A dict used as an insertion-ordered set, so iteration and
+        # serialization follow the order triples were added.
+        self._triples = {}
         self._spo = Index()
         self._pos = Index()
         self._osp = Index()
@@ -396,7 +398,7 @@ class Graph:
     def add(self, triple):
         """Adds the specified Triple to the graph. This method returns the
         graph instance it was called on."""
-        self._triples.add(triple)
+        self._triples[triple] = None
         self._spo[triple.subject][triple.predicate][triple.object] = triple
         self._pos[triple.predicate][triple.object][triple.subject] = triple
         self._osp[triple.object][triple.subject][triple.predicate] = triple
@@ -405,7 +407,7 @@ class Graph:
     def remove(self, triple):
         """Removes the specified Triple from the graph. This method returns the
         graph instance it was called on."""
-        self._triples.remove(triple)
+        del self._triples[triple]
         del self._spo[triple.subject][triple.predicate][triple.object]
         del self._pos[triple.predicate][triple.object][triple.subject]
         del self._osp[triple.object][triple.subject][triple.predicate]

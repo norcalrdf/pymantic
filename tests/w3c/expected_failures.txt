@@ -16,8 +16,6 @@ rdf12/rdf-n-triples/c14n/literal_all_controls	canonical form uses \b and \f esca
 rdf12/rdf-n-triples/c14n/literal_ascii_boundaries	canonical form uses \b and \f escapes for backspace and form feed
 rdf12/rdf-n-triples/c14n/literal_with_BACKSPACE	canonical form uses \b and \f escapes for backspace and form feed
 rdf12/rdf-n-triples/c14n/literal_with_FORM_FEED	canonical form uses \b and \f escapes for backspace and form feed
-rdf12/rdf-n-triples/c14n/literal_with_numeric_escape4	N-Triples serializer writes triples in set-iteration order, not input order (passes or fails with PYTHONHASHSEED)
-rdf12/rdf-n-triples/c14n/literal_with_numeric_escape8	N-Triples serializer writes triples in set-iteration order, not input order (passes or fails with PYTHONHASHSEED)
 rdf12/rdf-n-triples/c14n/literal_with_string_dt	canonical form omits the xsd:string datatype
 rdf12/rdf-n-triples/c14n/literal_with_UTF8_boundaries	canonical form writes non-ASCII characters unescaped
 rdf12/rdf-n-triples/c14n/triple-term-01	RDF 1.2 triple terms not implemented

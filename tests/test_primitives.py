@@ -338,3 +338,60 @@ def test_to_curie_only_shrinks_leading_namespace():
         == "ex:a?u=http://example.com/b"
     )
     assert to_curie("http://other.example/a", namespaces) == "http://other.example/a"
+
+
+def ordered_triples(n=3):
+    return [
+        Triple(
+            NamedNode("http://example.com/s%d" % i),
+            NamedNode("http://example.com/p"),
+            NamedNode("http://example.com/o"),
+        )
+        for i in range(n)
+    ]
+
+
+def test_graph_iterates_in_insertion_order():
+    triples = ordered_triples(20)
+    g = Graph()
+    for t in reversed(triples):
+        g.add(t)
+    assert list(g) == list(reversed(triples))
+    assert list(g.match(None, None, None)) == list(reversed(triples))
+
+
+def test_graph_readding_a_triple_keeps_its_position():
+    a, b, c = ordered_triples(3)
+    g = Graph().add(a).add(b).add(c).add(a)
+    assert list(g) == [a, b, c]
+    assert len(g) == 3
+
+
+def test_graph_remove_keeps_order_of_the_rest():
+    a, b, c = ordered_triples(3)
+    g = Graph().add(a).add(b).add(c)
+    g.remove(b)
+    assert list(g) == [a, c]
+    assert b not in g
+    assert g.toArray() == frozenset((a, c))
+    g.add(b)
+    assert list(g) == [a, c, b]
+
+
+def test_graph_merge_keeps_argument_then_self_order():
+    a, b, c = ordered_triples(3)
+    merged = Graph().add(c).merge(Graph().add(a).add(b))
+    assert list(merged) == [a, b, c]
+
+
+def test_dataset_iterates_in_insertion_order_within_a_graph():
+    graph_name = NamedNode("http://example.com/g")
+    quads = [
+        Quad(t.subject, t.predicate, t.object, graph_name)
+        for t in reversed(ordered_triples(20))
+    ]
+    ds = Dataset()
+    for quad in quads:
+        ds.add(quad)
+    assert list(ds) == quads
+    assert list(ds.match()) == quads

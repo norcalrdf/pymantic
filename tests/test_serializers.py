@@ -730,3 +730,36 @@ def test_turtle_declares_rdf_prefix(primitives, serialize_turtle):
     text = output.getvalue()
     assert "rdf:type" in text
     assert "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" in text
+
+
+def test_ntriples_serializes_in_insertion_order(primitives):
+    p = primitives.NamedNode("http://x/p")
+    o = primitives.NamedNode("http://x/o")
+    graph = primitives.Graph()
+    for name in ("c", "a", "b"):
+        graph.add(primitives.Triple(primitives.NamedNode("http://x/" + name), p, o))
+    f = StringIO()
+    serialize_ntriples(graph, f)
+    assert f.getvalue() == (
+        "<http://x/c> <http://x/p> <http://x/o> .\n"
+        "<http://x/a> <http://x/p> <http://x/o> .\n"
+        "<http://x/b> <http://x/p> <http://x/o> .\n"
+    )
+
+
+def test_nquads_serializes_in_insertion_order(primitives):
+    from pymantic.serializers import serialize_nquads
+
+    p = primitives.NamedNode("http://x/p")
+    o = primitives.NamedNode("http://x/o")
+    g = primitives.NamedNode("http://x/g")
+    dataset = primitives.Dataset()
+    for name in ("c", "a", "b"):
+        dataset.add(primitives.Quad(primitives.NamedNode("http://x/" + name), p, o, g))
+    f = StringIO()
+    serialize_nquads(dataset, f)
+    assert f.getvalue() == (
+        "<http://x/c> <http://x/p> <http://x/o> <http://x/g> .\n"
+        "<http://x/a> <http://x/p> <http://x/o> <http://x/g> .\n"
+        "<http://x/b> <http://x/p> <http://x/o> <http://x/g> .\n"
+    )

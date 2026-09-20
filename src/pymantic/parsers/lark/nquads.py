@@ -22,7 +22,10 @@ class NQuadsTransformer(NTriplesTransformer):
     """Transform the tokenized nquads into RDF primitives."""
 
     def quad(self, children):
-        subject, predicate, object_, graph = children
+        # A statement without a graph label belongs to the default graph,
+        # which pymantic represents as graph=None.
+        subject, predicate, object_ = children[:3]
+        graph = children[3] if len(children) == 4 else None
         return self.make_quad(subject, predicate, object_, graph)
 
     def quads_start(self, children):

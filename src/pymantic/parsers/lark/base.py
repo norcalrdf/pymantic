@@ -8,8 +8,8 @@ class LarkParser:
 
     def line_by_line_parser(self, stream):
         for line in stream:  # Equivalent to readline
-            if line:
-                yield next(self.lark.parse(line))
+            # A comment or blank line yields no statement at all.
+            yield from self.lark.parse(line)
 
     def parse(self, string_or_stream, graph=None):
         """Parse a string or file-like object into RDF primitives and add

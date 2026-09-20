@@ -1,62 +1,6 @@
 # W3C tests pymantic currently fails, one per line: <test id><TAB><reason>.
 # tests/test_w3c.py marks these xfail. Remove a line once the test passes.
 
-rdf11/rdf-n-triples/nt-syntax-file-02	comments not supported in N-Triples grammar
-rdf11/rdf-n-triples/nt-syntax-file-03	comments not supported in N-Triples grammar
-rdf11/rdf-n-triples/nt-syntax-uri-02	comments not supported in N-Triples grammar
-rdf11/rdf-n-triples/nt-syntax-uri-03	comments not supported in N-Triples grammar
-rdf11/rdf-n-triples/nt-syntax-uri-04	comments not supported in N-Triples grammar
-rdf11/rdf-n-triples/nt-syntax-bad-bnode-01	blank node labels containing ':' accepted
-rdf11/rdf-n-triples/nt-syntax-bad-bnode-02	blank node labels containing ':' accepted
-rdf11/rdf-n-triples/nt-syntax-subm-01	comments not supported in N-Triples grammar
-rdf11/rdf-n-triples/comment_following_triple	comments not supported in N-Triples grammar
-rdf11/rdf-n-triples/minimal_whitespace	N-Triples grammar requires whitespace after a blank node subject
-rdf11/rdf-n-quads/nq-syntax-bnode-01	blank node graph labels not accepted in N-Quads
-rdf11/rdf-n-quads/nq-syntax-bnode-02	blank node graph labels not accepted in N-Quads
-rdf11/rdf-n-quads/nq-syntax-bnode-03	blank node graph labels not accepted in N-Quads
-rdf11/rdf-n-quads/nq-syntax-bnode-04	blank node graph labels not accepted in N-Quads
-rdf11/rdf-n-quads/nq-syntax-bnode-05	blank node graph labels not accepted in N-Quads
-rdf11/rdf-n-quads/nq-syntax-bnode-06	blank node graph labels not accepted in N-Quads
-rdf11/rdf-n-quads/nt-syntax-file-02	comments not supported in N-Quads grammar
-rdf11/rdf-n-quads/nt-syntax-file-03	comments not supported in N-Quads grammar
-rdf11/rdf-n-quads/nt-syntax-uri-01	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/nt-syntax-uri-02	comments not supported in N-Quads grammar
-rdf11/rdf-n-quads/nt-syntax-uri-03	comments not supported in N-Quads grammar
-rdf11/rdf-n-quads/nt-syntax-uri-04	comments not supported in N-Quads grammar
-rdf11/rdf-n-quads/nt-syntax-string-01	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/nt-syntax-string-02	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/nt-syntax-string-03	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/nt-syntax-str-esc-01	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/nt-syntax-str-esc-02	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/nt-syntax-str-esc-03	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/nt-syntax-bnode-01	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/nt-syntax-bnode-02	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/nt-syntax-bnode-03	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/nt-syntax-datatypes-01	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/nt-syntax-datatypes-02	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/nt-syntax-subm-01	comments not supported in N-Quads grammar
-rdf11/rdf-n-quads/comment_following_triple	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_all_controls	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_all_punctuation	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_ascii_boundaries	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_with_2_dquotes	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_with_2_squotes	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_with_BACKSPACE	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_with_CARRIAGE_RETURN	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_with_CHARACTER_TABULATION	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_with_dquote	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_with_FORM_FEED	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_with_LINE_FEED	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_with_numeric_escape4	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_with_numeric_escape8	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_with_REVERSE_SOLIDUS	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_with_REVERSE_SOLIDUS2	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_with_squote	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/literal_with_UTF8_boundaries	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/langtagged_string	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/lantag_with_subtag	N-Quads grammar requires a graph label
-rdf11/rdf-n-quads/minimal_whitespace	N-Quads grammar requires a graph label
 rdf11/rdf-turtle/blankNodePropertyList_as_object_containing_objectList_of_two_objects	parser yields a generator instead of a node for a blankNodePropertyList followed by ',' in an objectList
 rdf11/rdf-turtle/blankNodePropertyList_as_object_containing_objectList_of_two_objects[roundtrip]	parser yields a generator instead of a node for a blankNodePropertyList followed by ',' in an objectList
 rdf11/rdf-turtle/collection_subject[roundtrip]	Turtle serializer emits nothing for statements whose subject is a collection
@@ -80,7 +24,6 @@ rdf11/rdf-turtle/turtle-syntax-bad-numeric-escape-09	surrogate code points accep
 rdf11/rdf-turtle/turtle-syntax-bad-numeric-escape-10	surrogate code points accepted in numeric escapes
 rdf11/rdf-turtle/IRI-resolution-08	relative IRI resolution collapses empty path segments (//)
 rdf11/rdf-turtle/IRI-resolution-08[roundtrip]	relative IRI resolution collapses empty path segments (//)
-rdf12/rdf-n-triples/c14n/comment_following_triple	comments not supported in N-Triples grammar
 rdf12/rdf-n-triples/c14n/langtagged_string	canonical form lowercases language tags
 rdf12/rdf-n-triples/c14n/dirlangtagged_string	RDF 1.2 base direction language tags (@en--ltr) not implemented
 rdf12/rdf-n-triples/c14n/literal_all_controls	canonical form uses \b and \f escapes for backspace and form feed
@@ -95,10 +38,6 @@ rdf12/rdf-n-triples/c14n/triple-term-01	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-triples/c14n/triple-term-02	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-triples/c14n/triple-term-03	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-triples/c14n/triple-term-04	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-triples/c14n/nt-syntax-uri-02	comments not supported in N-Triples grammar
-rdf12/rdf-n-triples/c14n/nt-syntax-uri-03	comments not supported in N-Triples grammar
-rdf12/rdf-n-triples/c14n/nt-syntax-uri-04	comments not supported in N-Triples grammar
-rdf12/rdf-n-triples/c14n/literal_needing_uchar_escaping-02	comments not supported in N-Triples grammar
 rdf12/rdf-n-triples/syntax/ntriples12-01	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-triples/syntax/ntriples12-02	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-triples/syntax/ntriples12-03	RDF 1.2 triple terms not implemented
@@ -106,11 +45,6 @@ rdf12/rdf-n-triples/syntax/ntriples12-bnode-1	RDF 1.2 triple terms not implement
 rdf12/rdf-n-triples/syntax/ntriples12-nested-1	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-triples/syntax/ntriples-langdir-1	RDF 1.2 base direction language tags (@en--ltr) not implemented
 rdf12/rdf-n-triples/syntax/ntriples-langdir-2	RDF 1.2 base direction language tags (@en--ltr) not implemented
-rdf12/rdf-n-triples/syntax/ntriples12-bad-iri-1	relative IRI (missing scheme) accepted in N-Triples
-rdf12/rdf-n-triples/syntax/ntriples-langdir-bad-3	rdf:langString / rdf:dirLangString datatype without a language tag accepted
-rdf12/rdf-n-triples/syntax/ntriples-langdir-bad-4	language subtags longer than 8 characters accepted
-rdf12/rdf-n-triples/syntax/ntriples-langdir-bad-5	rdf:langString / rdf:dirLangString datatype without a language tag accepted
-rdf12/rdf-n-quads/c14n/comment_following_triple	comments not supported in N-Quads grammar
 rdf12/rdf-n-quads/c14n/langtagged_string	canonical form lowercases language tags
 rdf12/rdf-n-quads/c14n/dirlangtagged_string	RDF 1.2 base direction language tags (@en--ltr) not implemented
 rdf12/rdf-n-quads/c14n/literal_all_controls	canonical form uses \b and \f escapes for backspace and form feed
@@ -123,15 +57,11 @@ rdf12/rdf-n-quads/c14n/triple-term-01	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-quads/c14n/triple-term-02	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-quads/c14n/triple-term-03	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-quads/c14n/triple-term-04	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-quads/c14n/nq-syntax-uri-02	comments not supported in N-Quads grammar
-rdf12/rdf-n-quads/c14n/nq-syntax-uri-03	comments not supported in N-Quads grammar
-rdf12/rdf-n-quads/c14n/nq-syntax-uri-04	comments not supported in N-Quads grammar
-rdf12/rdf-n-quads/c14n/literal_needing_uchar_escaping-02	comments not supported in N-Quads grammar
 rdf12/rdf-n-quads/syntax/nquads12-01	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-quads/syntax/nquads12-02	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-quads/syntax/nquads12-03	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-quads/syntax/nquads12-bnode-1	N-Quads grammar requires a graph label (input also uses RDF 1.2 triple terms)
-rdf12/rdf-n-quads/syntax/nquads12-nested-1	N-Quads grammar requires a graph label (input also uses RDF 1.2 triple terms)
+rdf12/rdf-n-quads/syntax/nquads12-bnode-1	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-quads/syntax/nquads12-nested-1	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-quads/syntax/nquads-langdir-1	RDF 1.2 base direction language tags (@en--ltr) not implemented
 rdf12/rdf-n-quads/syntax/nquads-langdir-2	RDF 1.2 base direction language tags (@en--ltr) not implemented
 rdf12/rdf-turtle/eval/turtle12-rt-01	RDF 1.2 syntax not implemented: reified triples

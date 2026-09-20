@@ -8,33 +8,41 @@ def validate_language(language):
         raise ValueError("Invalid RDF language tag")
 
 
+# Escapes required by canonical N-Triples
+# (https://www.w3.org/TR/rdf12-n-triples/#canonical-ntriples): these seven
+# characters use ECHAR, the other C0 controls, DEL and code points that are
+# not XML 1.1 Chars use \\u with uppercase hex, and everything else is
+# written raw.
+NT_ECHAR = {
+    "\b": "\\b",
+    "\t": "\\t",
+    "\n": "\\n",
+    "\f": "\\f",
+    "\r": "\\r",
+    '"': '\\"',
+    "\\": "\\\\",
+}
+
+
+def nt_needs_uchar(char):
+    return (
+        char <= "\u001f"
+        or char == "\u007f"
+        or "\ud800" <= char <= "\udfff"
+        or char in "\ufffe\uffff"
+    )
+
+
 def nt_escape(node_string):
-    """Properly escape strings for n-triples and n-quads serialization."""
+    """Escape a string for canonical N-Triples and N-Quads output."""
     output_string = ""
     for char in node_string:
-        if char == "\u0009":
-            output_string += "\\t"
-        elif char == "\u000A":
-            output_string += "\\n"
-        elif char == "\u000D":
-            output_string += "\\r"
-        elif char == "\u0022":
-            output_string += '\\"'
-        elif char == "\u005C":
-            output_string += "\\\\"
-        elif (
-            char >= "\u0020"
-            and char <= "\u0021"
-            or char >= "\u0023"
-            and char <= "\u005B"
-            or char >= "\u005D"
-            and char <= "\u007E"
-        ):
-            output_string += char
-        elif char <= "\uFFFF":
+        if char in NT_ECHAR:
+            output_string += NT_ECHAR[char]
+        elif nt_needs_uchar(char):
             output_string += "\\u%04X" % ord(char)
         else:
-            output_string += "\\U%08X" % ord(char)
+            output_string += char
     return output_string
 
 

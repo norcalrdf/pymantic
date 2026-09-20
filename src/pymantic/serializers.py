@@ -155,15 +155,21 @@ def escape_prefix_local(name):
     return "".join((prefix, colon, escaped))
 
 
-# Characters the Turtle IRIREF production forbids raw inside < and >:
-# U+0000-U+0020 and <>"{}|^`\ . Everything else, including non-ASCII, is legal.
+# Characters the Turtle and N-Triples IRIREF production forbids raw inside
+# < and >: U+0000-U+0020 and <>"{}|^`\ . Everything else, including
+# non-ASCII, is legal.
 IRIREF_FORBIDDEN = set(map(chr, range(0x21))) | set('<>"{}|^`\\')
 
 
-def turtle_iri_escape(iri):
-    """Escape an IRI for output between < and > in Turtle by percent-encoding
-    the UTF-8 bytes of characters the IRIREF production forbids. All other
-    characters, including non-ASCII, pass through unchanged."""
+def iri_escape(iri):
+    """Escape an IRI for output between < and > in Turtle, N-Triples or
+    N-Quads by percent-encoding the UTF-8 bytes of characters the IRIREF
+    production forbids. All other characters, including % and non-ASCII,
+    pass through unchanged, so two valid IRIs never produce the same text.
+    The forbidden characters are percent-encoded rather than written as
+    UCHAR escapes because Turtle forbids them in an IRI even when escaped;
+    a term holding one is not a valid IRI, and is written as the valid IRI
+    its percent-encoding gives."""
     return "".join(
         (
             "".join("%%%02X" % byte for byte in char.encode("utf-8"))
@@ -201,7 +207,7 @@ def turtle_repr(
             iri = str(node)
             if base and strips_to_relative_reference(base, iri):
                 iri = ("#" if base.endswith("#") else "") + iri[len(base) :]
-            name = f"<{turtle_iri_escape(iri)}>"
+            name = f"<{iri_escape(iri)}>"
         elif used_prefixes is not None:
             used_prefixes.add(name.partition(":")[0])
     elif node.interfaceName == "BlankNode":
@@ -582,14 +588,12 @@ class _TurtleWriter:
 
     def write_directives(self, used=None):
         if self.base is not None:
-            self.f.write("@base <" + turtle_iri_escape(self.base) + "> .\n")
+            self.f.write("@base <" + iri_escape(self.base) + "> .\n")
         for prefix, iri in self.profile.prefixes.items():
             if prefix and not PN_PREFIX_RE.fullmatch(prefix):
                 raise ValueError("Invalid Turtle prefix name")
             if used is None or prefix in used:
-                self.f.write(
-                    "@prefix " + prefix + ": <" + turtle_iri_escape(iri) + "> .\n"
-                )
+                self.f.write("@prefix " + prefix + ": <" + iri_escape(iri) + "> .\n")
 
     def name(self, node):
         return turtle_repr(

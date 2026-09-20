@@ -622,6 +622,88 @@ def test_ntriples_non_ascii_round_trip(primitives):
     assert list(parsed) == [primitives.Triple(s, p, o)]
 
 
+def test_iri_escape_percent_encodes_only_forbidden_characters():
+    """The IRIREF production of Turtle, N-Triples and N-Quads forbids
+    U+0000-U+0020 and <>"{}|^`\\ raw, and Turtle forbids them even as UCHAR
+    escapes, so they are percent-encoded. Everything else, including % and
+    non-ASCII, is written as it is."""
+    from pymantic.serializers import iri_escape
+
+    assert iri_escape("http://x/café/%C3%A9?q=a%20b") == (
+        "http://x/café/%C3%A9?q=a%20b"
+    )
+    assert iri_escape('http://x/a\x00b\tc d<e>f"g{h}i|j^k`l\\m') == (
+        "http://x/a%00b%09c%20d%3Ce%3Ef%22g%7Bh%7Di%7Cj%5Ek%60l%5Cm"
+    )
+
+
+def ntriples_round_trip(primitives, graph, stable=False):
+    f = StringIO()
+    serialize_ntriples(graph, f, stable=stable)
+    parsed = primitives.Graph()
+    f.seek(0)
+    ntriples_parser.parse(f, parsed)
+    return f.getvalue(), parsed
+
+
+def test_ntriples_iri_with_non_ascii_round_trips_as_the_same_term(primitives):
+    """<http://x/é> and <http://x/%C3%A9> are two RDF terms, so N-Triples
+    must write them differently and read each back as itself."""
+    s = primitives.NamedNode("http://x/s")
+    p = primitives.NamedNode("http://x/p")
+    raw = primitives.NamedNode("http://x/é")
+    encoded = primitives.NamedNode("http://x/%C3%A9")
+    assert raw.toNT() == "<http://x/é>"
+    assert encoded.toNT() == "<http://x/%C3%A9>"
+    for node in (raw, encoded):
+        graph = primitives.Graph().add(primitives.Triple(s, p, node))
+        text, parsed = ntriples_round_trip(primitives, graph)
+        assert text == f"<http://x/s> <http://x/p> {node.toNT()} .\n"
+        assert list(parsed) == [primitives.Triple(s, p, node)]
+
+
+def test_ntriples_stable_writes_distinct_iris_on_distinct_lines(primitives):
+    from pymantic.compare import isomorphic
+
+    s = primitives.NamedNode("http://x/s")
+    p = primitives.NamedNode("http://x/p")
+    raw = primitives.NamedNode("http://x/é")
+    encoded = primitives.NamedNode("http://x/%C3%A9")
+    both = primitives.Graph().addAll(
+        [primitives.Triple(s, p, raw), primitives.Triple(s, p, encoded)]
+    )
+    one = primitives.Graph().add(primitives.Triple(s, p, encoded))
+    both_text, reparsed = ntriples_round_trip(primitives, both, stable=True)
+    assert both_text.count("\n") == 2
+    assert set(reparsed) == set(both)
+    one_text, _ = ntriples_round_trip(primitives, one, stable=True)
+    assert both_text != one_text
+    assert not isomorphic(both, one)
+
+
+def test_ntriples_iri_with_forbidden_characters_is_percent_encoded(primitives):
+    """A NamedNode holding a control character, a space or > is not a valid
+    IRI, and no escape can write it into N-Triples that Turtle parsers also
+    accept (turtle-syntax-bad-uri-escape-01). It is percent-encoded, as in
+    Turtle output, and reads back as that valid IRI."""
+    from pymantic.parsers import turtle_parser
+
+    s = primitives.NamedNode("http://x/s")
+    p = primitives.NamedNode("http://x/p")
+    o = primitives.NamedNode("http://x/a\x01b>c d")
+    graph = primitives.Graph().add(primitives.Triple(s, p, o))
+    text, parsed = ntriples_round_trip(primitives, graph)
+    assert text == "<http://x/s> <http://x/p> <http://x/a%01b%3Ec%20d> .\n"
+    encoded = primitives.Triple(s, p, primitives.NamedNode("http://x/a%01b%3Ec%20d"))
+    assert list(parsed) == [encoded]
+    assert list(turtle_parser.parse(text)) == [encoded]
+
+
+def test_ntriples_datatype_iri_uses_the_same_escaping(primitives):
+    literal = primitives.Literal("v", datatype=primitives.NamedNode("http://x/é>"))
+    assert literal.toNT() == '"v"^^<http://x/é%3E>'
+
+
 def test_ntriples_omits_xsd_string_datatype(primitives):
     """Canonical N-Triples never writes ^^xsd:string, and the Turtle parser
     (which sets that datatype) and the N-Triples parser (which leaves it

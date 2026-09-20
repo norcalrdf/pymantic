@@ -70,3 +70,21 @@ If the publish job fails after the build succeeded, fix the cause and re-run
 the failed job from the Actions UI; the built artifact is reused. PyPI does
 not allow re-uploading a version that already exists, so a genuinely bad
 release needs a new version number.
+
+## Repository protection
+
+`.github/rulesets/` holds the repository rulesets as JSON so they can be
+reviewed alongside the code:
+
+- `main.json`: the default branch can only change through a pull request
+  whose review threads are resolved and whose CI checks (the five test
+  jobs and the lint job) pass against the latest `main`. Force pushes and
+  deletion are blocked. No one is on the bypass list, including admins.
+- `release-tags.json`: tags matching `v*` cannot be moved or deleted once
+  pushed. A mistaken release tag therefore needs a new version number, which
+  matches PyPI's own rule against re-uploading a version.
+
+To apply or update one: repository Settings -> Rules -> Rulesets -> New
+ruleset -> Import a ruleset, and choose the file. The status check names in
+`main.json` come from the job names in `continuous-integration-workflow.yaml`;
+if a job is renamed, update both.

@@ -7,6 +7,14 @@ Usage::
   graph2 = turtle_parser.parse(\"\"\"@prefix p: <http://a.example/s>.
   p: <http://a.example/p> <http://a.example/o> .\"\"\")
 
+To keep a document's own prefixes for writing it back out, pass a
+:class:`~pymantic.primitives.Profile`; the document's declarations are
+recorded there (prefixes already in the profile are not used to read it)::
+
+  profile = Profile()
+  graph = turtle_parser.parse(data, profile=profile)
+  serialize_turtle(graph, f, profile=profile, stable=True)
+
 Unlike :mod:`pymantic.parsers.lark.ntriples`, this parser cannot efficiently
 parse turtle line by line. If a file-like object is provided, the entire file
 will be read into memory and parsed there.
@@ -136,10 +144,17 @@ def unpack_predicate_object_list(subject, pol):
 
 
 class TurtleTransformer(BaseParser, Transformer):
-    def __init__(self, base_iri=""):
+    """Builds triples from a parsed Turtle document. Prefixed names resolve
+    against the document's own declarations only. With ``profile``, those
+    ``@prefix`` and ``PREFIX`` declarations are also recorded in it, so the
+    caller can serialize with the document's own prefixes; the profile's
+    existing prefixes are never used to read the document."""
+
+    def __init__(self, base_iri="", profile=None):
         super().__init__()
         self.base_iri = base_iri
         self.prefixes = self.profile.prefixes
+        self.recorded_profile = profile
 
     def decode_iriref(self, iriref):
         return validate_iri(decode_literal(iriref[1:-1]))
@@ -179,6 +194,8 @@ class TurtleTransformer(BaseParser, Transformer):
         iri = resolve_iri(self.base_iri, self.decode_iriref(iriref))
         ns = ns[:-1]  # Drop trailing : from namespace
         self.prefixes[ns] = iri
+        if self.recorded_profile is not None:
+            self.recorded_profile.setPrefix(ns, iri)
 
         return []
 
@@ -279,7 +296,7 @@ class TurtleTransformer(BaseParser, Transformer):
                     yield triple
 
 
-def parse(string_or_stream, graph=None, base=""):
+def parse(string_or_stream, graph=None, base="", profile=None):
     if hasattr(string_or_stream, "readline"):
         string = string_or_stream.read()
     else:
@@ -290,7 +307,7 @@ def parse(string_or_stream, graph=None, base=""):
         string = string.decode("utf-8")
 
     tree = turtle_lark.parse(string)
-    tr = TurtleTransformer(base_iri=base)
+    tr = TurtleTransformer(base_iri=base, profile=profile)
     if graph is None:
         graph = tr._make_graph()
     tr._prepare_parse(graph)
@@ -300,5 +317,5 @@ def parse(string_or_stream, graph=None, base=""):
     return graph
 
 
-def parse_string(string_or_bytes, graph=None, base=""):
-    return parse(string_or_bytes, graph, base)
+def parse_string(string_or_bytes, graph=None, base="", profile=None):
+    return parse(string_or_bytes, graph, base, profile)

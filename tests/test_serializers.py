@@ -96,7 +96,7 @@ def test_random_datatype_bare_url(primitives, profile, turtle_repr):
         value="Foo", datatype=primitives.NamedNode("http://example.com/garply")
     )
     name = turtle_repr(node=lit, profile=profile, name_map=None, bnode_name_maker=None)
-    assert name == '"Foo"^<http://example.com/garply>'
+    assert name == '"Foo"^^<http://example.com/garply>'
 
 
 def test_random_datatype_prefixed(primitives, profile, turtle_repr):
@@ -105,7 +105,7 @@ def test_random_datatype_prefixed(primitives, profile, turtle_repr):
         value="Foo", datatype=primitives.NamedNode("http://example.com/garply")
     )
     name = turtle_repr(node=lit, profile=profile, name_map=None, bnode_name_maker=None)
-    assert name == '"Foo"^ex:garply'
+    assert name == '"Foo"^^ex:garply'
 
 
 def test_named_node_bare(primitives, profile, turtle_repr):
@@ -343,3 +343,214 @@ def testListSerialization(primitives, profile, turtle_parser, serialize_turtle):
 ex:foo dc:author ("Foo" "Bar" "Baz") ;
        .""".strip()
     )
+
+
+def test_turtle_string_escape():
+    from pymantic.serializers import turtle_string_escape
+
+    assert turtle_string_escape('a"b\nc\\d\re\tf') == '"a\\"b\\nc\\\\d\\re\\tf"'
+    # Apostrophes need no escape inside a double-quoted string.
+    assert turtle_string_escape("it's") == '"it\'s"'
+
+
+def test_turtle_literal_injection_round_trip(
+    primitives, profile, turtle_parser, serialize_turtle
+):
+    """A literal containing quotes must not break out of the string and inject
+    triples into the serialized Turtle."""
+    s = primitives.NamedNode("http://x/s")
+    p = primitives.NamedNode("http://x/p")
+    o = primitives.Literal(
+        'x" . <http://attacker/s> <http://attacker/p> <http://attacker/o> . '
+        '<http://x/s> <http://x/p> "y',
+        datatype=primitives.XSD("string"),
+    )
+    graph = primitives.Graph()
+    graph.add(primitives.Triple(s, p, o))
+    f = StringIO()
+    serialize_turtle(graph=graph, f=f, profile=profile)
+    parsed = turtle_parser.parse(f.getvalue())
+    assert len(parsed) == 1
+    assert primitives.Triple(s, p, o) in parsed
+
+
+def test_turtle_literal_backslash_not_double_escaped(
+    primitives, profile, turtle_parser, serialize_turtle
+):
+    s = primitives.NamedNode("http://x/s")
+    p = primitives.NamedNode("http://x/p")
+    o = primitives.Literal(
+        'back\\slash "quote" new\nline', datatype=primitives.XSD("string")
+    )
+    graph = primitives.Graph()
+    graph.add(primitives.Triple(s, p, o))
+    f = StringIO()
+    serialize_turtle(graph=graph, f=f, profile=profile)
+    parsed = turtle_parser.parse(f.getvalue())
+    assert len(parsed) == 1
+    assert primitives.Triple(s, p, o) in parsed
+
+
+@pytest.mark.parametrize(
+    "local,expected",
+    [
+        ("foo", "ex:foo"),
+        ("", "ex:"),
+        ("foo;bar.baz", "ex:foo\\;bar.baz"),
+        ("foo)bar", "ex:foo\\)bar"),
+        ("foo.", "ex:foo\\."),
+        (".foo", "ex:\\.foo"),
+        ("-foo", "ex:\\-foo"),
+        ("foo-bar_baz", "ex:foo-bar_baz"),
+        ("a:b", "ex:a:b"),
+        ("100%", "ex:100\\%"),
+        ("foo%20bar", "ex:foo\\%20bar"),
+        ("a/b?c=d#e", "ex:a\\/b\\?c\\=d\\#e"),
+        ("~!$&'()*+,;=@", "ex:\\~\\!\\$\\&\\'\\(\\)\\*\\+\\,\\;\\=\\@"),
+    ],
+)
+def test_named_node_prefixed_local_escaping(
+    primitives, profile, turtle_repr, turtle_parser, local, expected
+):
+    profile.setPrefix("ex", primitives.NamedNode("http://example.com/"))
+    node = primitives.NamedNode("http://example.com/" + local)
+    name = turtle_repr(node=node, profile=profile, name_map=None, bnode_name_maker=None)
+    assert name == expected
+    parsed = turtle_parser.parse(
+        f"@prefix ex: <http://example.com/> . {name} <http://x/p> <http://x/o> ."
+    )
+    assert next(iter(parsed)).subject == node
+
+
+@pytest.mark.parametrize(
+    "local,expected",
+    [
+        ("foo bar", "<http://example.com/foo%20bar>"),
+        ("foo>bar", "<http://example.com/foo%3Ebar>"),
+        ("foo|bar", "<http://example.com/foo%7Cbar>"),
+    ],
+)
+def test_named_node_prefixed_local_unrepresentable_falls_back_to_iri(
+    primitives, profile, turtle_repr, local, expected
+):
+    profile.setPrefix("ex", primitives.NamedNode("http://example.com/"))
+    node = primitives.NamedNode("http://example.com/" + local)
+    name = turtle_repr(node=node, profile=profile, name_map=None, bnode_name_maker=None)
+    assert name == expected
+
+
+def test_named_node_bare_iri_escaping(primitives, profile, turtle_repr):
+    node = primitives.NamedNode("http://x/a> <http://attacker/s")
+    name = turtle_repr(node=node, profile=profile, name_map=None, bnode_name_maker=None)
+    assert name == "<http://x/a%3E%20%3Chttp://attacker/s>"
+    node = primitives.NamedNode('http://x/a"b\\c{d}|e^f`g')
+    name = turtle_repr(node=node, profile=profile, name_map=None, bnode_name_maker=None)
+    assert name == "<http://x/a%22b%5Cc%7Bd%7D%7Ce%5Ef%60g>"
+
+
+def test_named_node_with_base_iri_escaping(primitives, profile, turtle_repr):
+    node = primitives.NamedNode("https://example.com/foo bar>baz")
+    name = turtle_repr(
+        node=node,
+        profile=profile,
+        name_map=None,
+        bnode_name_maker=None,
+        base="https://example.com/",
+    )
+    assert name == "<foo%20bar%3Ebaz>"
+    node = primitives.NamedNode("https://example.com/foo#bar baz")
+    name = turtle_repr(
+        node=node,
+        profile=profile,
+        name_map=None,
+        bnode_name_maker=None,
+        base="https://example.com/foo#",
+    )
+    assert name == "<#bar%20baz>"
+
+
+def test_turtle_iri_injection_round_trip(
+    primitives, profile, turtle_parser, serialize_turtle
+):
+    s = primitives.NamedNode(
+        "http://x/s> <http://attacker/p> <http://attacker/o> . <http://x/s"
+    )
+    p = primitives.NamedNode("http://x/p")
+    o = primitives.NamedNode("http://x/o")
+    graph = primitives.Graph()
+    graph.add(primitives.Triple(s, p, o))
+    f = StringIO()
+    serialize_turtle(graph=graph, f=f, profile=profile)
+    parsed = turtle_parser.parse(f.getvalue())
+    assert len(parsed) == 1
+    triple = next(iter(parsed))
+    assert triple.predicate == p
+    assert triple.object == o
+    assert "attacker" not in triple.subject or triple.subject.startswith(
+        "http://x/s%3E"
+    )
+
+
+def test_blank_node_round_trip(primitives, profile, turtle_parser, serialize_turtle):
+    basic_turtle = """@prefix dc: <http://purl.org/dc/terms/> .
+    @prefix example: <http://example.com/> .
+
+    _:a dc:title "A" ;
+        dc:relation _:b .
+    _:b dc:title "B" .
+    example:foo dc:relation _:a ."""
+
+    graph = turtle_parser.parse(basic_turtle)
+    f = StringIO()
+    profile.setPrefix("ex", primitives.NamedNode("http://example.com/"))
+    profile.setPrefix("dc", primitives.NamedNode("http://purl.org/dc/terms/"))
+    serialize_turtle(graph=graph, f=f, profile=profile)
+    parsed = turtle_parser.parse(f.getvalue())
+    assert len(parsed) == 4
+    dc = primitives.Prefix("http://purl.org/dc/terms/")
+    xsd_string = primitives.XSD("string")
+    (a_triple,) = list(
+        parsed.match(
+            predicate=dc("title"), object=primitives.Literal("A", datatype=xsd_string)
+        )
+    )
+    (b_triple,) = list(
+        parsed.match(
+            predicate=dc("title"), object=primitives.Literal("B", datatype=xsd_string)
+        )
+    )
+    a, b = a_triple.subject, b_triple.subject
+    assert a.interfaceName == "BlankNode"
+    assert b.interfaceName == "BlankNode"
+    assert a is not b
+    assert primitives.Triple(a, dc("relation"), b) in parsed
+    assert (
+        primitives.Triple(
+            primitives.NamedNode("http://example.com/foo"), dc("relation"), a
+        )
+        in parsed
+    )
+
+
+def test_nt_escape_control_characters():
+    from pymantic.serializers import nt_escape
+
+    assert nt_escape("a\x00b\x08c\x0cd\x1fe\x7ff") == (
+        "a\\u0000b\\u0008c\\u000Cd\\u001Fe\\u007Ff"
+    )
+    assert nt_escape("tab\tlf\ncr\r") == "tab\\tlf\\ncr\\r"
+
+
+def test_ntriples_control_character_round_trip(primitives):
+    s = primitives.NamedNode("http://x/s")
+    p = primitives.NamedNode("http://x/p")
+    o = primitives.Literal("a\x00b\x08c\x0cd\x1fe")
+    graph = primitives.Graph()
+    graph.add(primitives.Triple(s, p, o))
+    f = StringIO()
+    serialize_ntriples(graph, f)
+    f.seek(0)
+    parsed = primitives.Graph()
+    ntriples_parser.parse(f, parsed)
+    assert len(parsed) == 1
+    assert primitives.Triple(s, p, o) in parsed

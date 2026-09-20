@@ -1,4 +1,7 @@
 from collections import OrderedDict
+import re
+
+from pymantic.util import quote_normalized_iri
 
 
 def nt_escape(node_string):
@@ -24,9 +27,9 @@ def nt_escape(node_string):
             and char <= "\u007E"
         ):
             output_string += char
-        elif char >= "\u007F" and char <= "\uFFFF":
+        elif char <= "\uFFFF":
             output_string += "\\u%04X" % ord(char)
-        elif char >= "\U00010000" and char <= "\U0010FFFF":
+        else:
             output_string += "\\U%08X" % ord(char)
     return output_string
 
@@ -46,44 +49,85 @@ def serialize_nquads(dataset, f):
 def default_bnode_name_generator():
     i = 0
     while True:
-        yield "_b" + str(i)
+        yield "_:b" + str(i)
         i += 1
 
 
-def escape_prefix_local(prefix):
-    prefix, colon, local = prefix.partition(":")
-    for esc_char in "~.-!$&'()*+,;=:/?#@%_":
-        local = local.replace(esc_char, "\\" + esc_char)
-    return "".join((prefix, colon, local))
+# Character classes from the Turtle 1.1 grammar
+# (https://www.w3.org/TR/turtle/#sec-grammar-grammar), used to check that an
+# escaped local name is a valid PN_LOCAL.
+PN_CHARS_BASE = (
+    "A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF"
+    "\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF"
+    "\uFDF0-\uFFFD\U00010000-\U000EFFFF"
+)
+PN_CHARS_U = PN_CHARS_BASE + "_"
+PN_CHARS = PN_CHARS_U + "\\-0-9\u00B7\u0300-\u036F\u203F-\u2040"
+PN_LOCAL_ESC_CHARS = "_~.-!$&'()*+,;=/?#@%"
+PLX = "(?:%[0-9A-Fa-f]{2}|\\\\[" + re.escape(PN_LOCAL_ESC_CHARS) + "])"
+PN_LOCAL_RE = re.compile(
+    "(?:[" + PN_CHARS_U + ":0-9]|" + PLX + ")"
+    "(?:(?:[" + PN_CHARS + ".:]|" + PLX + ")*(?:[" + PN_CHARS + ":]|" + PLX + "))?"
+)
+
+
+def escape_prefix_local(name):
+    """Escape the local part of a prefixed name (``prefix:local``) so it is a
+    valid Turtle PN_LOCAL. Returns None when the local part cannot be expressed
+    as a prefixed name even with escapes, in which case the caller should fall
+    back to the full <IRI> form."""
+    prefix, colon, local = name.partition(":")
+    escaped = ""
+    last = len(local) - 1
+    for i, char in enumerate(local):
+        # "_" and "-" are plain PN_CHARS, and "." is allowed inside a local
+        # name, so only escape them where the grammar forbids them raw.
+        if char == "_" or (char == "-" and i != 0) or (char == "." and 0 < i < last):
+            escaped += char
+        elif char in PN_LOCAL_ESC_CHARS:
+            escaped += "\\" + char
+        else:
+            escaped += char
+    if escaped and not PN_LOCAL_RE.fullmatch(escaped):
+        return None
+    return "".join((prefix, colon, escaped))
+
+
+def turtle_iri_escape(iri):
+    """Escape an IRI for output between < and > in Turtle. The Turtle IRIREF
+    production is the same as N-Triples', so this matches NamedNode.toNT()."""
+    return nt_escape(quote_normalized_iri(iri))
 
 
 def turtle_string_escape(string):
     """Escape a string appropriately for output in turtle form."""
     from pymantic.util import ECHAR_MAP
 
-    for escaped, value in ECHAR_MAP.items():
-        string = string.replace(value, "\\" + escaped)
-    return '"' + string + '"'
+    # Single pass, so a backslash inserted by one escape is never escaped
+    # again. An apostrophe needs no escape inside a double-quoted string.
+    return (
+        '"'
+        + "".join(char if char == "'" else ECHAR_MAP.get(char, char) for char in string)
+        + '"'
+    )
 
 
 def turtle_repr(node, profile, name_map, bnode_name_maker, base=None):
     """Turn a node in an RDF graph into its turtle representation."""
     if node.interfaceName == "NamedNode":
         name = profile.prefixes.shrink(node)
-        if base and name.startswith(base):
-            if base.endswith("#"):
-                name = f"<{str(name.replace(base, '#'))}>"
-            else:
-                name = f"<{str(name.replace(base, ''))}>"
-        if name == node:
-            name = f"<{str(name)}>"
-        else:
-            escape_prefix_local(name)
+        if name != node:
+            name = escape_prefix_local(name)
+        if name is None or name == node:
+            iri = str(node)
+            if base and iri.startswith(base):
+                iri = ("#" if base.endswith("#") else "") + iri[len(base) :]
+            name = f"<{turtle_iri_escape(iri)}>"
     elif node.interfaceName == "BlankNode":
         if node in name_map:
             name = name_map[node]
         else:
-            name = bnode_name_maker.next()
+            name = next(bnode_name_maker)
             name_map[node] = name
     elif node.interfaceName == "Literal":
         if node.datatype == profile.resolve("xsd:string"):
@@ -105,7 +149,7 @@ def turtle_repr(node, profile, name_map, bnode_name_maker, base=None):
         else:
             # Unrecognized data-type.
             name = turtle_string_escape(node.value)
-            name += "^" + turtle_repr(node.datatype, profile, None, None)
+            name += "^^" + turtle_repr(node.datatype, profile, None, None)
     return name
 
 

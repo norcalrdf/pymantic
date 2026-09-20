@@ -1006,3 +1006,413 @@ def test_turtle_empty_list_is_rdf_nil(
 )
 def test_turtle_malformed_list_round_trip(turtle_parser, serialize_turtle, turtle):
     assert_turtle_round_trip(turtle_parser, serialize_turtle, turtle)
+
+
+# stable=True ---------------------------------------------------------------
+
+
+def shuffled_relabelled(graph, seed):
+    """A copy with fresh blank nodes and its triples added in another order."""
+    import random
+
+    from pymantic.primitives import BlankNode, Graph, Triple
+
+    rng = random.Random(seed)
+    fresh = {}
+
+    def term(node):
+        if isinstance(node, BlankNode):
+            return fresh.setdefault(node, BlankNode())
+        return node
+
+    triples = [Triple(term(s), term(p), term(o)) for s, p, o in graph]
+    rng.shuffle(triples)
+    return Graph().addAll(triples)
+
+
+STABLE_SHAPES = """
+@prefix : <http://x/> .
+:Shape :property [ :path :name ; :minCount 1 ] ,
+                 [ :path :age ; :in ( 1 2 3 ) ] ,
+                 [ :path :pet ; :or ( [ :class :Cat ] [ :class :Dog ] ) ] .
+:Shape :label "Shape" , "Forme"@fr ; :type :NodeShape .
+"""
+
+
+def stable_turtle(graph, serialize_turtle, profile):
+    f = StringIO()
+    serialize_turtle(graph, f, profile=profile, stable=True)
+    return f.getvalue()
+
+
+def objects_under(text, predicate_name):
+    """The object names written under one predicate, in order."""
+    import re
+
+    (objects,) = re.findall(r"%s (.*?) ;\n" % re.escape(predicate_name), text, re.S)
+    return [name.strip() for name in objects.split(",")]
+
+
+def test_turtle_stable_is_byte_identical_after_shuffle_and_relabel(
+    primitives, profile, turtle_parser, serialize_turtle
+):
+    profile.setPrefix("ex", primitives.NamedNode("http://x/"))
+    graph = turtle_parser.parse(STABLE_SHAPES)
+    first = stable_turtle(graph, serialize_turtle, profile)
+    for seed in range(4):
+        copy = shuffled_relabelled(graph, seed)
+        assert stable_turtle(copy, serialize_turtle, profile) == first
+    reparsed = turtle_parser.parse(first)
+    from rdflib.compare import isomorphic
+
+    assert isomorphic(to_rdflib(graph), to_rdflib(reparsed))
+
+
+def test_turtle_stable_uses_canonical_labels(
+    primitives, profile, turtle_parser, serialize_turtle
+):
+    from pymantic.compare import canonical_labels
+
+    # Every blank node here is referenced twice, so none is inlined.
+    graph = turtle_parser.parse(
+        "@prefix : <http://x/> . :s :p _:a, _:b . :t :p _:a, _:b ."
+        " _:a :path :name . _:b :path :age ."
+    )
+    text = stable_turtle(graph, serialize_turtle, profile)
+    labels = canonical_labels(graph)
+    for triple in graph:
+        node = triple.subject
+        if node.interfaceName == "BlankNode":
+            assert "_:" + labels[node] + " " in text
+    assert "_:b0 " not in text
+
+
+def test_turtle_stable_self_referencing_list_is_deterministic(
+    primitives, profile, turtle_parser, serialize_turtle
+):
+    turtle = (
+        "@prefix : <http://x/> . "
+        "_:l <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 1 ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:l ."
+        "_:m <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 2 ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:m ."
+    )
+    graph = turtle_parser.parse(turtle)
+    first = stable_turtle(graph, serialize_turtle, profile)
+    for seed in range(4):
+        copy = shuffled_relabelled(graph, seed)
+        assert stable_turtle(copy, serialize_turtle, profile) == first
+
+
+def test_turtle_default_output_unchanged_by_stable_keyword(
+    primitives, profile, turtle_parser, serialize_turtle
+):
+    graph = turtle_parser.parse(STABLE_SHAPES)
+    plain, explicit = StringIO(), StringIO()
+    serialize_turtle(graph, plain, profile=profile)
+    serialize_turtle(graph, explicit, profile=profile, stable=False)
+    assert plain.getvalue() == explicit.getvalue()
+    assert "_:b0 " in plain.getvalue()
+
+
+def test_ntriples_stable_sorts_lines_with_canonical_labels(primitives, turtle_parser):
+    from pymantic.compare import canonical_labels
+
+    graph = turtle_parser.parse(STABLE_SHAPES)
+    labels = canonical_labels(graph)
+    f = StringIO()
+    serialize_ntriples(graph, f, stable=True)
+    lines = f.getvalue().splitlines(keepends=True)
+    assert lines == sorted(lines)
+    assert len(lines) == len(graph)
+    assert all(line.endswith(" .\n") for line in lines)
+    for label in labels.values():
+        assert any("_:" + label + " " in line for line in lines)
+    for seed in range(4):
+        g = StringIO()
+        serialize_ntriples(shuffled_relabelled(graph, seed), g, stable=True)
+        assert g.getvalue() == f.getvalue()
+    reparsed = ntriples_parser.parse_string(f.getvalue())
+    from pymantic.compare import isomorphic
+
+    assert isomorphic(graph, reparsed)
+
+
+def test_ntriples_default_output_unchanged_by_stable_keyword(primitives):
+    p = primitives.NamedNode("http://x/p")
+    graph = primitives.Graph()
+    for name in ("c", "a"):
+        graph.add(primitives.Triple(primitives.NamedNode("http://x/" + name), p, p))
+    plain, explicit = StringIO(), StringIO()
+    serialize_ntriples(graph, plain)
+    serialize_ntriples(graph, explicit, stable=False)
+    assert plain.getvalue() == explicit.getvalue()
+    assert plain.getvalue().startswith("<http://x/c>")
+
+
+def test_nquads_stable_sorts_lines_with_canonical_labels(primitives):
+    import random
+
+    from pymantic.serializers import serialize_nquads
+
+    p = primitives.NamedNode("http://x/p")
+    g1, g2 = primitives.NamedNode("http://x/g1"), primitives.NamedNode("http://x/g2")
+
+    def build(seed):
+        a, b = primitives.BlankNode(), primitives.BlankNode()
+        quads = [
+            primitives.Quad(a, p, primitives.NamedNode("http://x/o"), g1),
+            primitives.Quad(a, p, b, g2),
+            primitives.Quad(b, p, primitives.Literal("v"), None),
+            primitives.Quad(primitives.NamedNode("http://x/s"), p, b, None),
+        ]
+        random.Random(seed).shuffle(quads)
+        dataset = primitives.Dataset()
+        dataset.addAll(quads)
+        return dataset
+
+    f = StringIO()
+    serialize_nquads(build(0), f, stable=True)
+    lines = f.getvalue().splitlines(keepends=True)
+    assert lines == sorted(lines)
+    assert len(lines) == 4
+    assert "_:b0 " not in f.getvalue()
+    assert any(line.endswith(" <http://x/g2> .\n") for line in lines)
+    for seed in range(1, 4):
+        g = StringIO()
+        serialize_nquads(build(seed), g, stable=True)
+        assert g.getvalue() == f.getvalue()
+
+
+def test_nquads_stable_accepts_parsed_quads(primitives):
+    from pymantic.parsers import nquads_parser
+    from pymantic.serializers import serialize_nquads
+
+    text = "_:x <http://x/p> _:y <http://x/g> .\n" '_:y <http://x/p> "v" .\n'
+    f = StringIO()
+    serialize_nquads(nquads_parser.parse_string(text), f, stable=True)
+    lines = f.getvalue().splitlines()
+    assert len(lines) == 2
+    assert lines[0].endswith(" <http://x/g> .") or lines[1].endswith(" <http://x/g> .")
+    assert "_:x" not in f.getvalue()
+
+
+def equivalent_string_graphs(primitives):
+    """Three graphs that are one RDF graph: "v" as a simple literal, as an
+    explicit xsd:string, and as both written forms at once. The two forms are
+    one term, so the third graph holds one triple like the others."""
+    s, p = primitives.NamedNode("http://x/s"), primitives.NamedNode("http://x/p")
+    simple = primitives.Literal("v")
+    typed = primitives.Literal("v", datatype=primitives.XSD_STRING)
+    assert simple == typed
+    return [
+        primitives.Graph().addAll(primitives.Triple(s, p, o) for o in objects)
+        for objects in ([simple], [typed], [simple, typed])
+    ]
+
+
+def test_ntriples_stable_writes_equivalent_literals_once(primitives):
+    outputs = []
+    for graph in equivalent_string_graphs(primitives):
+        f = StringIO()
+        serialize_ntriples(graph, f, stable=True)
+        outputs.append(f.getvalue())
+    assert outputs[0] == outputs[1] == outputs[2]
+    assert outputs[2] == '<http://x/s> <http://x/p> "v" .\n'
+
+
+def test_ntriples_default_output_writes_equivalent_literals_once(primitives):
+    """Default output writes whatever the graph holds, and the graph holds
+    the value once however it was written."""
+    graph = equivalent_string_graphs(primitives)[2]
+    f = StringIO()
+    serialize_ntriples(graph, f)
+    assert f.getvalue().count('"v"') == 1
+
+
+def test_nquads_stable_writes_equivalent_literals_once(primitives):
+    from pymantic.serializers import serialize_nquads
+
+    g = primitives.NamedNode("http://x/g")
+    outputs = []
+    for graph in equivalent_string_graphs(primitives):
+        dataset = primitives.Dataset()
+        for triple in graph:
+            dataset.add(primitives.Quad(*triple, g))
+        f = StringIO()
+        serialize_nquads(dataset, f, stable=True)
+        outputs.append(f.getvalue())
+    assert outputs[0] == outputs[1] == outputs[2]
+    assert outputs[2] == '<http://x/s> <http://x/p> "v" <http://x/g> .\n'
+
+
+def test_turtle_stable_writes_equivalent_literals_once(primitives, serialize_turtle):
+    outputs = [
+        stable_turtle(graph, serialize_turtle, primitives.Profile())
+        for graph in equivalent_string_graphs(primitives)
+    ]
+    assert outputs[0] == outputs[1] == outputs[2]
+    assert outputs[2].count('"v"') == 1
+
+
+def test_turtle_default_output_writes_equivalent_literals_once(
+    primitives, serialize_turtle
+):
+    """Default output writes whatever the graph holds, and the graph holds
+    the value once however it was written."""
+    graph = equivalent_string_graphs(primitives)[2]
+    f = StringIO()
+    serialize_turtle(graph, f)
+    assert f.getvalue().count('"v"') == 1
+
+
+def test_turtle_stable_collection_head_with_equivalent_literal_firsts(
+    primitives, serialize_turtle
+):
+    """A list cell whose rdf:first is asserted in both written literal forms
+    (a simple literal and one typed xsd:string) is still one well-formed
+    one-element list -- RDF 1.1 Concepts 3.3 makes the two forms one term --
+    and is written as a collection exactly as if it held only one form."""
+    rdf = primitives.Prefix("http://www.w3.org/1999/02/22-rdf-syntax-ns#")
+    s, p = primitives.NamedNode("http://x/s"), primitives.NamedNode("http://x/p")
+
+    def build(literals):
+        graph = primitives.Graph()
+        head = primitives.BlankNode()
+        for literal in literals:
+            graph.add(primitives.Triple(head, rdf("first"), literal))
+        graph.add(primitives.Triple(head, rdf("rest"), rdf("nil")))
+        graph.add(primitives.Triple(s, p, head))
+        return graph
+
+    mixed = build(
+        [
+            primitives.Literal("v"),
+            primitives.Literal("v", datatype=primitives.XSD_STRING),
+        ]
+    )
+    single = build([primitives.Literal("v")])
+    profile = primitives.Profile()
+    mixed_text = stable_turtle(mixed, serialize_turtle, profile)
+    single_text = stable_turtle(single, serialize_turtle, profile)
+    assert mixed_text == single_text
+    assert '("v")' in mixed_text
+
+
+def mixed_literal_forms_graph(primitives):
+    """A graph holding a value written in both literal forms (a simple
+    literal and one typed xsd:string) at once, in three subject-less
+    positions: the objects of an ordinary predicate, inside an inline blank
+    node, and as a list cell's rdf:first. Isomorphic to, and one RDF graph
+    with, ``single_literal_form_graph``."""
+    rdf = primitives.Prefix("http://www.w3.org/1999/02/22-rdf-syntax-ns#")
+    s = primitives.NamedNode("http://x/s")
+    p1 = primitives.NamedNode("http://x/p1")
+    p2 = primitives.NamedNode("http://x/p2")
+    p3 = primitives.NamedNode("http://x/p3")
+    q = primitives.NamedNode("http://x/q")
+
+    def forms(value):
+        return [
+            primitives.Literal(value),
+            primitives.Literal(value, datatype=primitives.XSD_STRING),
+        ]
+
+    graph = primitives.Graph()
+    for literal in forms("v"):
+        graph.add(primitives.Triple(s, p1, literal))
+    inline_node = primitives.BlankNode()
+    graph.add(primitives.Triple(s, p2, inline_node))
+    for literal in forms("w"):
+        graph.add(primitives.Triple(inline_node, q, literal))
+    head = primitives.BlankNode()
+    for literal in forms("x"):
+        graph.add(primitives.Triple(head, rdf("first"), literal))
+    graph.add(primitives.Triple(head, rdf("rest"), rdf("nil")))
+    graph.add(primitives.Triple(s, p3, head))
+    return graph
+
+
+def single_literal_form_graph(primitives):
+    """The graph ``mixed_literal_forms_graph`` is equivalent to, with each
+    position holding only one literal form."""
+    rdf = primitives.Prefix("http://www.w3.org/1999/02/22-rdf-syntax-ns#")
+    s = primitives.NamedNode("http://x/s")
+    p1 = primitives.NamedNode("http://x/p1")
+    p2 = primitives.NamedNode("http://x/p2")
+    p3 = primitives.NamedNode("http://x/p3")
+    q = primitives.NamedNode("http://x/q")
+
+    graph = primitives.Graph()
+    graph.add(primitives.Triple(s, p1, primitives.Literal("v")))
+    inline_node = primitives.BlankNode()
+    graph.add(primitives.Triple(s, p2, inline_node))
+    graph.add(primitives.Triple(inline_node, q, primitives.Literal("w")))
+    head = primitives.BlankNode()
+    graph.add(primitives.Triple(head, rdf("first"), primitives.Literal("x")))
+    graph.add(primitives.Triple(head, rdf("rest"), rdf("nil")))
+    graph.add(primitives.Triple(s, p3, head))
+    return graph
+
+
+def test_turtle_stable_mixed_literal_forms_byte_identical(primitives, serialize_turtle):
+    profile = primitives.Profile()
+    mixed_text = stable_turtle(
+        mixed_literal_forms_graph(primitives), serialize_turtle, profile
+    )
+    single_text = stable_turtle(
+        single_literal_form_graph(primitives), serialize_turtle, profile
+    )
+    assert mixed_text == single_text
+    assert mixed_text.count('"v"') == 1
+    assert mixed_text.count('"w"') == 1
+    assert mixed_text.count('"x"') == 1
+
+
+def test_ntriples_stable_mixed_literal_forms_byte_identical(primitives):
+    f_mixed, f_single = StringIO(), StringIO()
+    serialize_ntriples(mixed_literal_forms_graph(primitives), f_mixed, stable=True)
+    serialize_ntriples(single_literal_form_graph(primitives), f_single, stable=True)
+    assert f_mixed.getvalue() == f_single.getvalue()
+
+
+def test_nquads_stable_mixed_literal_forms_byte_identical(primitives):
+    from pymantic.serializers import serialize_nquads
+
+    g = primitives.NamedNode("http://x/g")
+
+    def as_dataset(graph):
+        dataset = primitives.Dataset()
+        for triple in graph:
+            dataset.add(primitives.Quad(*triple, g))
+        return dataset
+
+    f_mixed, f_single = StringIO(), StringIO()
+    serialize_nquads(
+        as_dataset(mixed_literal_forms_graph(primitives)), f_mixed, stable=True
+    )
+    serialize_nquads(
+        as_dataset(single_literal_form_graph(primitives)), f_single, stable=True
+    )
+    assert f_mixed.getvalue() == f_single.getvalue()
+
+
+def test_stable_serializers_raise_undecidable(primitives, serialize_turtle):
+    from pymantic.compare import Undecidable
+    from pymantic.serializers import serialize_nquads
+
+    p = primitives.NamedNode("http://x/p")
+    nodes = [primitives.BlankNode() for _ in range(10)]
+    graph = primitives.Graph()
+    for s in nodes:
+        for o in nodes:
+            graph.add(primitives.Triple(s, p, o))
+    with pytest.raises(Undecidable):
+        serialize_turtle(graph, StringIO(), stable=True)
+    with pytest.raises(Undecidable):
+        serialize_ntriples(graph, StringIO(), stable=True)
+    dataset = primitives.Dataset()
+    for triple in graph:
+        dataset.add(primitives.Quad(*triple, None))
+    with pytest.raises(Undecidable):
+        serialize_nquads(dataset, StringIO(), stable=True)

@@ -48,14 +48,47 @@ def nt_escape(node_string):
     return output_string
 
 
-def serialize_ntriples(graph, f):
-    """Serialize some graph to f as ntriples."""
+def stable_lines(graph_or_dataset):
+    """The N-Triples or N-Quads lines of a graph or dataset with blank nodes
+    named by :func:`pymantic.compare.canonical_labels`, sorted, so that the
+    same content always gives the same lines whatever the labels and order
+    it was built with. See docs/graph-comparison.rst."""
+    from pymantic.compare import canonical_labels
+
+    labels = canonical_labels(graph_or_dataset)
+
+    def term(node):
+        if node.interfaceName == "BlankNode":
+            return "_:" + labels[node]
+        return node.toNT()
+
+    lines = []
+    for item in graph_or_dataset:
+        # A quad in the default graph is written as a triple.
+        graph = "" if len(item) == 3 or item[3] is None else " " + term(item[3])
+        lines.append(f"{term(item[0])} {term(item[1])} {term(item[2])}{graph} .\n")
+    return sorted(lines)
+
+
+def serialize_ntriples(graph, f, stable=False):
+    """Serialize some graph to f as ntriples, in graph order. With
+    ``stable``, blank nodes get content-derived labels and the lines are
+    sorted, so the same graph always produces the same bytes; this raises
+    :class:`pymantic.compare.Undecidable` for a graph whose blank nodes
+    cannot be told apart within the work budget."""
+    if stable:
+        f.writelines(stable_lines(graph))
+        return
     for triple in graph:
         f.write(str(triple))
 
 
-def serialize_nquads(dataset, f):
-    """Serialize some graph to f as nquads."""
+def serialize_nquads(dataset, f, stable=False):
+    """Serialize some dataset to f as nquads, in dataset order. ``stable``
+    works as for :func:`serialize_ntriples`."""
+    if stable:
+        f.writelines(stable_lines(dataset))
+        return
     for quad in dataset:
         f.write(str(quad))
 
@@ -194,9 +227,14 @@ def turtle_repr(node, profile, name_map, bnode_name_maker, base=None):
     return name
 
 
-def turtle_sorted_names(nodes, name_maker):
-    """Sort a list of nodes in a graph by turtle name."""
-    return sorted(((name_maker(node), node) for node in nodes), key=lambda p: p[0])
+def turtle_sorted_names(nodes, name_maker, tie_break=None):
+    """Sort a list of nodes in a graph by turtle name. ``tie_break`` maps a
+    node to a secondary key for nodes with the same name, such as two list
+    heads that are both written ``(1)``."""
+    pairs = ((name_maker(node), node) for node in nodes)
+    if tie_break is None:
+        return sorted(pairs, key=lambda p: p[0])
+    return sorted(pairs, key=lambda p: (p[0], tie_break(p[1])))
 
 
 RDF_FIRST = "http://www.w3.org/1999/02/22-rdf-syntax-ns#first"
@@ -283,13 +321,20 @@ class _TurtleWriter:
     its one reference, after which it is only named. This object holds that
     state for the length of one serialization."""
 
-    def __init__(self, graph, f, base, profile, bnode_name_generator):
+    def __init__(self, graph, f, base, profile, bnode_name_generator, stable):
         self.graph = graph
         self.f = f
         self.base = base
         self.profile = profile
+        self.stable = stable
         self.name_map = OrderedDict()
         self.bnode_name_maker = bnode_name_generator()
+        self.blank_order = {}
+        if stable:
+            from pymantic.compare import canonical_labels_and_order
+
+            labels, self.blank_order = canonical_labels_and_order(graph)
+            self.name_map.update((node, "_:" + label) for node, label in labels.items())
         self.inline, self.as_subject, self.consumed = plan_collections(graph)
         self.rendered = set()
 
@@ -302,13 +347,17 @@ class _TurtleWriter:
             self.f.write("@prefix " + prefix + ": <" + turtle_iri_escape(iri) + "> .\n")
 
         subjects = [s for s in self.graph.subjects() if s not in self.consumed]
-        for subject_name, subject in turtle_sorted_names(subjects, self.subject_repr):
+        tie_break = self.blank_rank if self.stable else None
+        for subject_name, subject in turtle_sorted_names(
+            subjects, self.subject_repr, tie_break
+        ):
             skip = (RDF_FIRST, RDF_REST) if subject in self.as_subject else ()
             self.write_block(subject_name, self.block_predicates(subject, skip))
 
         # A list whose only reference is from inside itself was never reached
         # from a subject block; write its cells as ordinary triples.
-        for head in self.inline:
+        heads = sorted(self.inline, key=self.blank_rank) if self.stable else self.inline
+        for head in heads:
             if head in self.rendered:
                 continue
             self.rendered.add(head)
@@ -322,6 +371,14 @@ class _TurtleWriter:
         return turtle_repr(
             node, self.profile, self.name_map, self.bnode_name_maker, self.base
         )
+
+    def blank_rank(self, node):
+        return self.blank_order.get(node, -1)
+
+    def object_key(self, node):
+        if node.interfaceName == "BlankNode":
+            return (1, self.blank_order[node], "")
+        return (0, 0, self.name(node))
 
     def collection_repr(self, members):
         return "(" + " ".join(self.object_repr(member) for member in members) + ")"
@@ -340,16 +397,21 @@ class _TurtleWriter:
             return self.collection_repr(self.as_subject[node])
         return self.name(node)
 
+    def objects_of(self, subject, predicate):
+        objects = [
+            t.object for t in self.graph.match(subject=subject, predicate=predicate)
+        ]
+        if self.stable:
+            objects.sort(key=self.object_key)
+        return objects
+
     def block_predicates(self, subject, skip=()):
         predicates = set(t.predicate for t in self.graph.match(subject=subject))
         predicates.difference_update(skip)
         return [
             (
                 predicate_name,
-                [
-                    self.object_repr(t.object)
-                    for t in self.graph.match(subject=subject, predicate=predicate)
-                ],
+                [self.object_repr(o) for o in self.objects_of(subject, predicate)],
             )
             for predicate_name, predicate in turtle_sorted_names(predicates, self.name)
         ]
@@ -368,7 +430,12 @@ class _TurtleWriter:
 
 
 def serialize_turtle(
-    graph, f, base=None, profile=None, bnode_name_generator=default_bnode_name_generator
+    graph,
+    f,
+    base=None,
+    profile=None,
+    bnode_name_generator=default_bnode_name_generator,
+    stable=False,
 ):
     """Serialize a graph to f as Turtle.
 
@@ -376,9 +443,19 @@ def serialize_turtle(
     written relative to it. The prefixes in profile are declared and used to
     abbreviate IRIs. bnode_name_generator is called once to get an iterator
     of blank node labels. Subjects, and predicates within a subject, are
-    ordered by their written form."""
+    ordered by their written form; the objects of one predicate are in graph
+    order, and blank nodes are labelled as they are met.
+
+    With ``stable``, blank nodes are instead named by
+    :func:`pymantic.compare.canonical_labels`, and the objects of one
+    predicate are sorted: IRIs and literals by their Turtle name, then blank
+    nodes by their molecule's canonical form and their position in it (see
+    docs/graph-comparison.rst). The same graph then always produces the
+    same bytes, and editing one blank node's content changes only the lines
+    of its molecule. Raises :class:`pymantic.compare.Undecidable` for a
+    graph whose blank nodes cannot be told apart within the work budget."""
     if profile is None:
         from pymantic.primitives import Profile
 
         profile = Profile()
-    _TurtleWriter(graph, f, base, profile, bnode_name_generator).write()
+    _TurtleWriter(graph, f, base, profile, bnode_name_generator, stable).write()

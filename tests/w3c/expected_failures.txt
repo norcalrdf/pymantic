@@ -1,8 +1,6 @@
 # W3C tests pymantic currently fails, one per line: <test id><TAB><reason>.
 # tests/test_w3c.py marks these xfail. Remove a line once the test passes.
 
-rdf11/rdf-turtle/blankNodePropertyList_as_object_containing_objectList_of_two_objects	parser yields a generator instead of a node for a blankNodePropertyList followed by ',' in an objectList
-rdf11/rdf-turtle/blankNodePropertyList_as_object_containing_objectList_of_two_objects[roundtrip]	parser yields a generator instead of a node for a blankNodePropertyList followed by ',' in an objectList
 rdf11/rdf-turtle/collection_subject[roundtrip]	Turtle serializer emits nothing for statements whose subject is a collection
 rdf11/rdf-turtle/nested_collection[roundtrip]	Turtle serializer crashes on lists containing IRIs, blank nodes or nested lists (Resource has no interfaceName)
 rdf11/rdf-turtle/first[roundtrip]	Turtle serializer crashes on lists containing IRIs, blank nodes or nested lists (Resource has no interfaceName)

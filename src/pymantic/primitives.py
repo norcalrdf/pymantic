@@ -213,9 +213,11 @@ class Quad(tuple):
     graph = property(itemgetter(3))
 
     def __str__(self):
+        # A quad in the default graph (graph=None) is written as a triple.
+        graph = "" if self.graph is None else f" {self.graph.toNT()}"
         return (
             f"{self.subject.toNT()} {self.predicate.toNT()} "
-            f"{self.object.toNT()} {self.graph.toNT()} .\n"
+            f"{self.object.toNT()}{graph} .\n"
         )
 
 

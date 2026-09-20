@@ -26,9 +26,8 @@ import datetime
 import itertools
 from operator import itemgetter
 
-from pymantic.serializers import nt_escape, validate_language
+from pymantic.serializers import iri_escape, nt_escape, validate_language
 import pymantic.uri_schemes as uri_schemes
-from pymantic.util import quote_normalized_iri
 
 
 def is_language(lang):
@@ -361,7 +360,7 @@ class NamedNode(str):
         return self.value
 
     def toNT(self):
-        return f"<{nt_escape(quote_normalized_iri(self.value))}>"
+        return f"<{iri_escape(self.value)}>"
 
 
 class Prefix(NamedNode):

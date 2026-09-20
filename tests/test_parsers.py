@@ -207,6 +207,59 @@ def test_parse_turtle_example_1():
     assert len(g) == 4
 
 
+def test_parse_turtle_blank_node_property_list_in_object_list():
+    ttl = """<http://a.example/s> <http://a.example/p> [ <http://a.example/p2> <http://a.example/o> ]
+                                          , <http://a.example/o2> ."""
+    g = turtle_parser.parse(ttl)
+    s = NamedNode("http://a.example/s")
+    p = NamedNode("http://a.example/p")
+    (list_node,) = [
+        t.object for t in g if t.subject == s and isinstance(t.object, BlankNode)
+    ]
+    assert set(g) == {
+        Triple(s, p, list_node),
+        Triple(
+            list_node, NamedNode("http://a.example/p2"), NamedNode("http://a.example/o")
+        ),
+        Triple(s, p, NamedNode("http://a.example/o2")),
+    }
+
+
+def test_parse_turtle_blank_node_property_list_after_object_in_object_list():
+    ttl = """<http://a.example/s> <http://a.example/p> <http://a.example/o2>,
+        [ <http://a.example/p2> <http://a.example/o> ] ."""
+    g = turtle_parser.parse(ttl)
+    s = NamedNode("http://a.example/s")
+    p = NamedNode("http://a.example/p")
+    (list_node,) = [
+        t.object for t in g if t.subject == s and isinstance(t.object, BlankNode)
+    ]
+    assert set(g) == {
+        Triple(s, p, list_node),
+        Triple(
+            list_node, NamedNode("http://a.example/p2"), NamedNode("http://a.example/o")
+        ),
+        Triple(s, p, NamedNode("http://a.example/o2")),
+    }
+
+
+def test_parse_turtle_collection_in_object_list():
+    ttl = """<http://a.example/s> <http://a.example/p> ( <http://a.example/o> ), <http://a.example/o2> ."""
+    g = turtle_parser.parse(ttl)
+    s = NamedNode("http://a.example/s")
+    p = NamedNode("http://a.example/p")
+    rdf = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    (list_node,) = [
+        t.object for t in g if t.subject == s and isinstance(t.object, BlankNode)
+    ]
+    assert set(g) == {
+        Triple(s, p, list_node),
+        Triple(list_node, NamedNode(rdf + "first"), NamedNode("http://a.example/o")),
+        Triple(list_node, NamedNode(rdf + "rest"), NamedNode(rdf + "nil")),
+        Triple(s, p, NamedNode("http://a.example/o2")),
+    }
+
+
 def test_jsonld_basic():
     import json
 

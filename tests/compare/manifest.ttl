@@ -1,0 +1,91 @@
+# Hand-written graph comparison tests for pymantic.compare, in the style of
+# the W3C rdf-tests manifests. Each entry names two files; a
+# pc:IsomorphicTest expects them to be isomorphic, a pc:NonIsomorphicTest
+# expects them not to be. Files are parsed by extension (.ttl, .nt, .nq).
+# Driven by tests/test_compare_manifest.py.
+
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix mf:   <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> .
+@prefix pc:   <https://github.com/norcalrdf/pymantic/tests/compare#> .
+
+<> a mf:Manifest ;
+    rdfs:label "Graph comparison tests" ;
+    mf:entries (
+        <#chain-relabelled>
+        <#shapes-relabelled>
+        <#symmetric-square-relabelled>
+        <#identical-siblings-relabelled>
+        <#plain-and-xsd-string-literal>
+        <#dataset-shared-blank-node>
+        <#triple-removed>
+        <#datatype-changed>
+        <#language-changed>
+        <#blank-edge-reversed>
+        <#literal-versus-iri>
+        <#dataset-graph-moved>
+    ) .
+
+<#chain-relabelled> a pc:IsomorphicTest ;
+    mf:name "chain, relabelled and reordered" ;
+    rdfs:comment "A chain of blank nodes hanging off an IRI, written in Turtle and again in N-Triples with other labels and another order." ;
+    mf:action <chain.ttl> ;
+    mf:result <chain-relabelled.nt> .
+
+<#shapes-relabelled> a pc:IsomorphicTest ;
+    mf:name "SHACL-like shapes with nested lists, relabelled" ;
+    rdfs:comment "Anonymous property nodes and rdf:Lists written with [ ] and ( ), against explicit labels in another order." ;
+    mf:action <shapes.ttl> ;
+    mf:result <shapes-relabelled.nt> .
+
+<#symmetric-square-relabelled> a pc:IsomorphicTest ;
+    mf:name "symmetric square, relabelled" ;
+    rdfs:comment "Refinement alone cannot separate the two neighbours of the marked corner; individualization must." ;
+    mf:action <symmetric-square.ttl> ;
+    mf:result <symmetric-square-relabelled.ttl> .
+
+<#identical-siblings-relabelled> a pc:IsomorphicTest ;
+    mf:name "identical anonymous siblings, relabelled" ;
+    mf:action <identical-siblings.ttl> ;
+    mf:result <identical-siblings-relabelled.nt> .
+
+<#plain-and-xsd-string-literal> a pc:IsomorphicTest ;
+    mf:name "simple literal equals xsd:string literal" ;
+    rdfs:comment "RDF 1.1 makes a simple literal an xsd:string literal, so the two spellings are the same term." ;
+    mf:action <string-literal-plain.nt> ;
+    mf:result <string-literal-typed.nt> .
+
+<#dataset-shared-blank-node> a pc:IsomorphicTest ;
+    mf:name "dataset with a blank node shared across graphs, relabelled" ;
+    mf:action <dataset.nq> ;
+    mf:result <dataset-relabelled.nq> .
+
+<#triple-removed> a pc:NonIsomorphicTest ;
+    mf:name "one triple removed" ;
+    mf:action <near-miss-base.ttl> ;
+    mf:result <near-miss-triple-removed.ttl> .
+
+<#datatype-changed> a pc:NonIsomorphicTest ;
+    mf:name "one datatype changed" ;
+    mf:action <near-miss-base.ttl> ;
+    mf:result <near-miss-datatype-changed.ttl> .
+
+<#language-changed> a pc:NonIsomorphicTest ;
+    mf:name "one language tag changed" ;
+    mf:action <near-miss-base.ttl> ;
+    mf:result <near-miss-language-changed.ttl> .
+
+<#blank-edge-reversed> a pc:NonIsomorphicTest ;
+    mf:name "one blank-to-blank edge reversed" ;
+    mf:action <near-miss-base.ttl> ;
+    mf:result <near-miss-edge-reversed.ttl> .
+
+<#literal-versus-iri> a pc:NonIsomorphicTest ;
+    mf:name "literal swapped for an IRI with the same text" ;
+    mf:action <near-miss-base.ttl> ;
+    mf:result <near-miss-literal-versus-iri.ttl> .
+
+<#dataset-graph-moved> a pc:NonIsomorphicTest ;
+    mf:name "dataset with one quad moved to another graph" ;
+    mf:action <dataset.nq> ;
+    mf:result <dataset-graph-moved.nq> .

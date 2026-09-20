@@ -1087,6 +1087,44 @@ def test_turtle_stable_uses_canonical_labels(
     assert "_:b0 " not in text
 
 
+def test_turtle_stable_orders_sibling_blank_nodes_by_canonical_form(
+    primitives, profile, turtle_parser, serialize_turtle
+):
+    import re
+
+    from pymantic.compare import canonical_labels_and_order
+
+    profile.setPrefix("ex", primitives.NamedNode("http://x/"))
+    graph = turtle_parser.parse(STABLE_SHAPES)
+    text = stable_turtle(graph, serialize_turtle, profile)
+    labels, order = canonical_labels_and_order(graph)
+    path = primitives.NamedNode("http://x/path")
+    siblings = [
+        t.object
+        for t in graph.match(predicate=primitives.NamedNode("http://x/property"))
+    ]
+    # The siblings are inlined, so their order shows in the order of their
+    # ex:path values rather than of their labels.
+    expected = [
+        profile.prefixes.shrink(next(graph.match(subject=n, predicate=path)).object)
+        for n in sorted(siblings, key=order.__getitem__)
+    ]
+    assert re.findall(r"ex:path (ex:\w+)", text) == expected
+    assert objects_under(text, "ex:label") == ['"Forme"@fr', '"Shape"']
+
+
+def test_turtle_stable_mixed_objects_named_before_blank(
+    primitives, profile, turtle_parser, serialize_turtle
+):
+    profile.setPrefix("ex", primitives.NamedNode("http://x/"))
+    graph = turtle_parser.parse(
+        '@prefix : <http://x/> . :s :p [ :v 1 ] , :b , "a" , :a .'
+    )
+    text = stable_turtle(graph, serialize_turtle, profile)
+    objects = objects_under(text, "ex:s ex:p")
+    assert objects == ['"a"', "ex:a", "ex:b", "[ ex:v 1 ]"]
+
+
 def test_turtle_stable_self_referencing_list_is_deterministic(
     primitives, profile, turtle_parser, serialize_turtle
 ):
@@ -1113,6 +1151,493 @@ def test_turtle_default_output_unchanged_by_stable_keyword(
     serialize_turtle(graph, explicit, profile=profile, stable=False)
     assert plain.getvalue() == explicit.getvalue()
     assert "_:b0 " in plain.getvalue()
+
+
+# Inline blank nodes in stable mode -----------------------------------------
+
+
+def stable_round_trip(turtle_parser, serialize_turtle, profile, turtle):
+    """Stable output of the parsed graph, checked to be the same after a
+    shuffle and to reparse to an isomorphic graph."""
+    from pymantic.compare import isomorphic
+
+    graph = turtle_parser.parse(turtle)
+    text = stable_turtle(graph, serialize_turtle, profile)
+    for seed in range(3):
+        copy = shuffled_relabelled(graph, seed)
+        assert stable_turtle(copy, serialize_turtle, profile) == text
+    reparsed = turtle_parser.parse(text)
+    assert isomorphic(graph, reparsed), text
+    assert len(reparsed) == len(graph)
+    return text
+
+
+@pytest.fixture()
+def ex_profile(primitives, profile):
+    profile.setPrefix("ex", primitives.NamedNode("http://x/"))
+    return profile
+
+
+def test_turtle_stable_inlines_single_reference_blank_node(
+    ex_profile, turtle_parser, serialize_turtle
+):
+    text = stable_round_trip(
+        turtle_parser,
+        serialize_turtle,
+        ex_profile,
+        "@prefix : <http://x/> . :s :p [ :b 2 ; :a 1 ] .",
+    )
+    assert "ex:s ex:p [ ex:a 1 ;\n" "            ex:b 2 ] ;\n" "     .\n" in text
+    assert "_:" not in text
+
+
+def test_turtle_stable_inlines_nested_blank_nodes(
+    ex_profile, turtle_parser, serialize_turtle
+):
+    text = stable_round_trip(
+        turtle_parser,
+        serialize_turtle,
+        ex_profile,
+        "@prefix : <http://x/> . :s :p [ :d 3 ; :a [ :c 2 ; :b 1 ] ] .",
+    )
+    assert (
+        "ex:s ex:p [ ex:a [ ex:b 1 ;\n"
+        "                   ex:c 2 ] ;\n"
+        "            ex:d 3 ] ;\n"
+        "     .\n"
+    ) in text
+    assert "_:" not in text
+
+
+def test_turtle_stable_inline_objects_of_one_predicate_align(
+    ex_profile, turtle_parser, serialize_turtle
+):
+    text = stable_round_trip(
+        turtle_parser,
+        serialize_turtle,
+        ex_profile,
+        "@prefix : <http://x/> . :s :p [ :v 1 ; :w 2 ], :o .",
+    )
+    assert (
+        "ex:s ex:p ex:o,\n"
+        "          [ ex:v 1 ;\n"
+        "            ex:w 2 ] ;\n"
+        "     .\n"
+    ) in text
+
+
+def test_turtle_stable_keeps_label_for_blank_node_referenced_twice(
+    ex_profile, turtle_parser, serialize_turtle
+):
+    import re
+
+    text = stable_round_trip(
+        turtle_parser,
+        serialize_turtle,
+        ex_profile,
+        "@prefix : <http://x/> . :s :p _:x . :t :p _:x . _:x :a 1 .",
+    )
+    labels = set(re.findall(r"_:b[0-9a-f]{12}", text))
+    assert len(labels) == 1
+    (label,) = labels
+    assert text.count(label) == 3
+    assert "[" not in text
+
+
+def test_turtle_stable_cycle_back_to_ancestor_keeps_label(
+    ex_profile, turtle_parser, serialize_turtle
+):
+    from pymantic.compare import canonical_labels
+
+    graph = turtle_parser.parse(
+        "@prefix : <http://x/> . :s :p _:a . _:a :p _:b . _:b :p _:a ."
+    )
+    text = stable_round_trip(
+        turtle_parser,
+        serialize_turtle,
+        ex_profile,
+        "@prefix : <http://x/> . :s :p _:a . _:a :p _:b . _:b :p _:a .",
+    )
+    (a,) = [t.object for t in graph if str(t.subject) == "http://x/s"]
+    label = "_:" + canonical_labels(graph)[a]
+    # _:a is referenced from ex:s and again from the node inlined under it,
+    # so it keeps its label; _:b has one reference and is inlined.
+    assert f"ex:s ex:p {label} ;\n" in text
+    assert f"{label} ex:p [ ex:p {label} ] ;\n" in text
+
+
+def test_turtle_stable_cycle_of_single_reference_nodes_is_deterministic(
+    ex_profile, turtle_parser, serialize_turtle
+):
+    import re
+
+    text = stable_round_trip(
+        turtle_parser,
+        serialize_turtle,
+        ex_profile,
+        "@prefix : <http://x/> . _:a :p _:b . _:b :p _:c . _:c :p _:a .",
+    )
+    # Nothing outside the cycle refers to it, so one node keeps its label
+    # and is written as a subject; the others are inlined beneath it.
+    labels = set(re.findall(r"_:b[0-9a-f]{12}n\d", text))
+    assert len(labels) == 1
+    (label,) = labels
+    assert f"{label} ex:p [ ex:p [ ex:p {label} ] ] ;\n" in text
+
+
+def test_turtle_stable_empty_blank_node_is_brackets(
+    ex_profile, turtle_parser, serialize_turtle
+):
+    text = stable_round_trip(
+        turtle_parser,
+        serialize_turtle,
+        ex_profile,
+        "@prefix : <http://x/> . :s :p [] .",
+    )
+    assert "ex:s ex:p [] ;\n" in text
+    assert "_:" not in text
+
+
+def test_turtle_stable_list_of_inline_blank_nodes(
+    ex_profile, turtle_parser, serialize_turtle
+):
+    text = stable_round_trip(
+        turtle_parser,
+        serialize_turtle,
+        ex_profile,
+        "@prefix : <http://x/> . :s :p ( [ :a 1 ] [ :a 2 ; :b 3 ] ) .",
+    )
+    assert (
+        "ex:s ex:p ([ ex:a 1 ] [ ex:a 2 ;\n"
+        "                        ex:b 3 ]) ;\n"
+        "     .\n"
+    ) in text
+    assert "_:" not in text
+
+
+def test_turtle_stable_list_head_with_other_predicates_is_not_inlined(
+    ex_profile, turtle_parser, serialize_turtle
+):
+    text = stable_round_trip(
+        turtle_parser,
+        serialize_turtle,
+        ex_profile,
+        "@prefix : <http://x/> . :s :p _:l . _:l :q :o ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 1 ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> () .",
+    )
+    assert "[" not in text
+    assert "rdf:first 1 ;" in text
+
+
+def test_turtle_stable_list_subject_with_inline_members(
+    ex_profile, turtle_parser, serialize_turtle
+):
+    text = stable_round_trip(
+        turtle_parser,
+        serialize_turtle,
+        ex_profile,
+        "@prefix : <http://x/> . ( [ :a 1 ] [ :a 2 ] ) :p [ :b 3 ] .",
+    )
+    assert "([ ex:a 1 ] [ ex:a 2 ]) ex:p [ ex:b 3 ] ;\n" in text
+    assert "_:" not in text
+
+
+@pytest.mark.parametrize(
+    "turtle",
+    [
+        # A node that refers to itself.
+        "@prefix : <http://x/> . _:a :p _:a .",
+        # An inline node whose object is a shared node.
+        "@prefix : <http://x/> . :s :p [ :q _:x ] . :t :p _:x . _:x :a 1 .",
+        # A list that contains itself, with inline members.
+        "_:l <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> [ <http://x/a> 1 ] ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:l .",
+        # Inline nodes nested in lists nested in inline nodes.
+        "@prefix : <http://x/> . :s :p [ :or ( [ :c :A ] [ :c :B ; :in ( 1 [] ) ] ) ] .",
+        # A broken chain written as ordinary triples with an inline tail.
+        "@prefix : <http://x/> . :s :p _:c ."
+        " _:c <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 1 ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> [ :q :o ] .",
+    ],
+)
+def test_turtle_stable_inline_shapes_round_trip(
+    ex_profile, turtle_parser, serialize_turtle, turtle
+):
+    stable_round_trip(turtle_parser, serialize_turtle, ex_profile, turtle)
+
+
+def blank_node_chain(primitives, length):
+    """s p [ p [ p ... "end" ] ]: ``length`` blank nodes, each the object of
+    exactly one triple."""
+    p = primitives.NamedNode("http://x/p")
+    graph = primitives.Graph()
+    previous = primitives.NamedNode("http://x/s")
+    for _ in range(length):
+        node = primitives.BlankNode()
+        graph.add(primitives.Triple(previous, p, node))
+        previous = node
+    graph.add(primitives.Triple(previous, p, primitives.Literal("end")))
+    return graph
+
+
+def bracket_nesting(text, opening="[", closing="]"):
+    """The deepest nesting of the given brackets in Turtle text that has no
+    brackets in literals. ``opening`` and ``closing`` may name several
+    characters each, to count [ and ( together."""
+    depth = deepest = 0
+    for char in text:
+        if char in opening:
+            depth += 1
+            deepest = max(deepest, depth)
+        elif char in closing:
+            depth -= 1
+    assert depth == 0
+    return deepest
+
+
+def test_turtle_stable_caps_inline_nesting_depth(
+    primitives, turtle_parser, serialize_turtle
+):
+    from pymantic.compare import isomorphic
+    from pymantic.serializers import MAX_INLINE_DEPTH
+
+    graph = blank_node_chain(primitives, 500)
+    profile = primitives.Profile()
+    text = stable_turtle(graph, serialize_turtle, profile)
+    assert bracket_nesting(text) == MAX_INLINE_DEPTH
+    for seed in range(2):
+        copy = shuffled_relabelled(graph, seed)
+        assert stable_turtle(copy, serialize_turtle, profile) == text
+    reparsed = turtle_parser.parse(text)
+    assert isomorphic(graph, reparsed)
+    assert len(reparsed) == len(graph)
+
+
+def test_turtle_stable_inline_depth_boundary(primitives, serialize_turtle):
+    from pymantic.serializers import MAX_INLINE_DEPTH
+
+    profile = primitives.Profile()
+    within = stable_turtle(
+        blank_node_chain(primitives, MAX_INLINE_DEPTH), serialize_turtle, profile
+    )
+    assert "_:" not in within
+    assert bracket_nesting(within) == MAX_INLINE_DEPTH
+    beyond = stable_turtle(
+        blank_node_chain(primitives, MAX_INLINE_DEPTH + 1), serialize_turtle, profile
+    )
+    # The node past the cap keeps its label: named once as an object and
+    # once as the subject of its own block.
+    assert beyond.count("_:") == 2
+    assert bracket_nesting(beyond) == MAX_INLINE_DEPTH
+
+
+def nested_list(primitives, depth):
+    """s p ((( ... ("end") ... ))): ``depth`` one-member lists, each the
+    member of the next."""
+    rdf = primitives.Prefix("http://www.w3.org/1999/02/22-rdf-syntax-ns#")
+    graph = primitives.Graph()
+    member = primitives.Literal("end")
+    for _ in range(depth):
+        head = primitives.BlankNode()
+        graph.add(primitives.Triple(head, rdf("first"), member))
+        graph.add(primitives.Triple(head, rdf("rest"), rdf("nil")))
+        member = head
+    graph.add(
+        primitives.Triple(
+            primitives.NamedNode("http://x/s"),
+            primitives.NamedNode("http://x/p"),
+            member,
+        )
+    )
+    return graph
+
+
+def alternating_chain(primitives, length):
+    """s p [ p ( [ p ( ... "end" ) ] ) ]: ``length`` levels alternating an
+    inline blank node and a one-member list."""
+    rdf = primitives.Prefix("http://www.w3.org/1999/02/22-rdf-syntax-ns#")
+    p = primitives.NamedNode("http://x/p")
+    graph = primitives.Graph()
+    member = primitives.Literal("end")
+    for level in range(length):
+        node = primitives.BlankNode()
+        if level % 2:
+            graph.add(primitives.Triple(node, p, member))
+        else:
+            graph.add(primitives.Triple(node, rdf("first"), member))
+            graph.add(primitives.Triple(node, rdf("rest"), rdf("nil")))
+        member = node
+    graph.add(primitives.Triple(primitives.NamedNode("http://x/s"), p, member))
+    return graph
+
+
+@pytest.mark.parametrize("stable", [False, True])
+def test_turtle_caps_collection_nesting_depth(
+    primitives, turtle_parser, serialize_turtle, stable
+):
+    """A list nested deeper than the cap is written without recursing as
+    deep as the data: the head past the cap keeps its label and is written
+    as a block of rdf:first/rdf:rest triples, which reads back as the same
+    list."""
+    from pymantic.compare import isomorphic
+    from pymantic.serializers import MAX_INLINE_DEPTH
+
+    graph = nested_list(primitives, 500)
+    profile = primitives.Profile()
+    f = StringIO()
+    serialize_turtle(graph, f, profile=profile, stable=stable)
+    text = f.getvalue()
+    assert bracket_nesting(text, "(", ")") == MAX_INLINE_DEPTH
+    assert "rdf:first" in text
+    if stable:
+        for seed in range(2):
+            copy = shuffled_relabelled(graph, seed)
+            assert stable_turtle(copy, serialize_turtle, profile) == text
+    reparsed = turtle_parser.parse(text)
+    assert isomorphic(graph, reparsed)
+    assert len(reparsed) == len(graph)
+
+
+def test_turtle_stable_collection_depth_boundary(
+    primitives, turtle_parser, serialize_turtle
+):
+    from pymantic.compare import isomorphic
+    from pymantic.serializers import MAX_INLINE_DEPTH
+
+    profile = primitives.Profile()
+    within = stable_turtle(
+        nested_list(primitives, MAX_INLINE_DEPTH), serialize_turtle, profile
+    )
+    assert "_:" not in within
+    assert "rdf:first" not in within
+    assert bracket_nesting(within, "(", ")") == MAX_INLINE_DEPTH
+    graph = nested_list(primitives, MAX_INLINE_DEPTH + 1)
+    beyond = stable_turtle(graph, serialize_turtle, profile)
+    # The innermost list is past the cap: its head is named once as the
+    # member of the list above it and once as the subject of its own
+    # rdf:first/rdf:rest block.
+    assert beyond.count("_:") == 2
+    assert 'rdf:first "end" ;' in beyond
+    assert bracket_nesting(beyond, "(", ")") == MAX_INLINE_DEPTH
+    reparsed = turtle_parser.parse(beyond)
+    assert isomorphic(graph, reparsed)
+    assert len(reparsed) == len(graph)
+
+
+def test_turtle_stable_lists_and_inline_nodes_share_the_depth_cap(
+    primitives, turtle_parser, serialize_turtle
+):
+    from pymantic.compare import isomorphic
+    from pymantic.serializers import MAX_INLINE_DEPTH
+
+    graph = alternating_chain(primitives, 200)
+    profile = primitives.Profile()
+    text = stable_turtle(graph, serialize_turtle, profile)
+    assert bracket_nesting(text, "[(", "])") == MAX_INLINE_DEPTH
+    for seed in range(2):
+        copy = shuffled_relabelled(graph, seed)
+        assert stable_turtle(copy, serialize_turtle, profile) == text
+    reparsed = turtle_parser.parse(text)
+    assert isomorphic(graph, reparsed)
+    assert len(reparsed) == len(graph)
+
+
+# Used prefixes only in stable mode -----------------------------------------
+
+
+def directives(text):
+    return [line for line in text.splitlines() if line.startswith("@")]
+
+
+def test_turtle_stable_declares_only_used_prefixes(
+    primitives, ex_profile, turtle_parser, serialize_turtle
+):
+    ex_profile.setPrefix("unused", primitives.NamedNode("http://unused/"))
+    text = stable_round_trip(
+        turtle_parser,
+        serialize_turtle,
+        ex_profile,
+        "@prefix : <http://x/> . @prefix xsd: <http://www.w3.org/2001/XMLSchema#> ."
+        ' :s :p "2020-01-01"^^xsd:date .',
+    )
+    assert directives(text) == [
+        "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+        "@prefix ex: <http://x/> .",
+    ]
+
+
+@pytest.mark.parametrize(
+    "turtle, declared",
+    [
+        ("@prefix : <http://x/> . :s :p 1 .", False),
+        ("@prefix : <http://x/> . :s a :C .", True),
+        ("@prefix : <http://x/> . :s :p () .", True),
+        (
+            "@prefix : <http://x/> . :s :p _:l . _:l :q :o ;"
+            " <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 1 ;"
+            " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> () .",
+            True,
+        ),
+    ],
+)
+def test_turtle_stable_declares_rdf_exactly_when_written(
+    ex_profile, turtle_parser, serialize_turtle, turtle, declared
+):
+    text = stable_round_trip(turtle_parser, serialize_turtle, ex_profile, turtle)
+    rdf_line = "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ."
+    assert (rdf_line in directives(text)) == declared
+    assert ("rdf:" in text.split("\n", len(directives(text)))[-1]) == declared
+
+
+def test_turtle_stable_prefix_unused_when_local_name_falls_back_to_iri(
+    primitives, ex_profile, turtle_parser, serialize_turtle
+):
+    ex_profile.setPrefix("y", primitives.NamedNode("http://y/"))
+    text = stable_round_trip(
+        turtle_parser,
+        serialize_turtle,
+        ex_profile,
+        "<http://x/a[b]> <http://y/p> <http://y/o> .",
+    )
+    assert directives(text) == ["@prefix y: <http://y/> ."]
+    assert "<http://x/a[b]> y:p y:o ;" in text
+
+
+def test_turtle_stable_exact_output(ex_profile, turtle_parser, serialize_turtle):
+    text = stable_round_trip(
+        turtle_parser,
+        serialize_turtle,
+        ex_profile,
+        "@prefix : <http://x/> ."
+        " :Shape :property [ :path :age ; :in ( 1 2 ) ; :node [ :class :Age ] ] ;"
+        ' :label "Shape" ; :type :NodeShape .',
+    )
+    assert text == (
+        "@prefix ex: <http://x/> .\n"
+        'ex:Shape ex:label "Shape" ;\n'
+        "         ex:property [ ex:in (1 2) ;\n"
+        "                       ex:node [ ex:class ex:Age ] ;\n"
+        "                       ex:path ex:age ] ;\n"
+        "         ex:type ex:NodeShape ;\n"
+        "         .\n"
+        "\n"
+    )
+
+
+def test_turtle_default_mode_declares_every_prefix(
+    primitives, ex_profile, turtle_parser, serialize_turtle
+):
+    ex_profile.setPrefix("unused", primitives.NamedNode("http://unused/"))
+    graph = turtle_parser.parse("@prefix : <http://x/> . :s :p 1 .")
+    f = StringIO()
+    serialize_turtle(graph, f, profile=ex_profile)
+    assert directives(f.getvalue()) == [
+        "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .",
+        "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .",
+        "@prefix ex: <http://x/> .",
+        "@prefix unused: <http://unused/> .",
+    ]
 
 
 def test_ntriples_stable_sorts_lines_with_canonical_labels(primitives, turtle_parser):
@@ -1266,6 +1791,18 @@ def test_turtle_default_output_writes_equivalent_literals_once(
     assert f.getvalue().count('"v"') == 1
 
 
+def test_turtle_stable_keeps_distinct_blank_nodes_that_render_alike(
+    primitives, turtle_parser, serialize_turtle
+):
+    """Two empty blank nodes are two terms even though both are written []."""
+    from pymantic.compare import isomorphic
+
+    graph = turtle_parser.parse("<http://x/s> <http://x/p> [] , [] .")
+    text = stable_turtle(graph, serialize_turtle, primitives.Profile())
+    assert text.count("[]") == 2
+    assert isomorphic(graph, turtle_parser.parse(text))
+
+
 def test_turtle_stable_collection_head_with_equivalent_literal_firsts(
     primitives, serialize_turtle
 ):
@@ -1395,6 +1932,61 @@ def test_nquads_stable_mixed_literal_forms_byte_identical(primitives):
         as_dataset(single_literal_form_graph(primitives)), f_single, stable=True
     )
     assert f_mixed.getvalue() == f_single.getvalue()
+
+
+def nested_list_as_subject(primitives, depth):
+    """(((...("end")...))) :q :r .: ``depth`` one-member lists, each nested
+    in the next, with the outermost list as the subject of a statement, so
+    plan_collections classifies it as an ``as_subject`` collection (an
+    ``( ... ) p o .`` statement) rather than as the object of one."""
+    rdf = primitives.Prefix("http://www.w3.org/1999/02/22-rdf-syntax-ns#")
+    graph = primitives.Graph()
+    member = primitives.Literal("end")
+    head = None
+    for _ in range(depth):
+        head = primitives.BlankNode()
+        graph.add(primitives.Triple(head, rdf("first"), member))
+        graph.add(primitives.Triple(head, rdf("rest"), rdf("nil")))
+        member = head
+    graph.add(
+        primitives.Triple(
+            head,
+            primitives.NamedNode("http://x/q"),
+            primitives.NamedNode("http://x/r"),
+        )
+    )
+    return graph
+
+
+def test_turtle_stable_collection_subject_depth_boundary(
+    primitives, turtle_parser, serialize_turtle
+):
+    """Members nested beneath a collection subject count the subject's own
+    enclosing '(' as one level of nesting, so the cap lands in the same
+    place as for a list nested under an ordinary collection object (compare
+    test_turtle_stable_collection_depth_boundary)."""
+    from pymantic.compare import isomorphic
+    from pymantic.serializers import MAX_INLINE_DEPTH
+
+    profile = primitives.Profile()
+    within = stable_turtle(
+        nested_list_as_subject(primitives, MAX_INLINE_DEPTH), serialize_turtle, profile
+    )
+    assert "_:" not in within
+    assert "rdf:first" not in within
+    assert bracket_nesting(within, "(", ")") == MAX_INLINE_DEPTH
+
+    graph = nested_list_as_subject(primitives, MAX_INLINE_DEPTH + 1)
+    beyond = stable_turtle(graph, serialize_turtle, profile)
+    # The innermost list is past the cap: its head is named once as the
+    # member of the list above it and once as the subject of its own
+    # rdf:first/rdf:rest block.
+    assert beyond.count("_:") == 2
+    assert 'rdf:first "end" ;' in beyond
+    assert bracket_nesting(beyond, "(", ")") == MAX_INLINE_DEPTH
+    reparsed = turtle_parser.parse(beyond)
+    assert isomorphic(graph, reparsed)
+    assert len(reparsed) == len(graph)
 
 
 def test_stable_serializers_raise_undecidable(primitives, serialize_turtle):

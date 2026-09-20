@@ -889,9 +889,6 @@ def test_turtle_list_object_round_trip(turtle_parser, serialize_turtle, turtle):
 def test_turtle_two_lists_as_objects_of_one_predicate(
     primitives, profile, turtle_parser, serialize_turtle
 ):
-    """Checked with rdflib because pymantic's Turtle parser cannot yet read a
-    collection followed by ',' in an object list."""
-    import rdflib
     from rdflib.compare import isomorphic
 
     profile.setPrefix("ex", primitives.NamedNode("http://x/"))
@@ -901,8 +898,8 @@ def test_turtle_two_lists_as_objects_of_one_predicate(
     f = StringIO()
     serialize_turtle(graph, f, profile=profile)
     assert "ex:s ex:p (1),\n" "          (2) ;\n" in f.getvalue()
-    reparsed = rdflib.Graph().parse(data=f.getvalue(), format="turtle")
-    assert isomorphic(to_rdflib(graph), reparsed)
+    reparsed = turtle_parser.parse(f.getvalue())
+    assert isomorphic(to_rdflib(graph), to_rdflib(reparsed))
 
 
 def test_turtle_list_with_iri_blank_node_and_nested_list_members(

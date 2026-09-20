@@ -162,10 +162,9 @@ def parametrize_cases(entries, expected_failures, id_suffix=""):
         test_id = entry.id + id_suffix
         marks = []
         if test_id in expected_failures:
-            # Non-strict until the parser and serializer fix branches land;
-            # then flip to strict=True so fixed tests must leave the list.
+            # Strict: a test that starts passing must be removed from the list.
             marks.append(
-                pytest.mark.xfail(reason=expected_failures[test_id], strict=False)
+                pytest.mark.xfail(reason=expected_failures[test_id], strict=True)
             )
         cases.append(pytest.param(entry, id=test_id, marks=marks))
     return cases

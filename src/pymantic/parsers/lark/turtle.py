@@ -18,7 +18,7 @@ import re
 
 from pymantic.parsers.base import BaseParser
 from pymantic.primitives import BlankNode, Literal, NamedNode, Triple
-from pymantic.util import decode_literal, grouper, smart_urljoin
+from pymantic.util import decode_literal, grouper, resolve_iri
 
 RDF_TYPE = NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
 RDF_NIL = NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#nil")
@@ -149,7 +149,7 @@ class TurtleTransformer(BaseParser, Transformer):
 
         if iriref_or_pname.startswith("<"):
             return self.make_named_node(
-                smart_urljoin(self.base_iri, self.decode_iriref(iriref_or_pname))
+                resolve_iri(self.base_iri, self.decode_iriref(iriref_or_pname))
             )
 
         return iriref_or_pname
@@ -176,7 +176,7 @@ class TurtleTransformer(BaseParser, Transformer):
 
     def prefix_id(self, children):
         ns, iriref = children
-        iri = smart_urljoin(self.base_iri, self.decode_iriref(iriref))
+        iri = resolve_iri(self.base_iri, self.decode_iriref(iriref))
         ns = ns[:-1]  # Drop trailing : from namespace
         self.prefixes[ns] = iri
 
@@ -192,7 +192,7 @@ class TurtleTransformer(BaseParser, Transformer):
         if base_directive.startswith("@") and base_directive != "@base":
             raise ValueError("Unexpected @base: " + base_directive)
 
-        self.base_iri = smart_urljoin(self.base_iri, self.decode_iriref(base_iriref))
+        self.base_iri = resolve_iri(self.base_iri, self.decode_iriref(base_iriref))
 
         return []
 

@@ -10,8 +10,6 @@ rdf11/rdf-turtle/turtle-eval-lists-03[roundtrip]	Turtle serializer emits nothing
 rdf11/rdf-turtle/turtle-eval-lists-04[roundtrip]	Turtle serializer emits nothing for statements whose subject is a collection
 rdf11/rdf-turtle/turtle-eval-lists-05[roundtrip]	Turtle serializer emits nothing for statements whose subject is a collection
 rdf11/rdf-turtle/turtle-eval-lists-06[roundtrip]	Turtle serializer crashes on lists containing IRIs, blank nodes or nested lists (Resource has no interfaceName)
-rdf11/rdf-turtle/IRI-resolution-08	relative IRI resolution collapses empty path segments (//)
-rdf11/rdf-turtle/IRI-resolution-08[roundtrip]	relative IRI resolution collapses empty path segments (//)
 rdf12/rdf-n-triples/c14n/langtagged_string	canonical form lowercases language tags
 rdf12/rdf-n-triples/c14n/dirlangtagged_string	RDF 1.2 base direction language tags (@en--ltr) not implemented
 rdf12/rdf-n-triples/c14n/literal_all_controls	canonical form uses \b and \f escapes for backspace and form feed

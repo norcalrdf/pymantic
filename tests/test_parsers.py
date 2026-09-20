@@ -214,3 +214,23 @@ def test_jsonld_basic():
     g = Graph()
     jsonld_parser.parse_json(json.loads(jsonld), g)
     assert len(g) == 7
+
+
+def test_parse_ntriples_language_tag_with_digits():
+    g = Graph()
+    ntriples_parser.parse(
+        StringIO(
+            '<http://x/s> <http://x/p> "a"@zh-Hant-1 .\n'
+            '<http://x/s> <http://x/p> "b"@en-2 .\n'
+        ),
+        g,
+    )
+    assert len(g) == 2
+    assert (
+        Triple(
+            NamedNode("http://x/s"),
+            NamedNode("http://x/p"),
+            Literal("a", language="zh-Hant-1"),
+        )
+        in g
+    )

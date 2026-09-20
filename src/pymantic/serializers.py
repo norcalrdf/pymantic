@@ -198,10 +198,9 @@ def serialize_turtle(
 
         profile = Profile()
     for prefix, iri in profile.prefixes.items():
-        if prefix != "rdf":
-            if prefix and not PN_PREFIX_RE.fullmatch(prefix):
-                raise ValueError("Invalid Turtle prefix name")
-            f.write("@prefix " + prefix + ": <" + turtle_iri_escape(iri) + "> .\n")
+        if prefix and not PN_PREFIX_RE.fullmatch(prefix):
+            raise ValueError("Invalid Turtle prefix name")
+        f.write("@prefix " + prefix + ": <" + turtle_iri_escape(iri) + "> .\n")
 
     name_map = OrderedDict()
     bnode_name_maker = bnode_name_generator()

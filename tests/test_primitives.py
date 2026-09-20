@@ -327,3 +327,14 @@ def test_BlankNode_ntriples_round_trip():
     (triple,) = list(parsed)
     assert triple.subject.interfaceName == "BlankNode"
     assert triple.subject is triple.object
+
+
+def test_to_curie_only_shrinks_leading_namespace():
+    from pymantic.primitives import to_curie
+
+    namespaces = {"ex": "http://example.com/"}
+    assert (
+        to_curie("http://example.com/a?u=http://example.com/b", namespaces)
+        == "ex:a?u=http://example.com/b"
+    )
+    assert to_curie("http://other.example/a", namespaces) == "http://other.example/a"

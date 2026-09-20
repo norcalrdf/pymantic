@@ -107,10 +107,11 @@ def to_curie(uri, namespaces, seperator=":", explicit=False):
             matches.append((prefix, namespace))
     if len(matches) > 0:
         prefix, namespace = sorted(matches, key=lambda pair: -len(pair[1]))[0]
+        curie = prefix + seperator + uri[len(namespace) :]
         if explicit:
-            return f"[{uri.replace(namespace, prefix + seperator)}]"
+            return f"[{curie}]"
         else:
-            return uri.replace(namespace, prefix + seperator)
+            return curie
     return uri
 
 
@@ -212,7 +213,10 @@ class Quad(tuple):
     graph = property(itemgetter(3))
 
     def __str__(self):
-        return f"{str(self.subject)} {str(self.predicate)} {str(self.object)} {str(self.graph)} .\n"
+        return (
+            f"{self.subject.toNT()} {self.predicate.toNT()} "
+            f"{self.object.toNT()} {self.graph.toNT()} .\n"
+        )
 
 
 def q_as_t(quad):

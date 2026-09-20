@@ -20,6 +20,9 @@ All notable changes to pymantic are recorded here. The format follows
 - Turtle and N-Triples serialization reject invalid language tags, and Turtle
   serialization rejects invalid prefix names, preventing these fields from
   introducing additional RDF statements.
+- The N-Quads serializer now writes terms in their N-Triples forms with
+  escaping. Previously it wrote bare values with no quoting, so output was
+  both unparseable and open to injection through literal values.
 - The JSON-LD parser no longer fetches remote `@context` or `@import` URLs by
   default. Parsing an untrusted document could previously make the parsing
   host issue HTTP requests to arbitrary servers. See *Changed* for how to opt
@@ -61,6 +64,17 @@ All notable changes to pymantic are recorded here. The format follows
   ...) instead of being derived from the object's memory address.
 - N-Triples output escapes control characters as `\uXXXX` instead of
   silently dropping them.
+
+### Fixed
+
+- Shrinking an IRI to a prefixed name only strips the leading namespace.
+  Previously every occurrence of the namespace inside the IRI was replaced,
+  corrupting IRIs that embed their own namespace (for example in a query
+  string).
+- The Turtle serializer declares the `rdf` prefix when it uses it. Output
+  containing `rdf:type` previously only parsed with pymantic's own parser.
+- The N-Triples parser accepts digits in language subtags (for example
+  `@zh-Hant-1`); a typo in the grammar limited them to `0`, `_`, and `9`.
 
 ### Removed
 

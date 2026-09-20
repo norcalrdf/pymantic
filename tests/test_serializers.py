@@ -189,7 +189,8 @@ def testSimpleSerialization(primitives, profile, turtle_parser, serialize_turtle
     f.seek(0)
     assert (
         f.read().strip()
-        == """@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+        == """@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix ex: <http://example.com/> .
 @prefix dc: <http://purl.org/dc/terms/> .
 ex:bar dc:title "Bar" ;
@@ -227,6 +228,7 @@ def testBaseSerialization(primitives, profile, turtle_parser, serialize_turtle):
     assert (
         f.read().strip()
         == """@base <http://example.com/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix dc: <http://purl.org/dc/terms/> .
 <bar> dc:title "Bar" ;
@@ -267,6 +269,7 @@ def testBaseAndPrefixSerialization(
     assert (
         f.read().strip()
         == """@base <http://example.com/> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix ex: <http://example.com/> .
 @prefix dc: <http://purl.org/dc/terms/> .
@@ -305,6 +308,7 @@ def testMultiplePredicates(primitives, profile, turtle_parser, serialize_turtle)
     assert (
         f.read().strip()
         == """
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix ex: <http://example.com/> .
 @prefix dc: <http://purl.org/dc/terms/> .
@@ -337,6 +341,7 @@ def testListSerialization(primitives, profile, turtle_parser, serialize_turtle):
     assert (
         f.read().strip()
         == """
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix ex: <http://example.com/> .
 @prefix dc: <http://purl.org/dc/terms/> .
@@ -665,3 +670,63 @@ def test_turtle_valid_prefix_round_trip(
     parsed = turtle_parser.parse(output.getvalue())
     assert len(parsed) == 1
     assert triple in parsed
+
+
+def test_nquads_round_trip_escapes(primitives):
+    from pymantic.parsers import nquads_parser
+    from pymantic.serializers import serialize_nquads
+
+    quads = [
+        primitives.Quad(
+            primitives.NamedNode("http://x/s"),
+            primitives.NamedNode("http://x/p"),
+            primitives.Literal('v" . <http://a/s> <http://a/p> <http://a/o>'),
+            primitives.NamedNode("http://x/g"),
+        ),
+        primitives.Quad(
+            primitives.NamedNode("http://x/s"),
+            primitives.NamedNode("http://x/p"),
+            primitives.Literal("text", language="en-us"),
+            primitives.NamedNode("http://x/g"),
+        ),
+    ]
+    dataset = primitives.Dataset()
+    for quad in quads:
+        dataset.add(quad)
+    output = StringIO()
+    serialize_nquads(dataset, output)
+    parsed = nquads_parser.parse(output.getvalue())
+    assert len(parsed) == 2
+    for quad in quads:
+        assert quad in parsed
+
+
+def test_prefix_shrink_only_strips_leading_namespace(
+    primitives, profile, turtle_parser, serialize_turtle
+):
+    profile.setPrefix("ex", primitives.NamedNode("http://example.com/"))
+    triple = primitives.Triple(
+        primitives.NamedNode("http://example.com/a?u=http://example.com/b"),
+        primitives.NamedNode("http://example.com/p"),
+        primitives.NamedNode("http://example.com/o"),
+    )
+    output = StringIO()
+    serialize_turtle(primitives.Graph().add(triple), output, profile=profile)
+    parsed = turtle_parser.parse(output.getvalue())
+    assert len(parsed) == 1
+    assert triple in parsed
+
+
+def test_turtle_declares_rdf_prefix(primitives, serialize_turtle):
+    graph = primitives.Graph().add(
+        primitives.Triple(
+            primitives.NamedNode("http://x/s"),
+            primitives.NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
+            primitives.NamedNode("http://x/C"),
+        )
+    )
+    output = StringIO()
+    serialize_turtle(graph, output)
+    text = output.getvalue()
+    assert "rdf:type" in text
+    assert "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" in text

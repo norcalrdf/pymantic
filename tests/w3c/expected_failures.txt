@@ -1,15 +1,6 @@
 # W3C tests pymantic currently fails, one per line: <test id><TAB><reason>.
 # tests/test_w3c.py marks these xfail. Remove a line once the test passes.
 
-rdf11/rdf-turtle/collection_subject[roundtrip]	Turtle serializer emits nothing for statements whose subject is a collection
-rdf11/rdf-turtle/nested_collection[roundtrip]	Turtle serializer crashes on lists containing IRIs, blank nodes or nested lists (Resource has no interfaceName)
-rdf11/rdf-turtle/first[roundtrip]	Turtle serializer crashes on lists containing IRIs, blank nodes or nested lists (Resource has no interfaceName)
-rdf11/rdf-turtle/last[roundtrip]	Turtle serializer crashes on lists containing IRIs, blank nodes or nested lists (Resource has no interfaceName)
-rdf11/rdf-turtle/turtle-eval-lists-02[roundtrip]	Turtle serializer crashes on lists containing IRIs, blank nodes or nested lists (Resource has no interfaceName)
-rdf11/rdf-turtle/turtle-eval-lists-03[roundtrip]	Turtle serializer emits nothing for statements whose subject is a collection
-rdf11/rdf-turtle/turtle-eval-lists-04[roundtrip]	Turtle serializer emits nothing for statements whose subject is a collection
-rdf11/rdf-turtle/turtle-eval-lists-05[roundtrip]	Turtle serializer emits nothing for statements whose subject is a collection
-rdf11/rdf-turtle/turtle-eval-lists-06[roundtrip]	Turtle serializer crashes on lists containing IRIs, blank nodes or nested lists (Resource has no interfaceName)
 rdf12/rdf-n-triples/c14n/dirlangtagged_string	RDF 1.2 base direction language tags (@en--ltr) not implemented
 rdf12/rdf-n-triples/c14n/triple-term-01	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-triples/c14n/triple-term-02	RDF 1.2 triple terms not implemented

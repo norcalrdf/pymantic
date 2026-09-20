@@ -831,3 +831,181 @@ def test_nquads_serializes_in_insertion_order(primitives):
         "<http://x/a> <http://x/p> <http://x/o> <http://x/g> .\n"
         "<http://x/b> <http://x/p> <http://x/o> <http://x/g> .\n"
     )
+
+
+def to_rdflib(graph):
+    import rdflib
+
+    out = rdflib.Graph()
+
+    def term(node):
+        if node.interfaceName == "BlankNode":
+            return rdflib.BNode(node.value)
+        if node.interfaceName == "Literal":
+            if node.language:
+                return rdflib.Literal(node.value, lang=node.language)
+            datatype = node.datatype or "http://www.w3.org/2001/XMLSchema#string"
+            return rdflib.Literal(node.value, datatype=rdflib.URIRef(str(datatype)))
+        return rdflib.URIRef(str(node))
+
+    for triple in graph:
+        out.add((term(triple.subject), term(triple.predicate), term(triple.object)))
+    return out
+
+
+def assert_turtle_round_trip(turtle_parser, serialize_turtle, turtle, profile=None):
+    """Serialize the parsed graph and check the reparsed result is isomorphic.
+    Returns the serialized text for further assertions."""
+    from rdflib.compare import isomorphic
+
+    graph = turtle_parser.parse(turtle)
+    f = StringIO()
+    serialize_turtle(graph, f, profile=profile)
+    reparsed = turtle_parser.parse(f.getvalue())
+    assert isomorphic(to_rdflib(graph), to_rdflib(reparsed)), f.getvalue()
+    assert len(reparsed) == len(graph)
+    return f.getvalue()
+
+
+@pytest.mark.parametrize(
+    "turtle",
+    [
+        '<http://x/s> <http://x/p> (1 "2" <http://x/o>) .',
+        "<http://x/s> <http://x/p> ((1)) .",
+        "<http://x/s> <http://x/p> ((1) 2) .",
+        "<http://x/s> <http://x/p> (1 (2)) .",
+        '<http://x/s> <http://x/p> (1 2 (1 2) (( "a") "b" <http://x/o>)) .',
+        "<http://x/a> <http://x/b> ([ <http://x/t> <http://x/c> ]) .",
+        "<http://x/a> <http://x/b> (_:x _:x) . _:x <http://x/p> <http://x/o> .",
+        "<http://x/s> <http://x/p> () .",
+        "<http://x/s> <http://x/p> (()) .",
+        "<http://x/s> <http://x/p> (1) . <http://x/t> <http://x/p> (1) .",
+    ],
+)
+def test_turtle_list_object_round_trip(turtle_parser, serialize_turtle, turtle):
+    assert_turtle_round_trip(turtle_parser, serialize_turtle, turtle)
+
+
+def test_turtle_two_lists_as_objects_of_one_predicate(
+    primitives, profile, turtle_parser, serialize_turtle
+):
+    """Checked with rdflib because pymantic's Turtle parser cannot yet read a
+    collection followed by ',' in an object list."""
+    import rdflib
+    from rdflib.compare import isomorphic
+
+    profile.setPrefix("ex", primitives.NamedNode("http://x/"))
+    graph = turtle_parser.parse(
+        "<http://x/s> <http://x/p> (1) . <http://x/s> <http://x/p> (2) ."
+    )
+    f = StringIO()
+    serialize_turtle(graph, f, profile=profile)
+    assert "ex:s ex:p (1),\n" "          (2) ;\n" in f.getvalue()
+    reparsed = rdflib.Graph().parse(data=f.getvalue(), format="turtle")
+    assert isomorphic(to_rdflib(graph), reparsed)
+
+
+def test_turtle_list_with_iri_blank_node_and_nested_list_members(
+    primitives, profile, turtle_parser, serialize_turtle
+):
+    profile.setPrefix("ex", primitives.NamedNode("http://x/"))
+    text = assert_turtle_round_trip(
+        turtle_parser,
+        serialize_turtle,
+        '<http://x/s> <http://x/p> (1 <http://x/o> ("a" ()) [ <http://x/q> 2 ]) .',
+        profile,
+    )
+    assert 'ex:s ex:p (1 ex:o ("a" rdf:nil) _:b0) ;' in text
+    assert "_:b0 ex:q 2 ;" in text
+    assert "rdf:first" not in text
+
+
+@pytest.mark.parametrize(
+    "turtle",
+    [
+        "(1) <http://x/p> <http://x/o> .",
+        "(1) <http://x/p> (1) .",
+        "(()) <http://x/p> (()) .",
+        '(1 2 (1 2)) <http://x/p> (( "a") "b" <http://x/o>) .',
+        "(1) <http://x/p> <http://x/o> ; <http://x/q> (2) .",
+        "() <http://x/p> <http://x/o> .",
+    ],
+)
+def test_turtle_list_subject_round_trip(turtle_parser, serialize_turtle, turtle):
+    assert_turtle_round_trip(turtle_parser, serialize_turtle, turtle)
+
+
+def test_turtle_list_subject_output(
+    primitives, profile, turtle_parser, serialize_turtle
+):
+    profile.setPrefix("ex", primitives.NamedNode("http://x/"))
+    text = assert_turtle_round_trip(
+        turtle_parser,
+        serialize_turtle,
+        '(1 "2") <http://x/p> <http://x/o> ; <http://x/q> (3) .',
+        profile,
+    )
+    assert text.endswith('(1 "2") ex:p ex:o ;\n' "        ex:q (3) ;\n" "        .\n\n")
+    assert "rdf:first" not in text
+    assert "rdf:rest" not in text
+
+
+def test_turtle_empty_list_is_rdf_nil(
+    primitives, profile, turtle_parser, serialize_turtle
+):
+    profile.setPrefix("ex", primitives.NamedNode("http://x/"))
+    text = assert_turtle_round_trip(
+        turtle_parser,
+        serialize_turtle,
+        "<http://x/s> <http://x/p> () . () <http://x/q> <http://x/o> .",
+        profile,
+    )
+    assert "ex:s ex:p rdf:nil ;" in text
+    assert "rdf:nil ex:q ex:o ;" in text
+
+
+@pytest.mark.parametrize(
+    "turtle",
+    [
+        # The head is both an object and has its own predicates, so it must
+        # keep a label rather than be written as ( ... ) twice.
+        "<http://x/s> <http://x/p> _:l . _:l <http://x/q> <http://x/o> ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 1 ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> () .",
+        # Referenced twice.
+        "<http://x/s> <http://x/p> _:l . <http://x/t> <http://x/p> _:l ."
+        " _:l <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 1 ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> () .",
+        # A named node with rdf:first/rdf:rest is not a collection.
+        "<http://x/l> <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 1 ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> () .",
+        # Two rdf:first values.
+        "<http://x/s> <http://x/p> _:l ."
+        " _:l <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 1, 2 ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> () .",
+        # A cell in the middle of the chain with an extra predicate.
+        "<http://x/s> <http://x/p> _:l . _:l"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 1 ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:m . _:m"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 2 ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> () ;"
+        " <http://x/q> <http://x/o> .",
+        # A chain that never reaches rdf:nil.
+        "<http://x/s> <http://x/p> _:l . _:l"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 1 ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> <http://x/end> .",
+        # Cycles through rdf:first and rdf:rest.
+        "_:l <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> _:l ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> () .",
+        "_:l <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> _:m ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> () . _:m"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> _:l ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> () .",
+        "_:l <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 1 ;"
+        " <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> _:l .",
+        # rdf:nil as a subject.
+        "<http://www.w3.org/1999/02/22-rdf-syntax-ns#nil> <http://x/p> <http://x/o> .",
+    ],
+)
+def test_turtle_malformed_list_round_trip(turtle_parser, serialize_turtle, turtle):
+    assert_turtle_round_trip(turtle_parser, serialize_turtle, turtle)

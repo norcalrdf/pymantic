@@ -107,6 +107,12 @@ All notable changes to pymantic are recorded here. The format follows
 - The N-Triples and N-Quads parsers accept comments, statements with no
   whitespace between terms, and comment or blank lines when reading a stream
   line by line.
+- `serialize_nquads` writes a quad in the default graph (`graph=None`, as
+  produced by the N-Quads and JSON-LD parsers) as a triple line; previously
+  it raised `AttributeError`.
+- The N-Triples and N-Quads grammar's range of astral characters was written
+  with a literal character instead of an escape, so digits and `:` matched as
+  letters inside blank node labels.
 - The Turtle parser no longer corrupts the graph when a blank node property
   list or collection is followed by `,` in an object list; previously a
   Python generator object was stored as the object term.

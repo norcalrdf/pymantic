@@ -1,0 +1,6 @@
+@prefix : <http://example.org/> .
+_:n3 :v "corner" .
+_:n3 :p _:n0 , _:n2 .
+_:n1 :p _:n0 , _:n2 .
+_:n0 :p _:n1 , _:n3 .
+_:n2 :p _:n3 , _:n1 .

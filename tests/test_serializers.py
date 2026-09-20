@@ -538,12 +538,80 @@ def test_blank_node_round_trip(primitives, profile, turtle_parser, serialize_tur
 
 
 def test_nt_escape_control_characters():
+    """Canonical N-Triples (https://www.w3.org/TR/rdf12-n-triples/#canonical-ntriples):
+    BS, HT, LF, FF, CR, quote and backslash use ECHAR; U+0000-U+0007, VT,
+    U+000E-U+001F and DEL use a lowercase \\u with uppercase hex."""
     from pymantic.serializers import nt_escape
 
     assert nt_escape("a\x00b\x08c\x0cd\x1fe\x7ff") == (
-        "a\\u0000b\\u0008c\\u000Cd\\u001Fe\\u007Ff"
+        "a\\u0000b\\bc\\fd\\u001Fe\\u007Ff"
     )
-    assert nt_escape("tab\tlf\ncr\r") == "tab\\tlf\\ncr\\r"
+    assert nt_escape("tab\tlf\ncr\rvt\x0b") == "tab\\tlf\\ncr\\rvt\\u000B"
+    assert nt_escape('q"b\\') == 'q\\"b\\\\'
+
+
+def test_nt_escape_writes_non_ascii_raw():
+    """Characters that need neither ECHAR nor UCHAR are written natively."""
+    from pymantic.serializers import nt_escape
+
+    assert nt_escape("caf\u00e9 \u65e5\u672c \U0001F600 \U0010FFFF") == (
+        "caf\u00e9 \u65e5\u672c \U0001F600 \U0010FFFF"
+    )
+
+
+def test_nt_escape_non_xml_chars_use_uchar():
+    """U+FFFE, U+FFFF and surrogates are not XML 1.1 Chars, so they must be
+    escaped."""
+    from pymantic.serializers import nt_escape
+
+    assert nt_escape("\ufffe\uffff\ud800\udfff") == ("\\uFFFE\\uFFFF\\uD800\\uDFFF")
+
+
+def test_ntriples_non_ascii_round_trip(primitives):
+    s = primitives.NamedNode("http://x/s")
+    p = primitives.NamedNode("http://x/p")
+    o = primitives.Literal("caf\u00e9 \u65e5\u672c \U0001F600 \ufffe")
+    graph = primitives.Graph().add(primitives.Triple(s, p, o))
+    f = StringIO()
+    serialize_ntriples(graph, f)
+    assert f.getvalue() == (
+        '<http://x/s> <http://x/p> "caf\u00e9 \u65e5\u672c \U0001F600 \\uFFFE" .\n'
+    )
+    f.seek(0)
+    parsed = primitives.Graph()
+    ntriples_parser.parse(f, parsed)
+    assert list(parsed) == [primitives.Triple(s, p, o)]
+
+
+def test_ntriples_omits_xsd_string_datatype(primitives):
+    """Canonical N-Triples never writes ^^xsd:string, and the Turtle parser
+    (which sets that datatype) and the N-Triples parser (which leaves it
+    unset) must serialize a simple literal identically."""
+    from pymantic.parsers import turtle_parser
+
+    xsd_string = primitives.XSD("string")
+    assert primitives.Literal("foo", datatype=xsd_string).toNT() == '"foo"'
+    assert primitives.Literal("foo").toNT() == '"foo"'
+    line = '<http://x/s> <http://x/p> "foo" .\n'
+    from_turtle = StringIO()
+    serialize_ntriples(turtle_parser.parse(line), from_turtle)
+    from_ntriples = StringIO()
+    serialize_ntriples(ntriples_parser.parse(line), from_ntriples)
+    assert from_turtle.getvalue() == line
+    assert from_ntriples.getvalue() == line
+
+
+def test_ntriples_lowercases_language_tag(primitives):
+    graph = primitives.Graph().add(
+        primitives.Triple(
+            primitives.NamedNode("http://x/s"),
+            primitives.NamedNode("http://x/p"),
+            primitives.Literal("chat", language="EN-Gb"),
+        )
+    )
+    f = StringIO()
+    serialize_ntriples(graph, f)
+    assert f.getvalue() == '<http://x/s> <http://x/p> "chat"@en-gb .\n'
 
 
 def test_ntriples_control_character_round_trip(primitives):

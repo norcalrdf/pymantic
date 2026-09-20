@@ -259,15 +259,20 @@ class Literal(tuple):
             value, auto_datatype = _cls.types[type(value)](value)
             if datatype is None:
                 datatype = auto_datatype
+        if language is not None:
+            # RDF Concepts: language tags compare case-insensitively and
+            # their value space is lowercase, so "EN" and "en" must be the
+            # same term.
+            language = language.lower()
         return tuple.__new__(_cls, (value, language, datatype))
 
     @classmethod
-    def _make(cls, iterable, new=tuple.__new__, len=len):
+    def _make(cls, iterable, new=None, len=len):
         "Make a new Literal object from a sequence or iterable"
-        result = new(cls, iterable)
-        if len(result) != 3:
-            raise TypeError("Expected 3 arguments, got %d" % len(result))
-        return result
+        fields = tuple(iterable)
+        if len(fields) != 3:
+            raise TypeError("Expected 3 arguments, got %d" % len(fields))
+        return cls(*fields)
 
     def __repr__(self):
         return "Literal(value=%r, language=%r, datatype=%r)" % self
@@ -300,7 +305,9 @@ class Literal(tuple):
         if self.language:
             validate_language(self.language)
             return f"{quoted}@{self.language}"
-        elif self.datatype:
+        elif self.datatype and self.datatype != XSD_STRING:
+            # Canonical N-Triples writes a simple literal without its
+            # implicit xsd:string datatype.
             return f"{quoted}^^{self.datatype.toNT()}"
         else:
             return quoted
@@ -334,6 +341,7 @@ class Prefix(NamedNode):
 
 
 XSD = Prefix("http://www.w3.org/2001/XMLSchema#")
+XSD_STRING = XSD("string")
 
 
 class BlankNode:

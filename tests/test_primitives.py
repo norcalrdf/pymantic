@@ -395,3 +395,26 @@ def test_dataset_iterates_in_insertion_order_within_a_graph():
         ds.add(quad)
     assert list(ds) == quads
     assert list(ds.match()) == quads
+
+
+def test_literal_language_tag_is_lowercased():
+    """RDF 1.2 Concepts: language tags compare ASCII case-insensitively and
+    may be case normalized; RDF 1.1 Concepts: their value space is lowercase.
+    Normalizing on construction makes Literal("x", "EN") and Literal("x", "en")
+    the same term, as the specs require."""
+    assert Literal("chat", "EN-Gb").language == "en-gb"
+    assert Literal("chat", "EN") == Literal("chat", "en")
+    assert hash(Literal("chat", "EN")) == hash(Literal("chat", "en"))
+    assert Literal("chat", "en")._replace(language="FR").language == "fr"
+    assert Literal._make(("chat", "FR", None)).language == "fr"
+    assert Literal("chat").language is None
+    assert Literal("chat", "EN").toNT() == '"chat"@en'
+
+
+def test_parsers_lowercase_language_tags():
+    from pymantic.parsers import ntriples_parser, turtle_parser
+
+    (triple,) = list(ntriples_parser.parse('<http://x/s> <http://x/p> "chat"@EN .'))
+    assert triple.object == Literal("chat", "en")
+    (triple,) = list(turtle_parser.parse('<http://x/s> <http://x/p> "chat"@EN-US .'))
+    assert triple.object == Literal("chat", "en-us")

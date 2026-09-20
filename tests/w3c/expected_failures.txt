@@ -10,14 +10,7 @@ rdf11/rdf-turtle/turtle-eval-lists-03[roundtrip]	Turtle serializer emits nothing
 rdf11/rdf-turtle/turtle-eval-lists-04[roundtrip]	Turtle serializer emits nothing for statements whose subject is a collection
 rdf11/rdf-turtle/turtle-eval-lists-05[roundtrip]	Turtle serializer emits nothing for statements whose subject is a collection
 rdf11/rdf-turtle/turtle-eval-lists-06[roundtrip]	Turtle serializer crashes on lists containing IRIs, blank nodes or nested lists (Resource has no interfaceName)
-rdf12/rdf-n-triples/c14n/langtagged_string	canonical form lowercases language tags
 rdf12/rdf-n-triples/c14n/dirlangtagged_string	RDF 1.2 base direction language tags (@en--ltr) not implemented
-rdf12/rdf-n-triples/c14n/literal_all_controls	canonical form uses \b and \f escapes for backspace and form feed
-rdf12/rdf-n-triples/c14n/literal_ascii_boundaries	canonical form uses \b and \f escapes for backspace and form feed
-rdf12/rdf-n-triples/c14n/literal_with_BACKSPACE	canonical form uses \b and \f escapes for backspace and form feed
-rdf12/rdf-n-triples/c14n/literal_with_FORM_FEED	canonical form uses \b and \f escapes for backspace and form feed
-rdf12/rdf-n-triples/c14n/literal_with_string_dt	canonical form omits the xsd:string datatype
-rdf12/rdf-n-triples/c14n/literal_with_UTF8_boundaries	canonical form writes non-ASCII characters unescaped
 rdf12/rdf-n-triples/c14n/triple-term-01	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-triples/c14n/triple-term-02	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-triples/c14n/triple-term-03	RDF 1.2 triple terms not implemented
@@ -29,14 +22,7 @@ rdf12/rdf-n-triples/syntax/ntriples12-bnode-1	RDF 1.2 triple terms not implement
 rdf12/rdf-n-triples/syntax/ntriples12-nested-1	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-triples/syntax/ntriples-langdir-1	RDF 1.2 base direction language tags (@en--ltr) not implemented
 rdf12/rdf-n-triples/syntax/ntriples-langdir-2	RDF 1.2 base direction language tags (@en--ltr) not implemented
-rdf12/rdf-n-quads/c14n/langtagged_string	canonical form lowercases language tags
 rdf12/rdf-n-quads/c14n/dirlangtagged_string	RDF 1.2 base direction language tags (@en--ltr) not implemented
-rdf12/rdf-n-quads/c14n/literal_all_controls	canonical form uses \b and \f escapes for backspace and form feed
-rdf12/rdf-n-quads/c14n/literal_ascii_boundaries	canonical form uses \b and \f escapes for backspace and form feed
-rdf12/rdf-n-quads/c14n/literal_with_BACKSPACE	canonical form uses \b and \f escapes for backspace and form feed
-rdf12/rdf-n-quads/c14n/literal_with_FORM_FEED	canonical form uses \b and \f escapes for backspace and form feed
-rdf12/rdf-n-quads/c14n/literal_with_string_dt	canonical form omits the xsd:string datatype
-rdf12/rdf-n-quads/c14n/literal_with_UTF8_boundaries	canonical form writes non-ASCII characters unescaped
 rdf12/rdf-n-quads/c14n/triple-term-01	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-quads/c14n/triple-term-02	RDF 1.2 triple terms not implemented
 rdf12/rdf-n-quads/c14n/triple-term-03	RDF 1.2 triple terms not implemented

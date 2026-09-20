@@ -156,3 +156,26 @@ def test_unsafe_loader_accepts_explicit_loader(context_server):
     assert seen == [context_url]
     assert len(dataset) == 1
     assert EXPECTED_QUAD in dataset
+
+
+def test_literal_shapes_are_normalized_terms():
+    """pyld hands every literal a datatype, including the rdf:langString of a
+    language-tagged string, which must reach Literal alongside its language."""
+    from pymantic.primitives import RDF_LANGSTRING
+
+    document = {
+        "@id": "http://ex/s",
+        NAME_IRI: [
+            {"@value": "x"},
+            {"@value": "chat", "@language": "FR"},
+            {"@value": "7", "@type": "http://www.w3.org/2001/XMLSchema#integer"},
+        ],
+    }
+    objects = {quad.object for quad in PyLDLoader().parse_json(document)}
+    assert objects == {
+        Literal("x"),
+        Literal("chat", "fr"),
+        Literal("7", datatype=NamedNode("http://www.w3.org/2001/XMLSchema#integer")),
+    }
+    assert Literal("chat", "fr").datatype == RDF_LANGSTRING
+    assert Literal("x") == Literal("x", None, XSD_STRING)

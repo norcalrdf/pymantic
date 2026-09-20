@@ -4,6 +4,8 @@ Python objects."""
 import logging
 
 from pymantic.primitives import (
+    RDF_LANGSTRING,
+    XSD_STRING,
     BlankNode,
     Literal,
     NamedNode,
@@ -18,6 +20,11 @@ from pymantic.primitives import (
 import pymantic.util as util
 
 log = logging.getLogger(__name__)
+
+# The datatypes a literal gets from the way it is written rather than from a
+# datatype of its own: a simple literal's xsd:string and a language-tagged
+# string's rdf:langString.
+IMPLIED_DATATYPES = frozenset((XSD_STRING, RDF_LANGSTRING))
 
 
 class MetaResource(type):
@@ -177,14 +184,15 @@ class Resource(metaclass=MetaResource):
         return hash(self.subject)
 
     def bare_literals(self, predicate):
-        """Objects for a predicate that are language-less, datatype-less Literals."""
+        """Objects for a predicate that are simple literals: no language and
+        the datatype xsd:string, which RDF 1.1 Concepts 3.3 gives every
+        literal written without one."""
         return [
             t.object
             for t in self.graph.match(self.subject, predicate, None)
-            if hasattr(t.object, "language")
+            if isinstance(t.object, Literal)
             and t.object.language is None
-            and hasattr(t.object, "datatype")
-            and t.object.datatype is None
+            and t.object.datatype == XSD_STRING
         ]
 
     def objects_by_lang(self, predicate, lang=None):
@@ -207,12 +215,17 @@ class Resource(metaclass=MetaResource):
 
     def objects_by_datatype(self, predicate, datatype=None):
         """Objects for a predicate that match a specified datatype or, if
-        datatype is None, have a datatype specified."""
+        datatype is None, carry a datatype of their own.
+
+        Every literal has a datatype, so "of their own" means one that was
+        written rather than implied by the way the literal was written:
+        neither the xsd:string of a simple literal nor the rdf:langString of
+        a language-tagged string."""
         if datatype:
             return [
                 t.object
                 for t in self.graph.match(self.subject, predicate, None)
-                if hasattr(t.object, "datatype") and t.object.datatype == datatype
+                if isinstance(t.object, Literal) and t.object.datatype == datatype
             ]
         elif datatype == "":
             return self.bare_literals(predicate)
@@ -220,7 +233,8 @@ class Resource(metaclass=MetaResource):
             return [
                 t.object
                 for t in self.graph.match(self.subject, predicate, None)
-                if hasattr(t.object, "datatype") and t.object.datatype is not None
+                if isinstance(t.object, Literal)
+                and t.object.datatype not in IMPLIED_DATATYPES
             ]
 
     def objects_by_type(self, predicate, resource_class=None):

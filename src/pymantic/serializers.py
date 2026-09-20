@@ -167,15 +167,18 @@ def turtle_repr(node, profile, name_map, bnode_name_maker, base=None):
             name = next(bnode_name_maker)
             name_map[node] = name
     elif node.interfaceName == "Literal":
-        if node.datatype == profile.resolve("xsd:string"):
+        # A document may bind the xsd prefix to anything, so the datatype is
+        # compared with the fixed IRI, never with the profile's xsd:string.
+        from pymantic.primitives import XSD_STRING
+
+        if node.language:
+            # A language-tagged string is written with its tag alone; its
+            # rdf:langString datatype is implicit.
+            validate_language(node.language)
+            name = turtle_string_escape(node.value) + "@" + node.language
+        elif node.datatype == XSD_STRING:
             # Simple string.
             name = turtle_string_escape(node.value)
-        elif node.datatype is None:
-            # String with language?
-            name = turtle_string_escape(node.value)
-            if node.language:
-                validate_language(node.language)
-                name += "@" + node.language
         elif node.datatype in TURTLE_NATIVE_LITERALS and TURTLE_NATIVE_LITERALS[
             node.datatype
         ].fullmatch(node.value):

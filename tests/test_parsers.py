@@ -442,3 +442,23 @@ def test_parse_ntriples_rejects_two_triples_on_one_line():
             "<http://example/s> <http://example/p> <http://example/o> .",
             Graph(),
         )
+
+
+def test_parsed_literals_carry_their_datatype():
+    """Every literal a parser makes has a datatype: xsd:string for one
+    written without a datatype or language, rdf:langString for a
+    language-tagged string (RDF 1.1 Concepts 3.3)."""
+    from pymantic.primitives import RDF_LANGSTRING, XSD_STRING
+
+    text = (
+        '<http://example.com/s> <http://example.com/p> "Foo" .\n'
+        '<http://example.com/s> <http://example.com/p> "Foo"@en .\n'
+        '<http://example.com/s> <http://example.com/p> "Foo"^^'
+        "<http://www.w3.org/2001/XMLSchema#string> .\n"
+    )
+    for parser in (ntriples_parser, turtle_parser):
+        g = parser.parse(text)
+        # The plain literal and the explicit xsd:string are one term.
+        assert len(g) == 2
+        datatypes = {(t.object.language, t.object.datatype) for t in g}
+        assert datatypes == {(None, XSD_STRING), ("en", RDF_LANGSTRING)}

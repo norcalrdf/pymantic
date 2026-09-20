@@ -58,7 +58,6 @@ EXPECTED_FAILURES_FILE = W3C_DIR / "expected_failures.txt"
 
 MF = Namespace("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#")
 RDFT = Namespace("http://www.w3.org/ns/rdftest#")
-XSD_STRING = rdflib.URIRef("http://www.w3.org/2001/XMLSchema#string")
 
 # A hung parser must not hang the whole run. signal.alarm exists only on
 # POSIX; elsewhere the guard is a no-op.
@@ -211,8 +210,8 @@ def parse_action(entry):
 
 def to_rdflib(graph):
     """Convert a pymantic graph to an rdflib graph for isomorphism checks.
-    pymantic leaves plain literals without a datatype; rdflib compares them
-    as xsd:string, which is what RDF 1.1 says they are."""
+    rdflib represents a language-tagged string by its language alone, with no
+    explicit rdf:langString datatype, so those are converted by language."""
     out = rdflib.Graph()
 
     def term(node):
@@ -221,10 +220,9 @@ def to_rdflib(graph):
         if isinstance(node, Literal):
             if node.language:
                 return rdflib.Literal(node.value, lang=node.language)
-            datatype = (
-                rdflib.URIRef(str(node.datatype)) if node.datatype else XSD_STRING
+            return rdflib.Literal(
+                node.value, datatype=rdflib.URIRef(str(node.datatype))
             )
-            return rdflib.Literal(node.value, datatype=datatype)
         if not isinstance(node, NamedNode):
             raise TypeError("parser produced %r, which is not an RDF term" % (node,))
         return rdflib.URIRef(str(node))

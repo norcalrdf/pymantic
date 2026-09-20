@@ -125,3 +125,94 @@ def test_missing_content_type_raises(monkeypatch):
 
     with pytest.raises(UnknownSPARQLReturnTypeException):
         sparql.query(TEST_QUERY)
+
+
+def test_query_uses_default_timeout(monkeypatch):
+    sparql = SPARQLServer("http://localhost/sparql")
+    calls = stub_request(monkeypatch, sparql, FakeResponse())
+
+    sparql.query(TEST_QUERY)
+
+    assert calls[0]["timeout"] == 30
+
+
+def test_update_uses_default_timeout(monkeypatch):
+    sparql = SPARQLServer("http://localhost/sparql")
+    calls = stub_request(monkeypatch, sparql, FakeResponse(status_code=204))
+
+    assert sparql.update("INSERT DATA { <a> <b> <c> }") is True
+    assert calls[0]["timeout"] == 30
+
+
+def test_timeout_can_be_overridden(monkeypatch):
+    sparql = SPARQLServer("http://localhost/sparql", timeout=5)
+    calls = stub_request(monkeypatch, sparql, FakeResponse())
+
+    sparql.query(TEST_QUERY)
+
+    assert calls[0]["timeout"] == 5
+
+
+def test_timeout_can_be_disabled(monkeypatch):
+    sparql = SPARQLServer("http://localhost/sparql", timeout=None)
+    calls = stub_request(monkeypatch, sparql, FakeResponse())
+
+    sparql.query(TEST_QUERY)
+
+    assert calls[0]["timeout"] is None
+
+
+def test_verify_is_still_passed_alongside_timeout(monkeypatch):
+    sparql = SPARQLServer("http://localhost/sparql", verify=False)
+    calls = stub_request(monkeypatch, sparql, FakeResponse())
+
+    sparql.query(TEST_QUERY)
+
+    assert calls[0]["verify"] is False
+    assert calls[0]["timeout"] == 30
+
+
+def test_error_response_exposes_status_and_truncated_body(monkeypatch):
+    sparql = SPARQLServer("http://localhost/sparql")
+    body = b"x" * 5000
+    stub_request(
+        monkeypatch,
+        sparql,
+        FakeResponse(
+            status_code=500,
+            content_type="text/plain",
+            content=body,
+            extra_headers={"X-Secret": "hunter2"},
+        ),
+    )
+
+    with pytest.raises(SPARQLQueryException) as excinfo:
+        sparql.query(TEST_QUERY)
+
+    exc = excinfo.value
+    assert exc.status_code == 500
+    assert exc.content_type == "text/plain"
+    assert exc.body == "x" * 1000
+    assert exc.query == TEST_QUERY
+    message = str(exc)
+    assert "500" in message
+    assert "text/plain" in message
+    assert "x" * 1000 in message
+    assert "x" * 1001 not in message
+    assert TEST_QUERY in message
+    assert "hunter2" not in message
+    assert "X-Secret" not in message
+
+
+def test_error_response_body_is_decoded_with_replacement(monkeypatch):
+    sparql = SPARQLServer("http://localhost/sparql")
+    stub_request(
+        monkeypatch,
+        sparql,
+        FakeResponse(status_code=400, content_type="text/plain", content=b"bad \xff"),
+    )
+
+    with pytest.raises(SPARQLQueryException) as excinfo:
+        sparql.query(TEST_QUERY)
+
+    assert excinfo.value.body == "bad �"

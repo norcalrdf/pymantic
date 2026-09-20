@@ -10,11 +10,32 @@ import requests
 log = logging.getLogger(__name__)
 
 
+# How much of an error response body to keep. Endpoints can return whole HTML
+# pages or stack traces; the first kilobyte is enough to see what went wrong.
+ERROR_BODY_LIMIT = 1000
+
+
 class SPARQLQueryException(Exception):
 
-    """Raised when the SPARQL store returns an HTTP status code other than 200 OK."""
+    """Raised when the SPARQL store returns an HTTP status code other than 200 OK.
 
-    pass
+    :ivar status_code: The HTTP status code of the response.
+    :ivar content_type: The content-type of the response, or "" if absent.
+    :ivar body: The response body decoded as UTF-8 with replacement and
+        truncated to ERROR_BODY_LIMIT characters.
+    :ivar query: The SPARQL that was sent.
+    """
+
+    def __init__(self, status_code, content_type, body, query):
+        self.status_code = status_code
+        self.content_type = content_type
+        self.body = body[:ERROR_BODY_LIMIT]
+        self.query = query
+        truncated = " [truncated]" if len(body) > ERROR_BODY_LIMIT else ""
+        super().__init__(
+            "HTTP %s (%s): %s%s\nQuery: %s"
+            % (status_code, content_type, self.body, truncated, query)
+        )
 
 
 class UnknownSPARQLReturnTypeException(Exception):
@@ -93,7 +114,10 @@ class _SelectOrUpdate:
             return True
         if response.status_code != 200:
             raise SPARQLQueryException(
-                "%s: %s\nQuery: %s" % (response.headers, response.content, self.sparql)
+                response.status_code,
+                response.headers.get("content-type", ""),
+                response.content.decode("utf-8", errors="replace"),
+                self.sparql,
             )
         return response
 
@@ -151,13 +175,30 @@ class SPARQLServer:
 
     """A server that can run SPARQL queries."""
 
-    def __init__(self, query_url, post_queries=False, post_directly=False, verify=None):
+    def __init__(
+        self,
+        query_url,
+        post_queries=False,
+        post_directly=False,
+        verify=None,
+        timeout=30,
+    ):
+        """
+        :param query_url: The SPARQL endpoint URL.
+        :param post_queries: Send queries by POST instead of GET.
+        :param post_directly: Send the SPARQL as the request body rather
+            than as a form parameter.
+        :param verify: Passed through to requests; controls TLS verification.
+        :param timeout: Seconds to wait for the endpoint to connect and to
+            send each chunk of the response, as requests' ``timeout``. None
+            waits forever.
+        """
         self.query_url = query_url
         self.post_queries = post_queries
         self.post_directly = post_directly
-        self.requests_kwargs = {}
+        self.requests_kwargs = {"timeout": timeout}
         if verify is not None:
-            self.requests_kwargs = {"verify": verify}
+            self.requests_kwargs["verify"] = verify
 
         self.s = requests.Session()
 

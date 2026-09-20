@@ -96,10 +96,14 @@ def quote_normalized_iri(normalized_iri):
     return quote(normalized_uri, safe="".join(reserved_in_iri))
 
 
-# RFC 3986 appendix B. Groups 2, 4, 5, 7 and 9 are the scheme, authority,
-# path, query and fragment; a group is None when its delimiter is absent.
+# RFC 3986 appendix B. A component is None when its delimiter is absent.
 IRI_REFERENCE_RE = re.compile(
-    r"^(([^:/?#]+):)?(//([^/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))?", re.DOTALL
+    r"^(?:(?P<scheme>[^:/?#]+):)?"
+    r"(?://(?P<authority>[^/?#]*))?"
+    r"(?P<path>[^?#]*)"
+    r"(?:\?(?P<query>[^#]*))?"
+    r"(?:#(?P<fragment>.*))?",
+    re.DOTALL,
 )
 
 
@@ -108,13 +112,7 @@ def split_iri_reference(reference):
     fragment) components. A component whose delimiter is absent is None,
     which RFC 3986 distinguishes from one that is present but empty."""
     match = IRI_REFERENCE_RE.match(reference)
-    return (
-        match.group(2),
-        match.group(4),
-        match.group(5),
-        match.group(7),
-        match.group(9),
-    )
+    return match.group("scheme", "authority", "path", "query", "fragment")
 
 
 def remove_dot_segments(path):

@@ -583,6 +583,82 @@ def test_ntriples_non_ascii_round_trip(primitives):
     assert list(parsed) == [primitives.Triple(s, p, o)]
 
 
+def test_nt_iri_escape_uses_uchar_for_forbidden_characters():
+    """The N-Triples IRIREF production forbids U+0000-U+0020 and <>"{}|^`\\
+    raw; they are written as UCHAR, which the parser decodes back to the
+    same character. Everything else, including % and non-ASCII, is raw."""
+    from pymantic.serializers import nt_iri_escape
+
+    assert nt_iri_escape("http://x/café/%C3%A9?q=a%20b") == (
+        "http://x/café/%C3%A9?q=a%20b"
+    )
+    assert nt_iri_escape('http://x/a\x00b\tc d<e>f"g{h}i|j^k`l\\m') == (
+        "http://x/a\\u0000b\\u0009c\\u0020d\\u003Ce\\u003Ef\\u0022g\\u007Bh\\u007D"
+        "i\\u007Cj\\u005Ek\\u0060l\\u005Cm"
+    )
+
+
+def ntriples_round_trip(primitives, graph, stable=False):
+    f = StringIO()
+    serialize_ntriples(graph, f, stable=stable)
+    parsed = primitives.Graph()
+    f.seek(0)
+    ntriples_parser.parse(f, parsed)
+    return f.getvalue(), parsed
+
+
+def test_ntriples_iri_with_non_ascii_round_trips_as_the_same_term(primitives):
+    """<http://x/é> and <http://x/%C3%A9> are two RDF terms, so N-Triples
+    must write them differently and read each back as itself."""
+    s = primitives.NamedNode("http://x/s")
+    p = primitives.NamedNode("http://x/p")
+    raw = primitives.NamedNode("http://x/é")
+    encoded = primitives.NamedNode("http://x/%C3%A9")
+    assert raw.toNT() == "<http://x/é>"
+    assert encoded.toNT() == "<http://x/%C3%A9>"
+    for node in (raw, encoded):
+        graph = primitives.Graph().add(primitives.Triple(s, p, node))
+        text, parsed = ntriples_round_trip(primitives, graph)
+        assert text == f"<http://x/s> <http://x/p> {node.toNT()} .\n"
+        assert list(parsed) == [primitives.Triple(s, p, node)]
+
+
+def test_ntriples_stable_writes_distinct_iris_on_distinct_lines(primitives):
+    from pymantic.compare import isomorphic
+
+    s = primitives.NamedNode("http://x/s")
+    p = primitives.NamedNode("http://x/p")
+    raw = primitives.NamedNode("http://x/é")
+    encoded = primitives.NamedNode("http://x/%C3%A9")
+    both = primitives.Graph().addAll(
+        [primitives.Triple(s, p, raw), primitives.Triple(s, p, encoded)]
+    )
+    one = primitives.Graph().add(primitives.Triple(s, p, encoded))
+    both_text, reparsed = ntriples_round_trip(primitives, both, stable=True)
+    assert both_text.count("\n") == 2
+    assert set(reparsed) == set(both)
+    one_text, _ = ntriples_round_trip(primitives, one, stable=True)
+    assert both_text != one_text
+    assert not isomorphic(both, one)
+
+
+def test_ntriples_iri_with_forbidden_characters_round_trips(primitives):
+    """An IRI holding a control character or > is written with UCHAR escapes
+    that the N-Triples parser reverses, so the term survives the trip."""
+    s = primitives.NamedNode("http://x/s")
+    p = primitives.NamedNode("http://x/p")
+    o = primitives.NamedNode("http://x/a\x01b>c")
+    graph = primitives.Graph().add(primitives.Triple(s, p, o))
+    text, parsed = ntriples_round_trip(primitives, graph)
+    assert text == "<http://x/s> <http://x/p> <http://x/a\\u0001b\\u003Ec> .\n"
+    assert list(parsed) == [primitives.Triple(s, p, o)]
+
+
+def test_ntriples_datatype_iri_uses_the_same_escaping(primitives):
+    literal = primitives.Literal("v", datatype=primitives.NamedNode("http://x/é>"))
+    assert literal.toNT() == '"v"^^<http://x/é\\u003E>'
+
+
 def test_ntriples_omits_xsd_string_datatype(primitives):
     """Canonical N-Triples never writes ^^xsd:string, and the Turtle parser
     (which sets that datatype) and the N-Triples parser (which leaves it

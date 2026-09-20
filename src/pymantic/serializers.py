@@ -153,15 +153,30 @@ def escape_prefix_local(name):
     return "".join((prefix, colon, escaped))
 
 
-# Characters the Turtle IRIREF production forbids raw inside < and >:
-# U+0000-U+0020 and <>"{}|^`\ . Everything else, including non-ASCII, is legal.
+# Characters the Turtle and N-Triples IRIREF production forbids raw inside
+# < and >: U+0000-U+0020 and <>"{}|^`\ . Everything else, including
+# non-ASCII, is legal.
 IRIREF_FORBIDDEN = set(map(chr, range(0x21))) | set('<>"{}|^`\\')
+
+
+def nt_iri_escape(iri):
+    """Escape an IRI for output between < and > in N-Triples and N-Quads by
+    writing each character the IRIREF production forbids as a UCHAR
+    (``\\uXXXX``), which the parser decodes back to the same character. All
+    other characters, including % and non-ASCII, pass through unchanged, so
+    two different IRIs never produce the same text."""
+    return "".join(
+        "\\u%04X" % ord(char) if char in IRIREF_FORBIDDEN else char for char in iri
+    )
 
 
 def turtle_iri_escape(iri):
     """Escape an IRI for output between < and > in Turtle by percent-encoding
     the UTF-8 bytes of characters the IRIREF production forbids. All other
-    characters, including non-ASCII, pass through unchanged."""
+    characters, including non-ASCII, pass through unchanged. Turtle cannot
+    use UCHAR here as N-Triples does: the Turtle grammar forbids these
+    characters in an IRI even when escaped, and pymantic's own Turtle parser
+    rejects them after decoding."""
     return "".join(
         "".join("%%%02X" % byte for byte in char.encode("utf-8"))
         if char in IRIREF_FORBIDDEN

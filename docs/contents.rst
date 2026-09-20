@@ -10,6 +10,7 @@ Pymantic documentation contents
     modules/rdf
     modules/parsers
     modules/serializers
+    graph-comparison
 
 
 Indices, glossary and tables

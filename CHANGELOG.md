@@ -63,6 +63,16 @@ All notable changes to pymantic are recorded here. The format follows
   serialization.
 - Blank node labels are generated from a process-wide counter (`b0`, `b1`,
   ...) instead of being derived from the object's memory address.
+- N-Triples and N-Quads output follows the canonical N-Triples rules of
+  RDF 1.2: characters outside ASCII are written raw rather than as `\u`
+  escapes, backspace and form feed are written `\b` and `\f`, and a simple
+  literal is written without `^^xsd:string`.
+- `Literal` lowercases its language tag on construction
+  (`Literal("x", "EN").language == "en"`), so literals whose tags differ
+  only in case are equal, as RDF Concepts requires, and serialize in
+  canonical form.
+- `Graph` iterates over its triples in insertion order. `Graph.toArray()`
+  still returns a `frozenset`.
 - N-Triples output escapes control characters as `\uXXXX` instead of
   silently dropping them.
 
@@ -76,6 +86,15 @@ All notable changes to pymantic are recorded here. The format follows
   containing `rdf:type` previously only parsed with pymantic's own parser.
 - The N-Triples parser accepts digits in language subtags (for example
   `@zh-Hant-1`); a typo in the grammar limited them to `0`, `_`, and `9`.
+- The Turtle serializer writes RDF collections that contain IRIs, blank
+  nodes or nested lists; previously it raised `AttributeError`. Statements
+  whose subject is a collection (`(1) :p :o .`) are written as such;
+  previously they were dropped from the output, as was any named node that
+  carried `rdf:first`/`rdf:rest`. Lists that are not well formed (extra
+  predicates on a cell, several references, cycles) are written as ordinary
+  triples instead of being mangled or omitted.
+- N-Triples and N-Quads serialization write triples in the order they were
+  added to the graph. Previously the order depended on `PYTHONHASHSEED`.
 
 ### Removed
 

@@ -42,7 +42,8 @@ All notable changes to pymantic are recorded here. The format follows
   a pyld document loader is supplied, either per parser instance with
   `PyLDLoader(document_loader=...)` or per call with
   `parse_json(..., options={"documentLoader": ...})`. Inline contexts are
-  unaffected.
+  unaffected. `UnsafePyLDLoader` is a parser that fetches remote
+  contexts by default, for trusted documents.
 - `SPARQLServer` accepts a `timeout` keyword. Pass `timeout=None` to restore
   the previous wait-forever behaviour.
 - `SPARQLServer.query` only accepts and returns

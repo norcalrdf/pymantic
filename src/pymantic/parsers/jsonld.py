@@ -21,10 +21,16 @@ or for a single call::
   graph = jsonld_parser.parse_json(
       document, options={"documentLoader": requests_document_loader()}
   )
+
+:class:`UnsafePyLDLoader` is a parser that fetches remote contexts by default,
+for documents you trust::
+
+  from pymantic.parsers.jsonld import UnsafePyLDLoader
+  graph = UnsafePyLDLoader().parse_json(document)
 """
 
 import json
-from pyld.jsonld import JsonLdError, to_rdf
+from pyld.jsonld import JsonLdError, requests_document_loader, to_rdf
 
 from .base import BaseParser
 
@@ -133,6 +139,20 @@ class PyLDLoader(BaseParser):
                         graph_iri,
                     )
                 )
+
+
+class UnsafePyLDLoader(PyLDLoader):
+    """A JSON-LD parser that fetches remote contexts over the network.
+
+    Use only for documents you trust: a document can direct this parser to
+    any URL its author chooses. ``document_loader`` may still be given to
+    replace the default requests-based loader.
+    """
+
+    def __init__(self, *args, document_loader=None, **kwargs):
+        if document_loader is None:
+            document_loader = requests_document_loader()
+        super().__init__(*args, document_loader=document_loader, **kwargs)
 
 
 jsonld_parser = PyLDLoader()

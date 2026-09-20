@@ -12,7 +12,11 @@ import pytest
 import threading
 import uuid
 
-from pymantic.parsers.jsonld import PyLDLoader, RemoteContextsDisabledError
+from pymantic.parsers.jsonld import (
+    PyLDLoader,
+    RemoteContextsDisabledError,
+    UnsafePyLDLoader,
+)
 from pymantic.primitives import Literal, NamedNode, Quad
 
 NAME_IRI = "http://ex/name"
@@ -124,5 +128,31 @@ def test_inline_context_needs_no_loader():
 
     dataset = PyLDLoader().parse_json(document)
 
+    assert len(dataset) == 1
+    assert EXPECTED_QUAD in dataset
+
+
+def test_unsafe_loader_fetches_remote_context(context_server):
+    document = remote_context_document(context_server.context_url())
+
+    dataset = UnsafePyLDLoader().parse_json(document)
+
+    assert len(context_server.requests) == 1
+    assert len(dataset) == 1
+    assert EXPECTED_QUAD in dataset
+
+
+def test_unsafe_loader_accepts_explicit_loader(context_server):
+    context_url = context_server.context_url()
+    document = remote_context_document(context_url)
+    seen = []
+
+    def recording_loader(url, options):
+        seen.append(url)
+        return requests_document_loader()(url, options)
+
+    dataset = UnsafePyLDLoader(document_loader=recording_loader).parse_json(document)
+
+    assert seen == [context_url]
     assert len(dataset) == 1
     assert EXPECTED_QUAD in dataset

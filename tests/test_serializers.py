@@ -554,3 +554,27 @@ def test_ntriples_control_character_round_trip(primitives):
     ntriples_parser.parse(f, parsed)
     assert len(parsed) == 1
     assert primitives.Triple(s, p, o) in parsed
+
+
+def test_named_node_non_ascii_iri_serializes_raw(
+    primitives, profile, turtle_repr, turtle_parser
+):
+    node = primitives.NamedNode("http://example.com/café/日本#É")
+    name = turtle_repr(node=node, profile=profile, name_map=None, bnode_name_maker=None)
+    assert name == "<http://example.com/café/日本#É>"
+    parsed = turtle_parser.parse(f"{name} <http://x/p> <http://x/o> .")
+    assert next(iter(parsed)).subject == node
+
+
+def test_named_node_percent_encoded_iri_left_as_is(primitives, profile, turtle_repr):
+    node = primitives.NamedNode("http://example.com/a%20b?q=100%25")
+    name = turtle_repr(node=node, profile=profile, name_map=None, bnode_name_maker=None)
+    assert name == "<http://example.com/a%20b?q=100%25>"
+
+
+def test_named_node_control_characters_percent_encoded(
+    primitives, profile, turtle_repr
+):
+    node = primitives.NamedNode("http://example.com/a\x00b\tc\x7fd")
+    name = turtle_repr(node=node, profile=profile, name_map=None, bnode_name_maker=None)
+    assert name == "<http://example.com/a%00b%09c\x7fd>"

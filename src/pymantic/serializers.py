@@ -1,8 +1,6 @@
 from collections import OrderedDict
 import re
 
-from pymantic.util import quote_normalized_iri
-
 
 def nt_escape(node_string):
     """Properly escape strings for n-triples and n-quads serialization."""
@@ -93,10 +91,21 @@ def escape_prefix_local(name):
     return "".join((prefix, colon, escaped))
 
 
+# Characters the Turtle IRIREF production forbids raw inside < and >:
+# U+0000-U+0020 and <>"{}|^`\ . Everything else, including non-ASCII, is legal.
+IRIREF_FORBIDDEN = set(map(chr, range(0x21))) | set('<>"{}|^`\\')
+
+
 def turtle_iri_escape(iri):
-    """Escape an IRI for output between < and > in Turtle. The Turtle IRIREF
-    production is the same as N-Triples', so this matches NamedNode.toNT()."""
-    return nt_escape(quote_normalized_iri(iri))
+    """Escape an IRI for output between < and > in Turtle by percent-encoding
+    the UTF-8 bytes of characters the IRIREF production forbids. All other
+    characters, including non-ASCII, pass through unchanged."""
+    return "".join(
+        "".join("%%%02X" % byte for byte in char.encode("utf-8"))
+        if char in IRIREF_FORBIDDEN
+        else char
+        for char in iri
+    )
 
 
 def turtle_string_escape(string):

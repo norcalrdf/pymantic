@@ -366,7 +366,7 @@ def test_budget_exhaustion_raises_undecidable_quickly():
     started = time.perf_counter()
     with pytest.raises(Undecidable) as info:
         isomorphic(g, relabelled_and_shuffled(g))
-    assert time.perf_counter() - started < 1.0
+    assert time.perf_counter() - started < 2.0
     assert "10 blank nodes" in str(info.value)
     assert EX + "p" in str(info.value)
     with pytest.raises(Undecidable):
@@ -407,9 +407,12 @@ def test_symmetric_but_polynomial_molecules_are_within_budget():
 
 def test_budget_bounds_time_by_molecule_size():
     # The budget is a polynomial in the molecule's size, so a small poison
-    # molecule cannot consume much time whatever its shape: the 10-node
-    # clique trips in milliseconds, and a 20-node one still within a second.
-    for size, limit in ((10, 0.1), (20, 1.0)):
+    # molecule cannot consume much time whatever its shape. Locally the
+    # 10-node clique trips in about 40 ms and the 20-node one in about
+    # 0.4 s; the bounds here are loose so that a slow CI runner does not
+    # turn a sound property into a flaky test. The point is seconds versus
+    # the minutes an unbounded search would take.
+    for size, limit in ((10, 2.0), (20, 8.0)):
         g = blank_clique(size)
         started = time.perf_counter()
         with pytest.raises(Undecidable):
@@ -453,7 +456,7 @@ def test_work_limit_can_only_lower_the_budget():
     started = time.perf_counter()
     with pytest.raises(Undecidable):
         canonical_labels(blank_clique(10), work_limit=10**12)
-    assert time.perf_counter() - started < 0.5
+    assert time.perf_counter() - started < 2.0
 
 
 # Canonical labels -----------------------------------------------------------

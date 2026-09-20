@@ -14,6 +14,12 @@ All notable changes to pymantic are recorded here. The format follows
 - The Turtle serializer percent-encodes characters that are illegal in an IRI
   (`<`, `>`, `"`, `{`, `}`, `|`, `^`, backtick, backslash, and control
   characters and space), closing the same injection path through IRIs.
+- Turtle numeric and boolean literals use bare syntax only when their values
+  match the corresponding Turtle grammar; other values remain quoted typed
+  literals. Base and prefix declaration IRIs are escaped too.
+- Turtle and N-Triples serialization reject invalid language tags, and Turtle
+  serialization rejects invalid prefix names, preventing these fields from
+  introducing additional RDF statements.
 - The JSON-LD parser no longer fetches remote `@context` or `@import` URLs by
   default. Parsing an untrusted document could previously make the parsing
   host issue HTTP requests to arbitrary servers. See *Changed* for how to opt
@@ -49,6 +55,8 @@ All notable changes to pymantic are recorded here. The format follows
   characters in the local part carry backslash escapes (for example
   `ex:foo\;bar`) or fall back to the full `<iri>` form; serialized blank nodes
   are written as `_:b0`, `_:b1`, ... (previously `_b0`, which did not parse).
+- Invalid language tags and Turtle prefix names raise `ValueError` during
+  serialization.
 - Blank node labels are generated from a process-wide counter (`b0`, `b1`,
   ...) instead of being derived from the object's memory address.
 - N-Triples output escapes control characters as `\uXXXX` instead of

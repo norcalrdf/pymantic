@@ -578,3 +578,90 @@ def test_named_node_control_characters_percent_encoded(
     node = primitives.NamedNode("http://example.com/a\x00b\tc\x7fd")
     name = turtle_repr(node=node, profile=profile, name_map=None, bnode_name_maker=None)
     assert name == "<http://example.com/a%00b%09c\x7fd>"
+
+
+@pytest.mark.parametrize("datatype", ["integer", "decimal", "double", "boolean"])
+@pytest.mark.parametrize("value", ['not a number; "quoted"\nvalue', "1 . 2", ""])
+def test_typed_literal_unsafe_value_round_trip(
+    primitives, turtle_parser, serialize_turtle, datatype, value
+):
+    triple = primitives.Triple(
+        primitives.NamedNode("http://x/s"),
+        primitives.NamedNode("http://x/p"),
+        primitives.Literal(value, datatype=primitives.XSD(datatype)),
+    )
+    graph = primitives.Graph().add(triple)
+    output = StringIO()
+    serialize_turtle(graph, output)
+    parsed = turtle_parser.parse(output.getvalue())
+    assert len(parsed) == 1
+    assert triple in parsed
+
+
+@pytest.mark.parametrize(
+    "datatype,value",
+    [("decimal", "1"), ("double", "1.0"), ("double", "INF"), ("boolean", "1")],
+)
+def test_typed_literal_preserves_datatype(
+    primitives, turtle_parser, serialize_turtle, datatype, value
+):
+    test_typed_literal_unsafe_value_round_trip(
+        primitives, turtle_parser, serialize_turtle, datatype, value
+    )
+
+
+@pytest.mark.parametrize("language", ["en\n", "en us", "en;", "en-", "é"])
+@pytest.mark.parametrize("format", ["turtle", "nt"])
+def test_serializers_reject_invalid_language(primitives, language, format):
+    from pymantic.serializers import serialize_turtle
+
+    graph = primitives.Graph().add(
+        primitives.Triple(
+            primitives.NamedNode("http://x/s"),
+            primitives.NamedNode("http://x/p"),
+            primitives.Literal("text", language=language),
+        )
+    )
+    serializer = serialize_turtle if format == "turtle" else serialize_ntriples
+    with pytest.raises(ValueError, match="language"):
+        serializer(graph, StringIO())
+
+
+@pytest.mark.parametrize("directive", ["base", "prefix"])
+def test_turtle_directive_iri_escaping(
+    primitives, profile, turtle_parser, serialize_turtle, directive
+):
+    iri = 'http://example.com/a> <b"c\n'
+    kwargs = {}
+    if directive == "base":
+        kwargs["base"] = iri
+    else:
+        profile.setPrefix("ex", iri)
+    output = StringIO()
+    serialize_turtle(primitives.Graph(), output, profile=profile, **kwargs)
+    assert "<http://example.com/a%3E%20%3Cb%22c%0A>" in output.getvalue()
+    assert len(turtle_parser.parse(output.getvalue())) == 0
+
+
+@pytest.mark.parametrize("prefix", ["ex:", "ex name", "ex\n", "ex.", "_ex"])
+def test_turtle_rejects_invalid_prefix(primitives, profile, serialize_turtle, prefix):
+    profile.setPrefix(prefix, "http://example.com/")
+    with pytest.raises(ValueError, match="prefix"):
+        serialize_turtle(primitives.Graph(), StringIO(), profile=profile)
+
+
+@pytest.mark.parametrize("prefix", ["", "ex", "é", "a.b", "ex_1"])
+def test_turtle_valid_prefix_round_trip(
+    primitives, profile, turtle_parser, serialize_turtle, prefix
+):
+    profile.setPrefix(prefix, "http://example.com/")
+    triple = primitives.Triple(
+        primitives.NamedNode("http://example.com/s"),
+        primitives.NamedNode("http://example.com/p"),
+        primitives.NamedNode("http://example.com/o"),
+    )
+    output = StringIO()
+    serialize_turtle(primitives.Graph().add(triple), output, profile=profile)
+    parsed = turtle_parser.parse(output.getvalue())
+    assert len(parsed) == 1
+    assert triple in parsed

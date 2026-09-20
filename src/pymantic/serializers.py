@@ -2,6 +2,12 @@ from collections import OrderedDict
 import re
 
 
+def validate_language(language):
+    """Reject language tags that cannot be emitted as an RDF LANGTAG."""
+    if not re.fullmatch(r"[A-Za-z]+(?:-[A-Za-z0-9]+)*", language):
+        raise ValueError("Invalid RDF language tag")
+
+
 def nt_escape(node_string):
     """Properly escape strings for n-triples and n-quads serialization."""
     output_string = ""
@@ -61,6 +67,18 @@ PN_CHARS_BASE = (
 )
 PN_CHARS_U = PN_CHARS_BASE + "_"
 PN_CHARS = PN_CHARS_U + "\\-0-9\u00B7\u0300-\u036F\u203F-\u2040"
+PN_PREFIX_RE = re.compile(
+    "[" + PN_CHARS_BASE + "](?:[" + PN_CHARS + ".]*[" + PN_CHARS + "])?"
+)
+TURTLE_NATIVE_LITERALS = {
+    "http://www.w3.org/2001/XMLSchema#" + datatype: re.compile(pattern)
+    for datatype, pattern in {
+        "integer": r"[+-]?[0-9]+",
+        "decimal": r"[+-]?[0-9]*\.[0-9]+",
+        "double": r"[+-]?(?:[0-9]+\.[0-9]*|\.[0-9]+|[0-9]+)[eE][+-]?[0-9]+",
+        "boolean": r"true|false",
+    }.items()
+}
 PN_LOCAL_ESC_CHARS = "_~.-!$&'()*+,;=/?#@%"
 PLX = "(?:%[0-9A-Fa-f]{2}|\\\\[" + re.escape(PN_LOCAL_ESC_CHARS) + "])"
 PN_LOCAL_RE = re.compile(
@@ -75,6 +93,8 @@ def escape_prefix_local(name):
     as a prefixed name even with escapes, in which case the caller should fall
     back to the full <IRI> form."""
     prefix, colon, local = name.partition(":")
+    if prefix and not PN_PREFIX_RE.fullmatch(prefix):
+        raise ValueError("Invalid Turtle prefix name")
     escaped = ""
     last = len(local) - 1
     for i, char in enumerate(local):
@@ -146,14 +166,11 @@ def turtle_repr(node, profile, name_map, bnode_name_maker, base=None):
             # String with language?
             name = turtle_string_escape(node.value)
             if node.language:
+                validate_language(node.language)
                 name += "@" + node.language
-        elif node.datatype == profile.resolve("xsd:integer"):
-            name = node.value
-        elif node.datatype == profile.resolve("xsd:decimal"):
-            name = node.value
-        elif node.datatype == profile.resolve("xsd:double"):
-            name = node.value
-        elif node.datatype == profile.resolve("xsd:boolean"):
+        elif node.datatype in TURTLE_NATIVE_LITERALS and TURTLE_NATIVE_LITERALS[
+            node.datatype
+        ].fullmatch(node.value):
             name = node.value
         else:
             # Unrecognized data-type.
@@ -175,14 +192,16 @@ def serialize_turtle(
     subjects, and predicate_key predicates within a subject."""
 
     if base is not None:
-        f.write("@base <" + base + "> .\n")
+        f.write("@base <" + turtle_iri_escape(base) + "> .\n")
     if profile is None:
         from pymantic.primitives import Profile
 
         profile = Profile()
     for prefix, iri in profile.prefixes.items():
         if prefix != "rdf":
-            f.write("@prefix " + prefix + ": <" + iri + "> .\n")
+            if prefix and not PN_PREFIX_RE.fullmatch(prefix):
+                raise ValueError("Invalid Turtle prefix name")
+            f.write("@prefix " + prefix + ": <" + turtle_iri_escape(iri) + "> .\n")
 
     name_map = OrderedDict()
     bnode_name_maker = bnode_name_generator()

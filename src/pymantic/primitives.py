@@ -24,7 +24,7 @@ import datetime
 import itertools
 from operator import itemgetter
 
-from pymantic.serializers import nt_escape
+from pymantic.serializers import nt_escape, validate_language
 import pymantic.uri_schemes as uri_schemes
 from pymantic.util import quote_normalized_iri
 
@@ -292,6 +292,7 @@ class Literal(tuple):
     def toNT(self):
         quoted = '"' + nt_escape(self.value) + '"'
         if self.language:
+            validate_language(self.language)
             return f"{quoted}@{self.language}"
         elif self.datatype:
             return f"{quoted}^^{self.datatype.toNT()}"

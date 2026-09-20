@@ -1,4 +1,5 @@
 from collections import Counter, OrderedDict
+from io import StringIO
 import re
 
 
@@ -184,8 +185,12 @@ def turtle_string_escape(string):
     )
 
 
-def turtle_repr(node, profile, name_map, bnode_name_maker, base=None):
-    """Turn a node in an RDF graph into its turtle representation."""
+def turtle_repr(
+    node, profile, name_map, bnode_name_maker, base=None, used_prefixes=None
+):
+    """Turn a node in an RDF graph into its turtle representation. When
+    ``used_prefixes`` is a set, the prefix of every prefixed name written is
+    added to it; an IRI that falls back to ``<...>`` adds nothing."""
     if node.interfaceName == "NamedNode":
         name = profile.prefixes.shrink(node)
         if name != node:
@@ -195,6 +200,8 @@ def turtle_repr(node, profile, name_map, bnode_name_maker, base=None):
             if base and iri.startswith(base):
                 iri = ("#" if base.endswith("#") else "") + iri[len(base) :]
             name = f"<{turtle_iri_escape(iri)}>"
+        elif used_prefixes is not None:
+            used_prefixes.add(name.partition(":")[0])
     elif node.interfaceName == "BlankNode":
         if node in name_map:
             name = name_map[node]
@@ -221,7 +228,9 @@ def turtle_repr(node, profile, name_map, bnode_name_maker, base=None):
         else:
             # Unrecognized data-type.
             name = turtle_string_escape(node.value)
-            name += "^^" + turtle_repr(node.datatype, profile, None, None)
+            name += "^^" + turtle_repr(
+                node.datatype, profile, None, None, used_prefixes=used_prefixes
+            )
     return name
 
 
@@ -234,6 +243,15 @@ def turtle_sorted_names(nodes, name_maker, tie_break=None):
         return sorted(pairs, key=lambda p: p[0])
     return sorted(pairs, key=lambda p: (p[0], tie_break(p[1])))
 
+
+# Deepest [ ... ] and ( ... ) nesting Turtle writes. Planning and rendering an
+# inline blank node or a collection each recurse once per level (about three
+# frames per level when rendering), and pymantic's own Turtle parser recurses
+# about six frames per level and fails near 160 levels under Python's default
+# limit of 1000, so a node or list head past this depth keeps its label and
+# its own block. Measured, not guessed: 32 levels cost about 100 frames to
+# write and 200 to read back.
+MAX_INLINE_DEPTH = 32
 
 RDF_FIRST = "http://www.w3.org/1999/02/22-rdf-syntax-ns#first"
 RDF_REST = "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"
@@ -258,7 +276,7 @@ def list_cell_shape(graph, node):
     return firsts[0], rests[0], others
 
 
-def plan_collections(graph):
+def plan_collections(graph, references=None):
     """Decide which blank nodes to write with Turtle's ( ... ) syntax.
 
     Returns (inline, as_subject, consumed). ``inline`` maps a list head that
@@ -271,7 +289,8 @@ def plan_collections(graph):
     to rdf:nil is made of blank nodes with exactly one rdf:first, exactly one
     rdf:rest, nothing else, and (past the head) exactly one reference; any
     other shape is written as ordinary triples so no information is lost."""
-    references = Counter(triple.object for triple in graph)
+    if references is None:
+        references = Counter(triple.object for triple in graph)
 
     inline, as_subject, consumed = {}, {}, set()
     for node in list(graph.subjects()):
@@ -311,6 +330,175 @@ def plan_collections(graph):
     return inline, as_subject, consumed
 
 
+def list_cells(graph, head):
+    """The cells of a list that :func:`plan_collections` accepted, from
+    ``head`` along rdf:rest to rdf:nil."""
+    cells = []
+    node = head
+    while node != RDF_NIL:
+        cells.append(node)
+        (rest,) = graph.match(subject=node, predicate=RDF_REST)
+        node = rest.object
+    return cells
+
+
+def inline_candidates(graph, inline, as_subject, consumed, references):
+    """Blank nodes that may be written as [ ... ]: the object of exactly one
+    triple, no part in a collection (``inline``, ``as_subject`` and
+    ``consumed`` are from :func:`plan_collections`), and no rdf:first or
+    rdf:rest of their own. ``references`` counts the triples each node is
+    the object of."""
+    candidates = set()
+    for node, count in references.items():
+        if count != 1 or getattr(node, "interfaceName", None) != "BlankNode":
+            continue
+        if node in inline or node in as_subject or node in consumed:
+            continue
+        if any(t.predicate in (RDF_FIRST, RDF_REST) for t in graph.match(subject=node)):
+            continue
+        candidates.add(node)
+    return candidates
+
+
+class _InlinePlanner:
+    """Walks one graph from its subjects to decide what
+    :func:`plan_inline_blank_nodes` returns.
+
+    The walk is recursive per nesting level and shares what it has already
+    decided across every subject it starts from, so this object holds that
+    state for the length of one plan."""
+
+    def __init__(self, graph, inline, as_subject, candidates):
+        self.graph = graph
+        self.inline = inline
+        self.as_subject = as_subject
+        self.candidates = candidates
+        self.decided = set()
+        self.inlined = set()
+        self.heads_seen = set()
+        self.labelled_heads = set()
+        # Candidates and list heads met past MAX_INLINE_DEPTH; each becomes a
+        # labelled subject once the walk that met it has unwound, so the stack
+        # never grows with the length of a chain.
+        self.too_deep = []
+
+    def visit(self, node, depth):
+        if node in self.inline:
+            # A list containing itself is only written once.
+            if node in self.heads_seen:
+                return
+            if depth > MAX_INLINE_DEPTH:
+                self.too_deep.append(node)
+                return
+            self.heads_seen.add(node)
+            for member in self.inline[node]:
+                self.visit(member, depth + 1)
+        elif node in self.candidates and node not in self.decided:
+            if depth > MAX_INLINE_DEPTH:
+                self.too_deep.append(node)
+                return
+            self.decided.add(node)
+            self.inlined.add(node)
+            self.walk(node, depth)
+
+    def walk(self, subject, depth):
+        if subject in self.as_subject:
+            # The "(" that opens subject's own collection is one level of
+            # nesting in its own right, on top of the depth subject itself
+            # was reached at, so members are one level deeper than an
+            # ordinary predicate's objects below.
+            for member in self.as_subject[subject]:
+                self.visit(member, depth + 2)
+        for triple in self.graph.match(subject=subject):
+            if subject in self.as_subject and triple.predicate in (RDF_FIRST, RDF_REST):
+                continue
+            self.visit(triple.object, depth + 1)
+
+    def walk_as_subject(self, node):
+        pending = [node]
+        while pending:
+            subject = pending.pop()
+            if subject in self.decided:
+                continue
+            self.decided.add(subject)
+            if subject in self.inline:
+                self.labelled_heads.add(subject)
+                for cell in list_cells(self.graph, subject):
+                    self.walk(cell, 0)
+            else:
+                self.walk(subject, 0)
+            pending.extend(self.too_deep)
+            self.too_deep.clear()
+
+
+def plan_inline_blank_nodes(
+    graph, inline, as_subject, consumed, rank, references, blank_nodes=True
+):
+    """Decide which blank nodes to write with Turtle's [ ... ] syntax, and
+    which collections are nested too deep to write with ( ... ).
+
+    A blank node qualifies when it is the object of exactly one triple, takes
+    no part in a collection (``inline``, ``as_subject`` and ``consumed`` are
+    from :func:`plan_collections`) and has no rdf:first or rdf:rest of its
+    own. It is written where its one reference is, so that reference must
+    itself be written: walking the objects of every other subject, through
+    collections, claims each qualifying node the walk meets and then walks
+    on from it. A qualifying node the walk never reaches is in a cycle whose
+    members are referenced only from within the cycle. The lowest-ranked
+    such node keeps its label and is written as a subject, and the walk
+    resumes from it so the rest of the cycle is inlined beneath it; ``rank``
+    is the canonical blank node order, which makes that choice stable.
+    ``references`` counts the triples each node is the object of.
+
+    Each [ and each ( counts one level of depth. A qualifying node or an
+    ``inline`` list head the walk meets more than ``MAX_INLINE_DEPTH`` levels
+    down likewise keeps its label, and the walk resumes from it at depth
+    zero; such a head and its cells are written as ordinary subjects with
+    their rdf:first and rdf:rest triples. With ``blank_nodes`` False no
+    blank node is inlined and only collection depth is planned, as default
+    (non-stable) output needs. Returns (nodes to inline, list heads to write
+    with labels)."""
+    candidates = (
+        inline_candidates(graph, inline, as_subject, consumed, references)
+        if blank_nodes
+        else set()
+    )
+    planner = _InlinePlanner(graph, inline, as_subject, candidates)
+    for subject in graph.subjects():
+        if subject not in candidates and subject not in consumed:
+            planner.walk_as_subject(subject)
+    for node in sorted(candidates, key=rank):
+        if node not in planner.decided:
+            planner.walk_as_subject(node)
+    return planner.inlined, planner.labelled_heads
+
+
+# Turtle layout. A subject block lines its predicates up after the subject;
+# a multi-line subject goes on a line of its own and its predicates are
+# indented INDENT. A multi-line [ ... ] or ( ... ) puts its contents INDENT
+# columns in from the line it opens on and its closing bracket back at that
+# line's indentation, so indentation grows with nesting depth alone, never
+# with the length of the names or literals written before it.
+INDENT = 4
+
+
+def indented(text, column):
+    """Shift the continuation lines of a multi-line object, which carry their
+    own indentation relative to the line it starts on, to that line's
+    indentation."""
+    return text.replace("\n", "\n" + " " * column)
+
+
+def object_list(object_names, indent, column):
+    """The objects of one predicate, written after it on a line indented
+    ``indent``. One-line objects go one per line at ``column``; if any object
+    spans lines they are joined with ", " instead, so each opens where the
+    one before it closed and every body sits INDENT in from ``indent``."""
+    if any("\n" in name for name in object_names):
+        return ", ".join(indented(name, indent) for name in object_names)
+    return (",\n" + " " * column).join(object_names)
+
+
 class _TurtleWriter:
     """Writes one graph to a stream as Turtle.
 
@@ -325,6 +513,11 @@ class _TurtleWriter:
         self.base = base
         self.profile = profile
         self.stable = stable
+        # Stable output declares only the prefixes it uses, which are not
+        # known until the statements are written, so those go to a buffer
+        # first.
+        self.used_prefixes = set() if stable else None
+        self.out = StringIO() if stable else f
         self.name_map = OrderedDict()
         self.bnode_name_maker = bnode_name_generator()
         self.blank_order = {}
@@ -333,18 +526,37 @@ class _TurtleWriter:
 
             labels, self.blank_order = canonical_labels_and_order(graph)
             self.name_map.update((node, "_:" + label) for node, label in labels.items())
-        self.inline, self.as_subject, self.consumed = plan_collections(graph)
+        # How many triples have each node as their object, which both
+        # planners need; counted once here.
+        references = Counter(triple.object for triple in graph)
+        self.inline, self.as_subject, self.consumed = plan_collections(
+            graph, references
+        )
+        self.inlined, labelled_heads = plan_inline_blank_nodes(
+            graph,
+            self.inline,
+            self.as_subject,
+            self.consumed,
+            self.blank_rank,
+            references,
+            blank_nodes=stable,
+        )
+        # A list nested past MAX_INLINE_DEPTH is written as rdf:first/rdf:rest
+        # triples from a labelled head, so its cells are subjects again.
+        for head in labelled_heads:
+            del self.inline[head]
+            self.consumed.difference_update(list_cells(graph, head))
         self.rendered = set()
 
     def write(self):
-        if self.base is not None:
-            self.f.write("@base <" + turtle_iri_escape(self.base) + "> .\n")
-        for prefix, iri in self.profile.prefixes.items():
-            if prefix and not PN_PREFIX_RE.fullmatch(prefix):
-                raise ValueError("Invalid Turtle prefix name")
-            self.f.write("@prefix " + prefix + ": <" + turtle_iri_escape(iri) + "> .\n")
+        if not self.stable:
+            self.write_directives()
 
-        subjects = [s for s in self.graph.subjects() if s not in self.consumed]
+        subjects = [
+            s
+            for s in self.graph.subjects()
+            if s not in self.consumed and s not in self.inlined
+        ]
         tie_break = self.blank_rank if self.stable else None
         for subject_name, subject in turtle_sorted_names(
             subjects, self.subject_repr, tie_break
@@ -359,15 +571,32 @@ class _TurtleWriter:
             if head in self.rendered:
                 continue
             self.rendered.add(head)
-            node = head
-            while node != RDF_NIL:
+            for node in list_cells(self.graph, head):
                 self.write_block(self.name(node), self.block_predicates(node))
-                (rest,) = self.graph.match(subject=node, predicate=RDF_REST)
-                node = rest.object
+
+        if self.stable:
+            self.write_directives(self.used_prefixes)
+            self.f.write(self.out.getvalue())
+
+    def write_directives(self, used=None):
+        if self.base is not None:
+            self.f.write("@base <" + turtle_iri_escape(self.base) + "> .\n")
+        for prefix, iri in self.profile.prefixes.items():
+            if prefix and not PN_PREFIX_RE.fullmatch(prefix):
+                raise ValueError("Invalid Turtle prefix name")
+            if used is None or prefix in used:
+                self.f.write(
+                    "@prefix " + prefix + ": <" + turtle_iri_escape(iri) + "> .\n"
+                )
 
     def name(self, node):
         return turtle_repr(
-            node, self.profile, self.name_map, self.bnode_name_maker, self.base
+            node,
+            self.profile,
+            self.name_map,
+            self.bnode_name_maker,
+            self.base,
+            used_prefixes=self.used_prefixes,
         )
 
     def blank_rank(self, node):
@@ -379,7 +608,34 @@ class _TurtleWriter:
         return (0, 0, self.name(node))
 
     def collection_repr(self, members):
-        return "(" + " ".join(self.object_repr(member) for member in members) + ")"
+        names = [self.object_repr(member) for member in members]
+        if not any("\n" in name for name in names):
+            return "(" + " ".join(names) + ")"
+        # Some member spans lines, so every member gets a line of its own.
+        return (
+            "(\n"
+            + "".join(" " * INDENT + indented(name, INDENT) + "\n" for name in names)
+            + ")"
+        )
+
+    def inline_repr(self, node):
+        predicates = self.block_predicates(node)
+        if not predicates:
+            return "[]"
+        if len(predicates) == 1 and len(predicates[0][1]) == 1:
+            predicate_name, (object_name,) = predicates[0]
+            if "\n" not in object_name:
+                return "[ " + predicate_name + " " + object_name + " ]"
+        # One predicate per line, INDENT in; one-line later objects each on
+        # a line of their own, INDENT further in.
+        lines = [
+            " " * INDENT
+            + predicate_name
+            + " "
+            + object_list(object_names, INDENT, 2 * INDENT)
+            for predicate_name, object_names in predicates
+        ]
+        return "[\n" + " ;\n".join(lines) + "\n]"
 
     def object_repr(self, node):
         # An inline head is written where its one reference is; once written
@@ -388,6 +644,8 @@ class _TurtleWriter:
         if node in self.inline and node not in self.rendered:
             self.rendered.add(node)
             return self.collection_repr(self.inline[node])
+        if node in self.inlined:
+            return self.inline_repr(node)
         return self.name(node)
 
     def subject_repr(self, node):
@@ -396,6 +654,10 @@ class _TurtleWriter:
         return self.name(node)
 
     def objects_of(self, subject, predicate):
+        # A term written in both literal forms is one triple in the graph,
+        # so no dedup is needed here. Blank nodes are never deduplicated:
+        # two distinct blank nodes are two RDF terms even when both are
+        # written as [].
         objects = [
             t.object for t in self.graph.match(subject=subject, predicate=predicate)
         ]
@@ -415,16 +677,21 @@ class _TurtleWriter:
         ]
 
     def write_block(self, subject_name, predicates):
-        subj_indent_size = len(subject_name) + 1
-        self.f.write(subject_name + " ")
+        if "\n" in subject_name:
+            self.out.write(subject_name + "\n")
+            indent, first_indent = INDENT, INDENT
+        else:
+            self.out.write(subject_name + " ")
+            indent, first_indent = len(subject_name) + 1, 0
         for i, (predicate_name, object_names) in enumerate(predicates):
-            if i != 0:
-                self.f.write(" " * subj_indent_size)
-            pred_indent_size = subj_indent_size + len(predicate_name) + 1
-            self.f.write(predicate_name + " ")
-            self.f.write((",\n" + " " * pred_indent_size).join(object_names))
-            self.f.write(" ;\n")
-        self.f.write(" " * subj_indent_size + ".\n\n")
+            self.out.write(" " * (indent if i else first_indent))
+            # One-line later objects line up under the first.
+            column = indent + len(predicate_name) + 1
+            self.out.write(
+                predicate_name + " " + object_list(object_names, indent, column)
+            )
+            self.out.write(" ;\n")
+        self.out.write(" " * indent + ".\n\n")
 
 
 def serialize_turtle(
@@ -448,10 +715,13 @@ def serialize_turtle(
     :func:`pymantic.compare.canonical_labels`, and the objects of one
     predicate are sorted: IRIs and literals by their Turtle name, then blank
     nodes by their molecule's canonical form and their position in it (see
-    docs/graph-comparison.rst). The same graph then always produces the
-    same bytes, and editing one blank node's content changes only the lines
-    of its molecule. Raises :class:`pymantic.compare.Undecidable` for a
-    graph whose blank nodes cannot be told apart within the work budget."""
+    docs/graph-comparison.rst). A blank node referenced exactly once is
+    written inline as ``[ ... ]`` at that reference (see
+    :func:`plan_inline_blank_nodes`), and only the prefixes the output uses
+    are declared. The same graph then always produces the same bytes, and
+    editing one blank node's content changes only the lines of its molecule.
+    Raises :class:`pymantic.compare.Undecidable` for a graph whose blank
+    nodes cannot be told apart within the work budget."""
     if profile is None:
         from pymantic.primitives import Profile
 

@@ -16,7 +16,9 @@ depends on its rdft: type:
 * ``TestTurtleEval``   the parsed graph must be isomorphic to the N-Triples
                        result file; a second test, ``<id>[roundtrip]``,
                        also serializes the graph as Turtle, reparses it and
-                       compares again
+                       compares again; a third, ``<id>[stable]``, checks
+                       that serializing with ``stable=True`` gives the same
+                       bytes after the triples are shuffled and relabelled
 * ``*PositiveC14N``    parsing then serializing as N-Triples/N-Quads must
                        reproduce the result file byte for byte
 * anything else        skipped, so a new upstream test type is visible
@@ -29,6 +31,7 @@ and marked xfail. Every other test must pass.
 from io import StringIO
 import pathlib
 import pytest
+import random
 import rdflib
 from rdflib.collection import Collection
 from rdflib.compare import isomorphic
@@ -38,7 +41,7 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import url2pathname
 
 from pymantic.parsers import nquads_parser, ntriples_parser, turtle_parser
-from pymantic.primitives import BlankNode, Literal, NamedNode
+from pymantic.primitives import BlankNode, Graph, Literal, NamedNode, Triple
 from pymantic.serializers import (
     serialize_nquads,
     serialize_ntriples,
@@ -175,7 +178,9 @@ for top_level in TOP_LEVEL_MANIFESTS:
     ENTRIES.extend(load_manifest(top_level, loaded_manifests))
 EVAL_ENTRIES = [e for e in ENTRIES if e.kind == "TestTurtleEval"]
 EXPECTED_FAILURES = load_expected_failures()
-ALL_TEST_IDS = {e.id for e in ENTRIES} | {e.id + "[roundtrip]" for e in EVAL_ENTRIES}
+ALL_TEST_IDS = {e.id for e in ENTRIES} | {
+    e.id + suffix for e in EVAL_ENTRIES for suffix in ("[roundtrip]", "[stable]")
+}
 
 
 @pytest.fixture(autouse=True)
@@ -275,6 +280,38 @@ def test_w3c_turtle_roundtrip(entry):
     out = StringIO()
     serialize_turtle(parse_action(entry), out)
     assert_isomorphic(turtle_parser.parse(out.getvalue(), base=entry.base_iri), entry)
+
+
+def shuffled_relabelled(graph, seed):
+    """A copy of the graph with fresh blank nodes and another triple order."""
+    rng = random.Random(seed)
+    fresh = {}
+
+    def term(node):
+        if isinstance(node, BlankNode):
+            return fresh.setdefault(node, BlankNode())
+        return node
+
+    triples = [Triple(term(s), term(p), term(o)) for s, p, o in graph]
+    rng.shuffle(triples)
+    return Graph().addAll(triples)
+
+
+@pytest.mark.parametrize(
+    "entry", parametrize_cases(EVAL_ENTRIES, EXPECTED_FAILURES, "[stable]")
+)
+def test_w3c_turtle_stable_output(entry):
+    """Stable Turtle output must not depend on blank node labels or triple
+    order. An Undecidable here is a bug: no W3C Turtle test is a poison
+    graph."""
+    graph = parse_action(entry)
+    outputs = []
+    for seed in (1, 2):
+        out = StringIO()
+        serialize_turtle(shuffled_relabelled(graph, seed), out, stable=True)
+        outputs.append(out.getvalue())
+    assert outputs[0] == outputs[1]
+    assert_isomorphic(turtle_parser.parse(outputs[0], base=entry.base_iri), entry)
 
 
 def test_expected_failures_name_real_tests():

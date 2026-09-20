@@ -130,12 +130,28 @@ def process_escape(escape):
     escape = escape.group(0)[1:]
 
     if escape[0] in ("u", "U"):
-        return chr(int(escape[1:], 16))
+        code_point = int(escape[1:], 16)
+        # Turtle, N-Triples and N-Quads only allow Unicode scalar values in a
+        # numeric escape; surrogate pairs cannot be written as two escapes.
+        if 0xD800 <= code_point <= 0xDFFF:
+            raise ValueError(
+                "surrogate code point U+%04X is not allowed in a numeric "
+                "escape: \\%s" % (code_point, escape)
+            )
+        if code_point > 0x10FFFF:
+            raise ValueError(
+                "code point U+%X is outside the Unicode range in a numeric "
+                "escape: \\%s" % (code_point, escape)
+            )
+        return chr(code_point)
     else:
         return ESCAPE_MAP.get(escape[0], escape[0])
 
 
 def decode_literal(literal):
+    """Replace the ECHAR and UCHAR escapes of Turtle, N-Triples and N-Quads
+    in `literal` with the characters they stand for. Raises ValueError for a
+    numeric escape that does not denote a Unicode scalar value."""
     return re.sub(
         r"\\u[a-fA-F0-9]{4}|\\U[a-fA-F0-9]{8}|\\[^uU]",
         process_escape,

@@ -12,16 +12,6 @@ rdf11/rdf-turtle/turtle-eval-lists-03[roundtrip]	Turtle serializer emits nothing
 rdf11/rdf-turtle/turtle-eval-lists-04[roundtrip]	Turtle serializer emits nothing for statements whose subject is a collection
 rdf11/rdf-turtle/turtle-eval-lists-05[roundtrip]	Turtle serializer emits nothing for statements whose subject is a collection
 rdf11/rdf-turtle/turtle-eval-lists-06[roundtrip]	Turtle serializer crashes on lists containing IRIs, blank nodes or nested lists (Resource has no interfaceName)
-rdf11/rdf-turtle/turtle-syntax-bad-numeric-escape-01	surrogate code points accepted in numeric escapes
-rdf11/rdf-turtle/turtle-syntax-bad-numeric-escape-02	surrogate code points accepted in numeric escapes
-rdf11/rdf-turtle/turtle-syntax-bad-numeric-escape-03	surrogate code points accepted in numeric escapes
-rdf11/rdf-turtle/turtle-syntax-bad-numeric-escape-04	surrogate code points accepted in numeric escapes
-rdf11/rdf-turtle/turtle-syntax-bad-numeric-escape-05	surrogate code points accepted in numeric escapes
-rdf11/rdf-turtle/turtle-syntax-bad-numeric-escape-06	surrogate code points accepted in numeric escapes
-rdf11/rdf-turtle/turtle-syntax-bad-numeric-escape-07	surrogate code points accepted in numeric escapes
-rdf11/rdf-turtle/turtle-syntax-bad-numeric-escape-08	surrogate code points accepted in numeric escapes
-rdf11/rdf-turtle/turtle-syntax-bad-numeric-escape-09	surrogate code points accepted in numeric escapes
-rdf11/rdf-turtle/turtle-syntax-bad-numeric-escape-10	surrogate code points accepted in numeric escapes
 rdf11/rdf-turtle/IRI-resolution-08	relative IRI resolution collapses empty path segments (//)
 rdf11/rdf-turtle/IRI-resolution-08[roundtrip]	relative IRI resolution collapses empty path segments (//)
 rdf12/rdf-n-triples/c14n/langtagged_string	canonical form lowercases language tags
@@ -169,10 +159,3 @@ rdf12/rdf-turtle/syntax/turtle12-version-05	RDF 1.2 VERSION directive not implem
 rdf12/rdf-turtle/syntax/turtle12-version-06	RDF 1.2 VERSION directive not implemented
 rdf12/rdf-turtle/syntax/turtle12-version-07	RDF 1.2 VERSION directive not implemented
 rdf12/rdf-turtle/syntax/turtle12-version-08	RDF 1.2 VERSION directive not implemented
-rdf12/rdf-turtle/syntax/turtle12-surrogate-pair-bad-01	surrogate code points accepted in numeric escapes
-rdf12/rdf-turtle/syntax/turtle12-surrogate-pair-bad-02	surrogate code points accepted in numeric escapes
-rdf12/rdf-turtle/syntax/turtle12-surrogates-bad-01	surrogate code points accepted in numeric escapes
-rdf12/rdf-turtle/syntax/turtle12-surrogates-bad-02	surrogate code points accepted in numeric escapes
-rdf12/rdf-turtle/syntax/turtle12-surrogates-bad-03	surrogate code points accepted in numeric escapes
-rdf12/rdf-turtle/syntax/turtle12-surrogates-bad-04	surrogate code points accepted in numeric escapes
-rdf12/rdf-turtle/syntax/turtle12-surrogates-bad-05	surrogate code points accepted in numeric escapes

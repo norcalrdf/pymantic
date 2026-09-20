@@ -759,6 +759,37 @@ def test_typed_literal_preserves_datatype(
     )
 
 
+@pytest.mark.parametrize("stable", [False, True])
+def test_turtle_xsd_string_decided_by_iri_not_profile_prefix(
+    primitives, turtle_parser, serialize_turtle, stable
+):
+    """A document may bind xsd: to anything; only the real XML Schema string
+    IRI marks a literal as a simple string."""
+    from pymantic.compare import isomorphic
+
+    profile = primitives.Profile()
+    graph = turtle_parser.parse(
+        """@prefix xsd: <http://example/> .
+           <http://x/s> <http://x/p> "v"^^<http://example/string> ,
+                                      "w"^^<http://www.w3.org/2001/XMLSchema#string> .
+        """,
+        profile=profile,
+    )
+    assert profile.resolve("xsd:string") == "http://example/string"
+    output = StringIO()
+    serialize_turtle(graph, output, profile=profile, stable=stable)
+    text = output.getvalue()
+    assert '"v"^^xsd:string' in text
+    assert '"w"' in text and '"w"^^' not in text
+    reparsed = turtle_parser.parse(text)
+    assert isomorphic(graph, reparsed), text
+    objects = {t.object for t in reparsed}
+    assert objects == {
+        primitives.Literal("v", datatype=primitives.NamedNode("http://example/string")),
+        primitives.Literal("w", datatype=primitives.XSD_STRING),
+    }
+
+
 @pytest.mark.parametrize("language", ["en\n", "en us", "en;", "en-", "é"])
 @pytest.mark.parametrize("format", ["turtle", "nt"])
 def test_serializers_reject_invalid_language(primitives, language, format):

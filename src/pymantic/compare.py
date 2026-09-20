@@ -24,8 +24,19 @@ from collections import Counter
 import functools
 import hashlib
 
-from pymantic.primitives import XSD_STRING, BlankNode, Literal, NamedNode
+from pymantic.primitives import (
+    XSD_STRING,
+    BlankNode,
+    Dataset,
+    Literal,
+    NamedNode,
+)
 from pymantic.serializers import nt_escape
+
+# Stands in the subject, predicate and object of the record that carries a
+# named graph with no statements. Every real term key starts with "<" or a
+# quote, so this can never be mistaken for one.
+EMPTY_GRAPH = "(empty graph)"
 
 # Work allowed for one molecule of n blank nodes, counted in node visits: a
 # refinement round over the molecule costs n, and so does opening a branch.
@@ -90,7 +101,13 @@ def statements(graph_or_dataset):
     """The content of a graph or dataset as a list of distinct
     (subject, predicate, object, graph) tuples. IRIs and literals become
     their :func:`term_key`; blank nodes stay as themselves. The graph
-    position is "" for a triple and for a quad in the default graph."""
+    position is "" for a triple and for a quad in the default graph.
+
+    A named graph of a dataset that holds no quads is still part of the
+    dataset, so it gets a record of its own: :data:`EMPTY_GRAPH` in the
+    first three positions and the graph name in the fourth. An IRI name
+    makes that record ground; a blank name puts it in that node's
+    molecule."""
     keys = {}
 
     def key(term):
@@ -108,6 +125,12 @@ def statements(graph_or_dataset):
     for item in graph_or_dataset:
         graph = "" if len(item) == 3 or item[3] is None else key(item[3])
         items.append((key(item[0]), key(item[1]), key(item[2]), graph))
+    if isinstance(graph_or_dataset, Dataset):
+        # The default graph is always there and needs no record; a named
+        # graph exists only because it was added, so its name must count.
+        for graph in graph_or_dataset.graphs:
+            if graph.uri is not None and not len(graph):
+                items.append((EMPTY_GRAPH, EMPTY_GRAPH, EMPTY_GRAPH, key(graph.uri)))
     return list(dict.fromkeys(items))
 
 
@@ -377,7 +400,8 @@ def bail_stage(a, b, work_limit=None):
 
 def isomorphic(a, b, work_limit=None):
     """Whether two graphs, or two datasets, are isomorphic: equal up to
-    renaming of blank nodes. Raises :class:`Undecidable` if a molecule's
+    renaming of blank nodes. Two datasets must have the same named graphs,
+    empty ones included. Raises :class:`Undecidable` if a molecule's
     work budget runs out. ``work_limit`` lowers that budget to at most the
     given number of node visits per molecule; it can never raise it. See
     docs/graph-comparison.rst."""
@@ -426,7 +450,8 @@ def canonical_labels_and_order(graph_or_dataset, work_limit=None):
 def canonical_labels(graph_or_dataset, work_limit=None):
     """Map every blank node of a graph or dataset to a label derived only
     from its content, so that a relabelled or reordered copy gets the same
-    labels. Raises :class:`Undecidable` if a molecule's work budget runs
+    labels. A blank node that only names an empty graph of a dataset gets a
+    label like any other. Raises :class:`Undecidable` if a molecule's work budget runs
     out. ``work_limit`` lowers that budget to at most the given number of
     node visits per molecule; it can never raise it. See
     docs/graph-comparison.rst."""

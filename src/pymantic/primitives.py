@@ -566,7 +566,12 @@ class Dataset:
         self._graphs[quad.graph].add(q_as_t(quad))
 
     def remove(self, quad):
-        self._graphs[quad.graph].remove(q_as_t(quad))
+        # Looked up without creating: an empty named graph is part of the
+        # dataset, so only add and add_graph may bring one into being.
+        graph = self._graphs.get(quad.graph)
+        if graph is None:
+            raise KeyError(quad)
+        graph.remove(q_as_t(quad))
 
     def add_graph(self, graph, named=None):
         name = named or graph.uri
@@ -585,8 +590,10 @@ class Dataset:
 
     def match(self, subject=None, predicate=None, object=None, graph=None):
         if graph:
-            matches = self._graphs[graph].match(subject, predicate, object)
-            for match in matches:
+            named = self._graphs.get(graph)
+            if named is None:
+                return
+            for match in named.match(subject, predicate, object):
                 yield t_as_q(graph, match)
         else:
             for graph_uri, graph in self._graphs.items():

@@ -398,6 +398,53 @@ def test_dataset_iterates_in_insertion_order_within_a_graph():
     assert list(ds.match()) == quads
 
 
+def dataset_with_one_quad():
+    ds = Dataset()
+    ds.add(
+        Quad(
+            NamedNode("http://example.com/s"),
+            NamedNode("http://example.com/p"),
+            Literal("o"),
+            NamedNode("http://example.com/g"),
+        )
+    )
+    return ds
+
+
+def test_match_on_an_unknown_graph_creates_nothing():
+    """Looking in a graph the dataset does not have must not add it: an empty
+    named graph is part of a dataset, so a query would change what the
+    dataset is."""
+    ds = dataset_with_one_quad()
+    assert list(ds.match(graph=NamedNode("http://nowhere/"))) == []
+    assert len(list(ds.graphs)) == 1
+
+
+def test_contains_a_quad_in_an_unknown_graph_creates_nothing():
+    ds = dataset_with_one_quad()
+    absent = Quad(
+        NamedNode("http://example.com/s"),
+        NamedNode("http://example.com/p"),
+        Literal("o"),
+        NamedNode("http://nowhere/"),
+    )
+    assert absent not in ds
+    assert len(list(ds.graphs)) == 1
+
+
+def test_remove_from_an_unknown_graph_creates_nothing():
+    ds = dataset_with_one_quad()
+    absent = Quad(
+        NamedNode("http://example.com/s"),
+        NamedNode("http://example.com/p"),
+        Literal("o"),
+        NamedNode("http://nowhere/"),
+    )
+    with pytest.raises(KeyError):
+        ds.remove(absent)
+    assert len(list(ds.graphs)) == 1
+
+
 def test_literal_language_tag_is_lowercased():
     """RDF 1.2 Concepts: language tags compare ASCII case-insensitively and
     may be case normalized; RDF 1.1 Concepts: their value space is lowercase.

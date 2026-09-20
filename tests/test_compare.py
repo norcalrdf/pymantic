@@ -188,6 +188,63 @@ def test_blank_node_as_graph_name():
     assert set(labels_one.values()) == set(labels_two.values())
 
 
+def empty_named_graph_dataset(name):
+    """A dataset whose only content is one empty graph called ``name``."""
+    dataset = Dataset()
+    dataset.add_graph(Graph(), named=name)
+    return dataset
+
+
+def test_empty_named_graph_is_part_of_the_dataset():
+    name = NamedNode(EX + "g1")
+    assert not isomorphic(empty_named_graph_dataset(name), Dataset())
+    assert isomorphic(empty_named_graph_dataset(name), empty_named_graph_dataset(name))
+
+
+def test_empty_graphs_under_different_names_differ():
+    one = empty_named_graph_dataset(NamedNode(EX + "g1"))
+    two = empty_named_graph_dataset(NamedNode(EX + "g2"))
+    assert not isomorphic(one, two)
+
+
+def test_empty_graph_with_a_blank_name_is_labelled():
+    first, second = BlankNode(), BlankNode()
+    one, two = empty_named_graph_dataset(first), empty_named_graph_dataset(second)
+    assert isomorphic(one, two)
+    labels_one, labels_two = canonical_labels(one), canonical_labels(two)
+    assert list(labels_one) == [first]
+    assert set(labels_one.values()) == set(labels_two.values())
+
+
+def test_empty_graph_name_shared_with_a_subject_ties_them_together():
+    p, x = NamedNode(EX + "p"), NamedNode(EX + "x")
+    shared = BlankNode()
+    one = empty_named_graph_dataset(shared)
+    one.add(Quad(shared, p, x, None))
+    # The same content with a fresh blank node is still the same dataset.
+    other = BlankNode()
+    copy = empty_named_graph_dataset(other)
+    copy.add(Quad(other, p, x, None))
+    assert isomorphic(one, copy)
+    # Two separate blank nodes are not: the empty graph's name is no longer
+    # in the same molecule as the subject.
+    two = empty_named_graph_dataset(BlankNode())
+    two.add(Quad(BlankNode(), p, x, None))
+    assert not isomorphic(one, two)
+
+
+def test_stable_nquads_cannot_write_an_empty_named_graph():
+    # N-Quads has no syntax for an empty named graph, so stable output drops
+    # a graph that comparison counts; see "Datasets" in the design note.
+    from io import StringIO
+
+    from pymantic.serializers import serialize_nquads
+
+    out = StringIO()
+    serialize_nquads(empty_named_graph_dataset(NamedNode(EX + "g1")), out, stable=True)
+    assert out.getvalue() == ""
+
+
 # Refinement -----------------------------------------------------------------
 
 

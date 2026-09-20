@@ -21,6 +21,7 @@ __all__ = [
 import collections
 from collections import defaultdict
 import datetime
+import itertools
 from operator import itemgetter
 
 from pymantic.serializers import nt_escape
@@ -339,9 +340,14 @@ class BlankNode:
 
     interfaceName = "BlankNode"
 
+    _labels = itertools.count()
+
+    def __init__(self):
+        self._value = "b" + str(next(BlankNode._labels))
+
     @property
     def value(self):
-        return "".join(chr(ord(c) + 17) for c in hex(id(self))[2:])
+        return self._value
 
     def __repr__(self):
         return "BlankNode()"

@@ -214,6 +214,135 @@ part of every triple's signature, so blank nodes shared across graphs are
 handled by the same molecule logic. ``stable`` defaults to ``False`` so that
 existing output does not change until a caller asks for it.
 
+Measurements
+============
+
+Canonical blank node labels for one graph already in memory, parsing
+excluded, measured on 2026-09-20 with Python 3.14 and Node 26 on the same
+inputs for four implementations: this module; pyld 3.3.0's ``URDNA2015``,
+which is RDFC-1.0's algorithm in pure Python; rdf-canonize 5.0.0, the
+reference RDFC-1.0 implementation in Node, shown at the best of its work
+factor settings because its default aborts on 18 of the RDFC-1.0 suite's own
+inputs; and rdflib 7.6.0's canonicalizer, which is what its ``isomorphic``
+computes. rdflib was capped at 60 seconds per input, the others at 120.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Input
+     - Triples
+     - Blank nodes
+     - pymantic
+     - pyld
+     - rdf-canonize
+     - rdflib
+   * - schema.org SHACL shapes, 100 of 1017
+     - 777
+     - 258
+     - 0.002 s
+     - 0.003 s
+     - 0.003 s
+     - 0.22 s
+   * - schema.org SHACL shapes, 400 of 1017
+     - 5025
+     - 2119
+     - 0.016 s
+     - 0.026 s
+     - 0.015 s
+     - 35.7 s
+   * - schema.org SHACL shapes, whole file
+     - 24039
+     - 11658
+     - 0.093 s
+     - 0.166 s
+     - 0.074 s
+     - timeout
+   * - preferential attachment graph, 1000 blank people, no attributes
+     - 3984
+     - 1000
+     - 0.052 s
+     - timeout
+     - timeout
+     - 11.4 s
+   * - preferential attachment graph, 5000 blank people
+     - 19956
+     - 5000
+     - 0.65 s
+     - recursion error
+     - timeout
+     - timeout
+   * - cycle, 80 nodes
+     - 80
+     - 80
+     - 0.64 s
+     - 0.15 s
+     - 0.047 s
+     - 1.3 s
+   * - random 3-regular, 20 nodes
+     - 60
+     - 20
+     - 0.010 s
+     - 1.0 s
+     - 0.25 s
+     - 0.039 s
+   * - random 3-regular, 40 nodes
+     - 120
+     - 40
+     - 0.046 s
+     - timeout
+     - timeout
+     - 0.24 s
+   * - 8x8 grid
+     - 112
+     - 64
+     - 0.004 s
+     - 0.51 s
+     - 0.13 s
+     - 0.36 s
+   * - 12x12 grid
+     - 264
+     - 144
+     - 0.014 s
+     - timeout
+     - timeout
+     - 4.2 s
+   * - hub with 40 identical children
+     - 80
+     - 41
+     - 0.004 s
+     - 0.001 s
+     - 0.001 s
+     - 1.8 s
+   * - 10-node clique (RDFC-1.0 poison test)
+     - 100
+     - 10
+     - Undecidable, 0.04 s
+     - timeout
+     - timeout
+     - n/a
+   * - the other 64 RDFC-1.0 suite inputs, summed
+     -
+     -
+     - 0.010 s
+     - 0.042 s
+     - 0.044 s
+     - n/a
+
+On real SHACL data the three fast implementations are within a factor of two
+of each other and rdflib cannot finish the file. On relationship graphs,
+every node blank and every edge symmetric, both RDFC-1.0 implementations
+fail, one by timeout and recursion limit and the other by its own
+denial-of-service guard, because their n-degree hashing follows blank-to-blank
+chains; refinement here resolves such graphs on degree structure with a
+handful of guesses. On locally symmetric graphs (regular graphs, grids)
+RDFC-1.0's per-node permutation step blows up while one individualization
+here resolves them. On globally symmetric rings this module is the slowest
+of the three fast ones, n top-level choices each followed by n/2 refinement
+rounds, bounded by the cubic budget; automorphism pruning would bring that
+family from n³ to n² without changing any output. The clique is the only
+input that is genuinely hard, and this module refuses it in 40 ms while the
+others run until stopped.
+
 Tests
 =====
 

@@ -1,0 +1,6 @@
+_:q <http://example.org/v> "1" .
+<http://example.org/s> <http://example.org/h> _:r .
+_:r <http://example.org/v> "2" .
+<http://example.org/s> <http://example.org/h> _:p .
+_:p <http://example.org/v> "1" .
+<http://example.org/s> <http://example.org/h> _:q .

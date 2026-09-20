@@ -1,0 +1,7 @@
+@prefix : <http://example.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+:s :q _:a .
+_:b :p _:a .
+_:a :count "1"^^xsd:integer .
+_:b :label "hello"@en .
+_:b :ref "http://example.org/target" .

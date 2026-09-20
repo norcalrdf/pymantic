@@ -142,7 +142,11 @@ collections count toward the same cap, each ``(`` one level like each
 ``[``, and a list head past it is written as a labelled block of
 ``rdf:first`` and ``rdf:rest`` triples. Only a node referenced more than
 once, one in a cycle that nothing outside refers to, or one past that depth
-keeps its label and its own block. It
+keeps its label and its own block. A multi-line ``[ ... ]`` or ``( ... )``
+puts its contents four columns in from the line it opens on, so
+indentation grows with nesting depth alone, whatever the length of the
+names and literals before it; a ``[ ... ]`` with one predicate and one
+one-line object stays on one line. It
 declares only the prefixes the output uses, in the profile's order. To
 write a document back with its own prefixes, parse it with a
 :class:`~pymantic.primitives.Profile`

@@ -35,6 +35,12 @@ All notable changes to pymantic are recorded here. The format follows
 
 ### Changed
 
+- Numeric escapes that produce surrogate code points (`\uD800` to `\uDFFF`)
+  or values above U+10FFFF are rejected in all parsers, as the Turtle and
+  N-Triples grammars require.
+- The N-Triples and N-Quads parsers reject relative IRIs and `:` inside blank
+  node labels, and require language subtags of at most eight characters.
+  A literal typed `rdf:langString` without a language tag is rejected.
 - pymantic requires Python 3.10 or newer. Python 3.12, 3.13, and 3.14 are
   tested in CI.
 - `pymantic.parsers.jsonld`: documents that reference a remote context raise
@@ -95,6 +101,19 @@ All notable changes to pymantic are recorded here. The format follows
   triples instead of being mangled or omitted.
 - N-Triples and N-Quads serialization write triples in the order they were
   added to the graph. Previously the order depended on `PYTHONHASHSEED`.
+- The N-Quads parser accepts statements without a graph label (the default
+  graph, represented as `Quad(..., graph=None)`) and blank node graph labels.
+  Previously 46 of the 53 positive W3C N-Quads tests failed.
+- The N-Triples and N-Quads parsers accept comments, statements with no
+  whitespace between terms, and comment or blank lines when reading a stream
+  line by line.
+- The Turtle parser no longer corrupts the graph when a blank node property
+  list or collection is followed by `,` in an object list; previously a
+  Python generator object was stored as the object term.
+- Relative IRI resolution follows RFC 3986 exactly, including empty path
+  segments (`http://ab//de//ghi` + `xyz`) and `..` across them. The
+  `urllib.parse.urljoin` based `smart_urljoin` remains as an alias of the new
+  `pymantic.util.resolve_iri`.
 
 ### Removed
 
@@ -110,6 +129,13 @@ All notable changes to pymantic are recorded here. The format follows
 
 ### Added
 
+- The W3C RDF 1.1 and 1.2 test suites for N-Triples, N-Quads and Turtle are
+  vendored under `tests/w3c` and run by `tests/test_w3c.py`, including a
+  serializer round trip for every Turtle evaluation test and the canonical
+  N-Triples tests. Tests pymantic does not pass yet are listed with reasons
+  in `tests/w3c/expected_failures.txt`; at the time of writing all of them
+  need RDF 1.2 syntax. `tests/w3c/sync_from_upstream.py` refreshes the copy.
+  The 2013 Turtle suite under `tests/TurtleTests` is replaced by this.
 - `CHANGELOG.md` (this file).
 - Releases are published to PyPI with trusted publishing from a GitHub
   release. See `RELEASING.md`.

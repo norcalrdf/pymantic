@@ -442,3 +442,96 @@ def test_parse_ntriples_rejects_two_triples_on_one_line():
             "<http://example/s> <http://example/p> <http://example/o> .",
             Graph(),
         )
+
+
+TURTLE_WITH_PREFIXES = """@prefix ex: <http://example.org/> .
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+@prefix : <http://example.org/default#> .
+ex:s sh:p :o ."""
+
+
+def test_parse_turtle_with_profile_records_document_prefixes():
+    from pymantic.primitives import Profile
+
+    profile = Profile()
+    graph = turtle_parser.parse(TURTLE_WITH_PREFIXES, profile=profile)
+    assert len(graph) == 1
+    assert list(profile.prefixes.items()) == [
+        ("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#"),
+        ("xsd", "http://www.w3.org/2001/XMLSchema#"),
+        ("ex", "http://example.org/"),
+        ("sh", "http://www.w3.org/ns/shacl#"),
+        ("", "http://example.org/default#"),
+    ]
+
+
+def test_parse_turtle_with_profile_resolves_its_prefixes():
+    from pymantic.primitives import Profile
+
+    profile = Profile()
+    profile.setPrefix("ex", "http://example.org/")
+    graph = turtle_parser.parse("ex:s ex:p ex:o .", profile=profile)
+    assert set(graph) == {
+        Triple(
+            NamedNode("http://example.org/s"),
+            NamedNode("http://example.org/p"),
+            NamedNode("http://example.org/o"),
+        )
+    }
+
+
+def test_parse_turtle_string_with_profile():
+    from pymantic.primitives import Profile
+
+    profile = Profile()
+    graph = turtle_parser.parse_string(TURTLE_WITH_PREFIXES.encode(), profile=profile)
+    assert len(graph) == 1
+    assert profile.prefixes["sh"] == "http://www.w3.org/ns/shacl#"
+
+
+def test_parse_turtle_without_profile_keeps_prefixes_to_itself():
+    from pymantic.primitives import Profile
+
+    graph = turtle_parser.parse(TURTLE_WITH_PREFIXES)
+    assert len(graph) == 1
+    assert set(Profile().prefixes) == {"rdf", "xsd"}
+    with pytest.raises(Exception):
+        turtle_parser.parse("ex:s ex:p ex:o .")
+
+
+def test_parse_turtle_profile_round_trips_prefixes_through_stable_output():
+    from pymantic.primitives import Profile
+    from pymantic.serializers import serialize_turtle
+
+    profile = Profile()
+    graph = turtle_parser.parse(TURTLE_WITH_PREFIXES, profile=profile)
+    f = StringIO()
+    serialize_turtle(graph, f, profile=profile, stable=True)
+    assert f.getvalue() == (
+        "@prefix ex: <http://example.org/> .\n"
+        "@prefix sh: <http://www.w3.org/ns/shacl#> .\n"
+        "@prefix : <http://example.org/default#> .\n"
+        "ex:s sh:p :o ;\n"
+        "     .\n"
+        "\n"
+    )
+
+
+def test_parsed_literals_carry_their_datatype():
+    """Every literal a parser makes has a datatype: xsd:string for one
+    written without a datatype or language, rdf:langString for a
+    language-tagged string (RDF 1.1 Concepts 3.3)."""
+    from pymantic.primitives import RDF_LANGSTRING, XSD_STRING
+
+    text = (
+        '<http://example.com/s> <http://example.com/p> "Foo" .\n'
+        '<http://example.com/s> <http://example.com/p> "Foo"@en .\n'
+        '<http://example.com/s> <http://example.com/p> "Foo"^^'
+        "<http://www.w3.org/2001/XMLSchema#string> .\n"
+    )
+    for parser in (ntriples_parser, turtle_parser):
+        g = parser.parse(text)
+        # The plain literal and the explicit xsd:string are one term.
+        assert len(g) == 2
+        datatypes = {(t.object.language, t.object.datatype) for t in g}
+        assert datatypes == {(None, XSD_STRING), ("en", RDF_LANGSTRING)}

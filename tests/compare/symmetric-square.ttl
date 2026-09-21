@@ -1,0 +1,6 @@
+@prefix : <http://example.org/> .
+_:a :p _:b . _:b :p _:a .
+_:b :p _:c . _:c :p _:b .
+_:c :p _:d . _:d :p _:c .
+_:d :p _:a . _:a :p _:d .
+_:a :v "corner" .

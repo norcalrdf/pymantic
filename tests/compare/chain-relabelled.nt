@@ -1,0 +1,4 @@
+_:z <http://example.org/v> "end" .
+_:x <http://example.org/p> _:y .
+<http://example.org/s> <http://example.org/q> _:x .
+_:y <http://example.org/p> _:z .

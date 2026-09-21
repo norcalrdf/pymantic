@@ -1,3 +1,4 @@
+import pytest
 import random
 
 from pymantic.primitives import (
@@ -397,6 +398,53 @@ def test_dataset_iterates_in_insertion_order_within_a_graph():
     assert list(ds.match()) == quads
 
 
+def dataset_with_one_quad():
+    ds = Dataset()
+    ds.add(
+        Quad(
+            NamedNode("http://example.com/s"),
+            NamedNode("http://example.com/p"),
+            Literal("o"),
+            NamedNode("http://example.com/g"),
+        )
+    )
+    return ds
+
+
+def test_match_on_an_unknown_graph_creates_nothing():
+    """Looking in a graph the dataset does not have must not add it: an empty
+    named graph is part of a dataset, so a query would change what the
+    dataset is."""
+    ds = dataset_with_one_quad()
+    assert list(ds.match(graph=NamedNode("http://nowhere/"))) == []
+    assert len(list(ds.graphs)) == 1
+
+
+def test_contains_a_quad_in_an_unknown_graph_creates_nothing():
+    ds = dataset_with_one_quad()
+    absent = Quad(
+        NamedNode("http://example.com/s"),
+        NamedNode("http://example.com/p"),
+        Literal("o"),
+        NamedNode("http://nowhere/"),
+    )
+    assert absent not in ds
+    assert len(list(ds.graphs)) == 1
+
+
+def test_remove_from_an_unknown_graph_creates_nothing():
+    ds = dataset_with_one_quad()
+    absent = Quad(
+        NamedNode("http://example.com/s"),
+        NamedNode("http://example.com/p"),
+        Literal("o"),
+        NamedNode("http://nowhere/"),
+    )
+    with pytest.raises(KeyError):
+        ds.remove(absent)
+    assert len(list(ds.graphs)) == 1
+
+
 def test_literal_language_tag_is_lowercased():
     """RDF 1.2 Concepts: language tags compare ASCII case-insensitively and
     may be case normalized; RDF 1.1 Concepts: their value space is lowercase.
@@ -418,3 +466,81 @@ def test_parsers_lowercase_language_tags():
     assert triple.object == Literal("chat", "en")
     (triple,) = list(turtle_parser.parse('<http://x/s> <http://x/p> "chat"@EN-US .'))
     assert triple.object == Literal("chat", "en-us")
+
+
+def test_literal_normalizes_datatype_on_construction():
+    """RDF 1.1 Concepts 3.3: every literal has a datatype IRI. A simple
+    literal is syntactic sugar for one typed xsd:string, and a
+    language-tagged string always has the datatype rdf:langString."""
+    from pymantic.primitives import RDF_LANGSTRING, XSD_STRING
+
+    assert Literal("v").datatype == XSD_STRING
+    assert Literal("v").language is None
+    assert Literal("v", datatype=XSD_STRING).datatype == XSD_STRING
+    assert Literal("v", "en").datatype == RDF_LANGSTRING
+    assert Literal("v", "en", RDF_LANGSTRING).language == "en"
+    assert Literal("42", datatype=NamedNode("http://x/dt")).datatype == NamedNode(
+        "http://x/dt"
+    )
+
+
+def test_literal_equality_across_the_two_string_forms():
+    """The two ways of writing a simple literal are one RDF term, so they
+    are equal and hash alike."""
+    from pymantic.primitives import XSD_STRING
+
+    assert Literal("v") == Literal("v", datatype=XSD_STRING)
+    assert hash(Literal("v")) == hash(Literal("v", datatype=XSD_STRING))
+    assert len({Literal("v"), Literal("v", datatype=XSD_STRING)}) == 1
+    assert Literal("v") != Literal("v", "en")
+
+
+def test_literal_rejects_a_language_with_a_foreign_datatype():
+    """Literals may not have both a datatype and a language."""
+    with pytest.raises(ValueError):
+        Literal("v", "en", NamedNode("http://www.w3.org/2001/XMLSchema#string"))
+    with pytest.raises(ValueError):
+        Literal._make(("v", "en", NamedNode("http://x/dt")))
+    with pytest.raises(ValueError):
+        Literal("v", datatype=NamedNode("http://x/dt"))._replace(language="en")
+
+
+def test_literal_replace_keeps_normalization():
+    from pymantic.primitives import RDF_LANGSTRING, XSD_STRING
+
+    assert Literal("v")._replace(value="w").datatype == XSD_STRING
+    assert Literal("v")._replace(language="EN").datatype == RDF_LANGSTRING
+    assert Literal("v", "en")._replace(value="w").language == "en"
+    assert Literal("v", "en")._replace(language=None).datatype == XSD_STRING
+    assert Literal._make(("v", None, None)).datatype == XSD_STRING
+
+
+def test_literal_rejects_langstring_without_a_language():
+    """rdf:langString is ill-formed without a language tag, so it may not be
+    given as a datatype on its own."""
+    from pymantic.primitives import RDF_LANGSTRING
+
+    with pytest.raises(ValueError):
+        Literal("v", datatype=RDF_LANGSTRING)
+    with pytest.raises(ValueError):
+        Literal._make(("v", None, RDF_LANGSTRING))
+
+
+def test_literal_normalization_writes_no_implicit_datatype():
+    from pymantic.primitives import XSD_STRING
+
+    assert Literal("v").toNT() == '"v"'
+    assert Literal("v", datatype=XSD_STRING).toNT() == '"v"'
+    assert Literal("v", "en").toNT() == '"v"@en'
+
+
+def test_graph_holds_one_triple_for_the_two_string_forms():
+    from pymantic.primitives import XSD_STRING
+
+    s, p = NamedNode("http://x/s"), NamedNode("http://x/p")
+    g = Graph()
+    g.add(Triple(s, p, Literal("v")))
+    g.add(Triple(s, p, Literal("v", datatype=XSD_STRING)))
+    assert len(g) == 1
+    assert Triple(s, p, Literal("v")) in g
+    assert Triple(s, p, Literal("v", datatype=XSD_STRING)) in g

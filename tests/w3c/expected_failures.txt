@@ -1,0 +1,132 @@
+# W3C tests pymantic currently fails, one per line: <test id><TAB><reason>.
+# tests/test_w3c.py marks these xfail. Remove a line once the test passes.
+
+rdf12/rdf-n-triples/c14n/dirlangtagged_string	RDF 1.2 base direction language tags (@en--ltr) not implemented
+rdf12/rdf-n-triples/c14n/triple-term-01	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-triples/c14n/triple-term-02	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-triples/c14n/triple-term-03	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-triples/c14n/triple-term-04	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-triples/syntax/ntriples12-01	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-triples/syntax/ntriples12-02	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-triples/syntax/ntriples12-03	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-triples/syntax/ntriples12-bnode-1	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-triples/syntax/ntriples12-nested-1	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-triples/syntax/ntriples-langdir-1	RDF 1.2 base direction language tags (@en--ltr) not implemented
+rdf12/rdf-n-triples/syntax/ntriples-langdir-2	RDF 1.2 base direction language tags (@en--ltr) not implemented
+rdf12/rdf-n-quads/c14n/dirlangtagged_string	RDF 1.2 base direction language tags (@en--ltr) not implemented
+rdf12/rdf-n-quads/c14n/triple-term-01	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-quads/c14n/triple-term-02	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-quads/c14n/triple-term-03	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-quads/c14n/triple-term-04	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-quads/syntax/nquads12-01	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-quads/syntax/nquads12-02	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-quads/syntax/nquads12-03	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-quads/syntax/nquads12-bnode-1	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-quads/syntax/nquads12-nested-1	RDF 1.2 triple terms not implemented
+rdf12/rdf-n-quads/syntax/nquads-langdir-1	RDF 1.2 base direction language tags (@en--ltr) not implemented
+rdf12/rdf-n-quads/syntax/nquads-langdir-2	RDF 1.2 base direction language tags (@en--ltr) not implemented
+rdf12/rdf-turtle/eval/turtle12-rt-01	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-01[roundtrip]	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-02	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-02[roundtrip]	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-03	RDF 1.2 syntax not implemented: reifiers, reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-03[roundtrip]	RDF 1.2 syntax not implemented: reifiers, reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-04	RDF 1.2 syntax not implemented: reifiers, reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-04[roundtrip]	RDF 1.2 syntax not implemented: reifiers, reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-05	RDF 1.2 syntax not implemented: reifiers, reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-05[roundtrip]	RDF 1.2 syntax not implemented: reifiers, reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-06	RDF 1.2 syntax not implemented: reifiers, reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-06[roundtrip]	RDF 1.2 syntax not implemented: reifiers, reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-07	RDF 1.2 syntax not implemented: reifiers, reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-07[roundtrip]	RDF 1.2 syntax not implemented: reifiers, reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-08	RDF 1.2 syntax not implemented: reifiers, reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-08[roundtrip]	RDF 1.2 syntax not implemented: reifiers, reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-09	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/eval/turtle12-rt-09[roundtrip]	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/eval/turtle12-bnode-01	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/eval/turtle12-bnode-01[roundtrip]	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/eval/turtle12-bnode-02	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/eval/turtle12-bnode-02[roundtrip]	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/eval/turtle12-tt-01	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/eval/turtle12-tt-01[roundtrip]	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/eval/turtle12-tt-02	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/eval/turtle12-tt-02[roundtrip]	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/eval/turtle12-tt-03	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/eval/turtle12-tt-03[roundtrip]	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/eval/turtle12-tt-04	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/eval/turtle12-tt-04[roundtrip]	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/eval/turtle12-tt-05	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/eval/turtle12-tt-05[roundtrip]	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/eval/turtle12-annotation-01	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/eval/turtle12-annotation-01[roundtrip]	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/eval/turtle12-annotation-02	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/eval/turtle12-annotation-02[roundtrip]	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/eval/turtle12-annotation-03	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/eval/turtle12-annotation-03[roundtrip]	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/eval/turtle12-annotation-04	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/eval/turtle12-annotation-04[roundtrip]	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/eval/turtle12-annotation-05	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/eval/turtle12-annotation-05[roundtrip]	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/eval/turtle12-annotation-06	RDF 1.2 syntax not implemented: annotations, reifiers
+rdf12/rdf-turtle/eval/turtle12-annotation-06[roundtrip]	RDF 1.2 syntax not implemented: annotations, reifiers
+rdf12/rdf-turtle/eval/turtle12-annotation-07	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/eval/turtle12-annotation-07[roundtrip]	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/eval/turtle12-annotation-08	RDF 1.2 syntax not implemented: annotations, reifiers
+rdf12/rdf-turtle/eval/turtle12-annotation-08[roundtrip]	RDF 1.2 syntax not implemented: annotations, reifiers
+rdf12/rdf-turtle/eval/turtle12-annotation-09	RDF 1.2 syntax not implemented: annotations, reifiers
+rdf12/rdf-turtle/eval/turtle12-annotation-09[roundtrip]	RDF 1.2 syntax not implemented: annotations, reifiers
+rdf12/rdf-turtle/eval/turtle12-annotation-10	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/eval/turtle12-annotation-10[roundtrip]	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/eval/turtle12-annotation-11	RDF 1.2 syntax not implemented: annotations, reifiers
+rdf12/rdf-turtle/eval/turtle12-annotation-11[roundtrip]	RDF 1.2 syntax not implemented: annotations, reifiers
+rdf12/rdf-turtle/eval/turtle12-annotation-12	RDF 1.2 syntax not implemented: annotations, reifiers
+rdf12/rdf-turtle/eval/turtle12-annotation-12[roundtrip]	RDF 1.2 syntax not implemented: annotations, reifiers
+rdf12/rdf-turtle/eval/turtle12-annotation-13	RDF 1.2 syntax not implemented: reifiers
+rdf12/rdf-turtle/eval/turtle12-annotation-13[roundtrip]	RDF 1.2 syntax not implemented: reifiers
+rdf12/rdf-turtle/eval/turtle12-reified-triples-annotation-01	RDF 1.2 syntax not implemented: annotations, reified triples
+rdf12/rdf-turtle/eval/turtle12-reified-triples-annotation-01[roundtrip]	RDF 1.2 syntax not implemented: annotations, reified triples
+rdf12/rdf-turtle/eval/turtle12-reified-triples-annotation-02	RDF 1.2 syntax not implemented: annotations, reified triples
+rdf12/rdf-turtle/eval/turtle12-reified-triples-annotation-02[roundtrip]	RDF 1.2 syntax not implemented: annotations, reified triples
+rdf12/rdf-turtle/eval/turtle12-reified-triples-annotation-03	RDF 1.2 syntax not implemented: annotations, reified triples
+rdf12/rdf-turtle/eval/turtle12-reified-triples-annotation-03[roundtrip]	RDF 1.2 syntax not implemented: annotations, reified triples
+rdf12/rdf-turtle/syntax/turtle12-1	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/syntax/turtle12-2	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/syntax/turtle12-3	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/syntax/turtle12-4	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/syntax/turtle12-5	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/syntax/turtle12-6	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/syntax/turtle12-7	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/syntax/turtle12-8	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/syntax/turtle12-inside-1	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/syntax/turtle12-inside-2	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/syntax/turtle12-inside-3	RDF 1.2 syntax not implemented: reifiers, reified triples
+rdf12/rdf-turtle/syntax/turtle12-inside-4	RDF 1.2 syntax not implemented: reifiers, reified triples
+rdf12/rdf-turtle/syntax/turtle12-nested-1	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/syntax/turtle12-nested-2	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/syntax/turtle12-compound-1	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/syntax/turtle12-bnode-1	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/syntax/turtle12-bnode-2	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/syntax/turtle12-bnode-3	RDF 1.2 syntax not implemented: reified triples
+rdf12/rdf-turtle/syntax/turtle12-ann-1	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/syntax/turtle12-ann-2	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/syntax/turtle12-ann-3	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/syntax/turtle12-ann-4	RDF 1.2 syntax not implemented: annotations
+rdf12/rdf-turtle/syntax/turtle12-ann-5	RDF 1.2 syntax not implemented: reifiers
+rdf12/rdf-turtle/syntax/turtle12-ann-6	RDF 1.2 syntax not implemented: reifiers
+rdf12/rdf-turtle/syntax/turtle12-ann-7	RDF 1.2 syntax not implemented: annotations, reifiers
+rdf12/rdf-turtle/syntax/turtle12-ann-8	RDF 1.2 syntax not implemented: annotations, reifiers
+rdf12/rdf-turtle/syntax/nt-ttl12-1	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/syntax/nt-ttl12-2	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/syntax/nt-ttl12-3	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/syntax/nt-ttl12-bnode-1	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/syntax/nt-ttl12-nested-1	RDF 1.2 syntax not implemented: triple terms
+rdf12/rdf-turtle/syntax/nt-ttl12-langdir-1	RDF 1.2 base direction language tags (@en--ltr) not implemented
+rdf12/rdf-turtle/syntax/nt-ttl12-langdir-2	RDF 1.2 base direction language tags (@en--ltr) not implemented
+rdf12/rdf-turtle/syntax/turtle12-version-01	RDF 1.2 VERSION directive not implemented
+rdf12/rdf-turtle/syntax/turtle12-version-02	RDF 1.2 VERSION directive not implemented
+rdf12/rdf-turtle/syntax/turtle12-version-03	RDF 1.2 VERSION directive not implemented
+rdf12/rdf-turtle/syntax/turtle12-version-04	RDF 1.2 VERSION directive not implemented
+rdf12/rdf-turtle/syntax/turtle12-version-05	RDF 1.2 VERSION directive not implemented
+rdf12/rdf-turtle/syntax/turtle12-version-06	RDF 1.2 VERSION directive not implemented
+rdf12/rdf-turtle/syntax/turtle12-version-07	RDF 1.2 VERSION directive not implemented
+rdf12/rdf-turtle/syntax/turtle12-version-08	RDF 1.2 VERSION directive not implemented

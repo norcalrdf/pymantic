@@ -1,6 +1,13 @@
 """Utility functions used throughout pymantic."""
 
-__all__ = ["en", "de", "one_or_none", "normalize_iri", "quote_normalized_iri"]
+__all__ = [
+    "en",
+    "de",
+    "one_or_none",
+    "normalize_iri",
+    "quote_normalized_iri",
+    "resolve_iri",
+]
 
 import re
 from urllib.parse import quote
@@ -89,16 +96,107 @@ def quote_normalized_iri(normalized_iri):
     return quote(normalized_uri, safe="".join(reserved_in_iri))
 
 
-def smart_urljoin(base, url):
-    """urljoin, only an empty fragment from the relative(?) URL will be
-    preserved.
-    """
-    from urllib.parse import urljoin
+# RFC 3986 appendix B. A component is None when its delimiter is absent.
+IRI_REFERENCE_RE = re.compile(
+    r"^(?:(?P<scheme>[^:/?#]+):)?"
+    r"(?://(?P<authority>[^/?#]*))?"
+    r"(?P<path>[^?#]*)"
+    r"(?:\?(?P<query>[^#]*))?"
+    r"(?:#(?P<fragment>.*))?",
+    re.DOTALL,
+)
 
-    joined = urljoin(base, url)
-    if url.endswith("#") and not joined.endswith("#"):
-        joined += "#"
-    return joined
+
+def split_iri_reference(reference):
+    """Split an IRI reference into its (scheme, authority, path, query,
+    fragment) components. A component whose delimiter is absent is None,
+    which RFC 3986 distinguishes from one that is present but empty."""
+    match = IRI_REFERENCE_RE.match(reference)
+    return match.group("scheme", "authority", "path", "query", "fragment")
+
+
+def remove_dot_segments(path):
+    """Resolve the "." and ".." segments of `path` (RFC 3986 section 5.2.4).
+
+    `output` holds one segment per entry, each with its leading "/" if it
+    had one, so dropping the last segment is a pop."""
+    output = []
+    while path:
+        if path.startswith("../"):
+            path = path[3:]
+        elif path.startswith("./"):
+            path = path[2:]
+        elif path.startswith("/./"):
+            path = path[2:]
+        elif path == "/.":
+            path = "/"
+        elif path.startswith("/../"):
+            path = path[3:]
+            if output:
+                output.pop()
+        elif path == "/..":
+            path = "/"
+            if output:
+                output.pop()
+        elif path in (".", ".."):
+            path = ""
+        else:
+            end = path.find("/", 1)
+            if end == -1:
+                end = len(path)
+            output.append(path[:end])
+            path = path[end:]
+    return "".join(output)
+
+
+def merge_paths(base_authority, base_path, reference_path):
+    """Append a relative path to the base path's directory (RFC 3986
+    section 5.2.3)."""
+    if base_authority is not None and base_path == "":
+        return "/" + reference_path
+    return base_path[: base_path.rfind("/") + 1] + reference_path
+
+
+def resolve_iri(base, reference):
+    """Resolve an IRI reference against a base IRI as a strict parser
+    (RFC 3986 section 5.2), keeping empty path segments and an empty
+    fragment intact. An absolute reference is returned as is, minus its
+    dot segments, whatever `base` is."""
+    scheme, authority, path, query, fragment = split_iri_reference(reference)
+    if scheme is not None:
+        path = remove_dot_segments(path)
+    else:
+        scheme, base_authority, base_path, base_query, _ = split_iri_reference(base)
+        if authority is not None:
+            path = remove_dot_segments(path)
+        else:
+            authority = base_authority
+            if path == "":
+                path = base_path
+                if query is None:
+                    query = base_query
+            elif path.startswith("/"):
+                path = remove_dot_segments(path)
+            else:
+                path = remove_dot_segments(merge_paths(base_authority, base_path, path))
+
+    result = ""
+    if scheme is not None:
+        result += scheme + ":"
+    if authority is not None:
+        result += "//" + authority
+    result += path
+    if query is not None:
+        result += "?" + query
+    if fragment is not None:
+        result += "#" + fragment
+    return result
+
+
+def smart_urljoin(base, url):
+    """Resolve `url` against `base`; an alias of resolve_iri kept for
+    backwards compatibility."""
+    return resolve_iri(base, url)
 
 
 def grouper(iterable, n, fillvalue=None):
@@ -130,12 +228,28 @@ def process_escape(escape):
     escape = escape.group(0)[1:]
 
     if escape[0] in ("u", "U"):
-        return chr(int(escape[1:], 16))
+        code_point = int(escape[1:], 16)
+        # Turtle, N-Triples and N-Quads only allow Unicode scalar values in a
+        # numeric escape; surrogate pairs cannot be written as two escapes.
+        if 0xD800 <= code_point <= 0xDFFF:
+            raise ValueError(
+                "surrogate code point U+%04X is not allowed in a numeric "
+                "escape: \\%s" % (code_point, escape)
+            )
+        if code_point > 0x10FFFF:
+            raise ValueError(
+                "code point U+%X is outside the Unicode range in a numeric "
+                "escape: \\%s" % (code_point, escape)
+            )
+        return chr(code_point)
     else:
         return ESCAPE_MAP.get(escape[0], escape[0])
 
 
 def decode_literal(literal):
+    """Replace the ECHAR and UCHAR escapes of Turtle, N-Triples and N-Quads
+    in `literal` with the characters they stand for. Raises ValueError for a
+    numeric escape that does not denote a Unicode scalar value."""
     return re.sub(
         r"\\u[a-fA-F0-9]{4}|\\U[a-fA-F0-9]{8}|\\[^uU]",
         process_escape,

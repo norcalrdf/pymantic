@@ -213,9 +213,11 @@ class Quad(tuple):
     graph = property(itemgetter(3))
 
     def __str__(self):
+        # A quad in the default graph (graph=None) is written as a triple.
+        graph = "" if self.graph is None else f" {self.graph.toNT()}"
         return (
             f"{self.subject.toNT()} {self.predicate.toNT()} "
-            f"{self.object.toNT()} {self.graph.toNT()} .\n"
+            f"{self.object.toNT()}{graph} .\n"
         )
 
 
@@ -257,15 +259,20 @@ class Literal(tuple):
             value, auto_datatype = _cls.types[type(value)](value)
             if datatype is None:
                 datatype = auto_datatype
+        if language is not None:
+            # RDF Concepts: language tags compare case-insensitively and
+            # their value space is lowercase, so "EN" and "en" must be the
+            # same term.
+            language = language.lower()
         return tuple.__new__(_cls, (value, language, datatype))
 
     @classmethod
-    def _make(cls, iterable, new=tuple.__new__, len=len):
+    def _make(cls, iterable, new=None, len=len):
         "Make a new Literal object from a sequence or iterable"
-        result = new(cls, iterable)
-        if len(result) != 3:
-            raise TypeError("Expected 3 arguments, got %d" % len(result))
-        return result
+        fields = tuple(iterable)
+        if len(fields) != 3:
+            raise TypeError("Expected 3 arguments, got %d" % len(fields))
+        return cls(*fields)
 
     def __repr__(self):
         return "Literal(value=%r, language=%r, datatype=%r)" % self
@@ -298,7 +305,9 @@ class Literal(tuple):
         if self.language:
             validate_language(self.language)
             return f"{quoted}@{self.language}"
-        elif self.datatype:
+        elif self.datatype and self.datatype != XSD_STRING:
+            # Canonical N-Triples writes a simple literal without its
+            # implicit xsd:string datatype.
             return f"{quoted}^^{self.datatype.toNT()}"
         else:
             return quoted
@@ -332,6 +341,7 @@ class Prefix(NamedNode):
 
 
 XSD = Prefix("http://www.w3.org/2001/XMLSchema#")
+XSD_STRING = XSD("string")
 
 
 class BlankNode:
@@ -376,7 +386,9 @@ class Graph:
         if not isinstance(graph_uri, NamedNode):
             graph_uri = NamedNode(graph_uri)
         self._uri = graph_uri
-        self._triples = set()
+        # A dict used as an insertion-ordered set, so iteration and
+        # serialization follow the order triples were added.
+        self._triples = {}
         self._spo = Index()
         self._pos = Index()
         self._osp = Index()
@@ -394,7 +406,7 @@ class Graph:
     def add(self, triple):
         """Adds the specified Triple to the graph. This method returns the
         graph instance it was called on."""
-        self._triples.add(triple)
+        self._triples[triple] = None
         self._spo[triple.subject][triple.predicate][triple.object] = triple
         self._pos[triple.predicate][triple.object][triple.subject] = triple
         self._osp[triple.object][triple.subject][triple.predicate] = triple
@@ -403,7 +415,7 @@ class Graph:
     def remove(self, triple):
         """Removes the specified Triple from the graph. This method returns the
         graph instance it was called on."""
-        self._triples.remove(triple)
+        del self._triples[triple]
         del self._spo[triple.subject][triple.predicate][triple.object]
         del self._pos[triple.predicate][triple.object][triple.subject]
         del self._osp[triple.object][triple.subject][triple.predicate]

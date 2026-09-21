@@ -1,4 +1,4 @@
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 import re
 
 
@@ -8,33 +8,41 @@ def validate_language(language):
         raise ValueError("Invalid RDF language tag")
 
 
+# Escapes required by canonical N-Triples
+# (https://www.w3.org/TR/rdf12-n-triples/#canonical-ntriples): these seven
+# characters use ECHAR, the other C0 controls, DEL and code points that are
+# not XML 1.1 Chars use \\u with uppercase hex, and everything else is
+# written raw.
+NT_ECHAR = {
+    "\b": "\\b",
+    "\t": "\\t",
+    "\n": "\\n",
+    "\f": "\\f",
+    "\r": "\\r",
+    '"': '\\"',
+    "\\": "\\\\",
+}
+
+
+def nt_needs_uchar(char):
+    return (
+        char <= "\u001f"
+        or char == "\u007f"
+        or "\ud800" <= char <= "\udfff"
+        or char in "\ufffe\uffff"
+    )
+
+
 def nt_escape(node_string):
-    """Properly escape strings for n-triples and n-quads serialization."""
+    """Escape a string for canonical N-Triples and N-Quads output."""
     output_string = ""
     for char in node_string:
-        if char == "\u0009":
-            output_string += "\\t"
-        elif char == "\u000A":
-            output_string += "\\n"
-        elif char == "\u000D":
-            output_string += "\\r"
-        elif char == "\u0022":
-            output_string += '\\"'
-        elif char == "\u005C":
-            output_string += "\\\\"
-        elif (
-            char >= "\u0020"
-            and char <= "\u0021"
-            or char >= "\u0023"
-            and char <= "\u005B"
-            or char >= "\u005D"
-            and char <= "\u007E"
-        ):
-            output_string += char
-        elif char <= "\uFFFF":
+        if char in NT_ECHAR:
+            output_string += NT_ECHAR[char]
+        elif nt_needs_uchar(char):
             output_string += "\\u%04X" % ord(char)
         else:
-            output_string += "\\U%08X" % ord(char)
+            output_string += char
     return output_string
 
 
@@ -181,7 +189,79 @@ def turtle_repr(node, profile, name_map, bnode_name_maker, base=None):
 
 def turtle_sorted_names(nodes, name_maker):
     """Sort a list of nodes in a graph by turtle name."""
-    return sorted((name_maker(node), node) for node in nodes)
+    return sorted(((name_maker(node), node) for node in nodes), key=lambda p: p[0])
+
+
+RDF_FIRST = "http://www.w3.org/1999/02/22-rdf-syntax-ns#first"
+RDF_REST = "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"
+RDF_NIL = "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"
+
+
+def plan_collections(graph):
+    """Decide which blank nodes to write with Turtle's ( ... ) syntax.
+
+    Returns (inline, as_subject, consumed). ``inline`` maps a list head that
+    is the object of exactly one triple and has no other predicates to its
+    members; ``as_subject`` maps a list head that is the object of no triple
+    but has other predicates to its members, for ``( ... ) p o .``
+    statements; ``consumed`` holds every list cell whose rdf:first/rdf:rest
+    triples the collection syntax will express, so they are not written as
+    subjects of their own. A node only qualifies when the whole chain from it
+    to rdf:nil is made of blank nodes with exactly one rdf:first, exactly one
+    rdf:rest, nothing else, and (past the head) exactly one reference; any
+    other shape is written as ordinary triples so no information is lost."""
+    references = Counter(triple.object for triple in graph)
+
+    def cell(node):
+        """(first, rest, has_other_predicates) if node looks like a list cell."""
+        if getattr(node, "interfaceName", None) != "BlankNode":
+            return None
+        firsts, rests, others = [], [], False
+        for triple in graph.match(subject=node):
+            if triple.predicate == RDF_FIRST:
+                firsts.append(triple.object)
+            elif triple.predicate == RDF_REST:
+                rests.append(triple.object)
+            else:
+                others = True
+        if len(firsts) != 1 or len(rests) != 1:
+            return None
+        return firsts[0], rests[0], others
+
+    inline, as_subject, consumed = {}, {}, set()
+    for node in list(graph.subjects()):
+        shape = cell(node)
+        if shape is None:
+            continue
+        _, _, has_others = shape
+        if references[node] == 1:
+            (reference,) = graph.match(object=node)
+            if reference.predicate == RDF_REST and cell(reference.subject):
+                # A cell inside another chain; its head decides.
+                continue
+            if has_others:
+                continue
+            target = inline
+        elif references[node] == 0 and has_others:
+            target = as_subject
+        else:
+            continue
+        members, cells = [], []
+        current = node
+        while current != RDF_NIL:
+            shape = cell(current)
+            if shape is None or current in cells:
+                break
+            first, rest, has_others = shape
+            if current is not node and (references[current] != 1 or has_others):
+                break
+            cells.append(current)
+            members.append(first)
+            current = rest
+        else:
+            target[node] = members
+            consumed.update(cells if target is inline else cells[1:])
+    return inline, as_subject, consumed
 
 
 def serialize_turtle(
@@ -208,33 +288,65 @@ def serialize_turtle(
     def name_maker(n):
         return turtle_repr(n, profile, name_map, bnode_name_maker, base)
 
-    from pymantic.rdf import List
+    inline, as_subject, consumed = plan_collections(graph)
+    rendered = set()
 
-    subjects = [subj for subj in graph.subjects() if not List.is_list(subj, graph)]
+    def collection_repr(members):
+        return "(" + " ".join(object_repr(member) for member in members) + ")"
 
-    for subject_name, subject in turtle_sorted_names(subjects, name_maker):
+    def object_repr(node):
+        # An inline head is written where its one reference is; once written
+        # it is only ever named again, which is what keeps a list that
+        # contains itself from recursing forever.
+        if node in inline and node not in rendered:
+            rendered.add(node)
+            return collection_repr(inline[node])
+        return name_maker(node)
+
+    def subject_repr(node):
+        if node in as_subject:
+            return collection_repr(as_subject[node])
+        return name_maker(node)
+
+    def block_predicates(subject, skip=()):
+        predicates = set(t.predicate for t in graph.match(subject=subject))
+        predicates.difference_update(skip)
+        return [
+            (
+                predicate_name,
+                [
+                    object_repr(t.object)
+                    for t in graph.match(subject=subject, predicate=predicate)
+                ],
+            )
+            for predicate_name, predicate in turtle_sorted_names(predicates, name_maker)
+        ]
+
+    def write_block(subject_name, predicates):
         subj_indent_size = len(subject_name) + 1
         f.write(subject_name + " ")
-        predicates = set(t.predicate for t in graph.match(subject=subject))
-        sorted_predicates = turtle_sorted_names(predicates, name_maker)
-        for i, (predicate_name, predicate) in enumerate(sorted_predicates):
+        for i, (predicate_name, object_names) in enumerate(predicates):
             if i != 0:
                 f.write(" " * subj_indent_size)
             pred_indent_size = subj_indent_size + len(predicate_name) + 1
             f.write(predicate_name + " ")
-            for j, triple in enumerate(
-                graph.match(subject=subject, predicate=predicate)
-            ):
-                if j != 0:
-                    f.write(",\n" + " " * pred_indent_size)
-                if List.is_list(triple.object, graph):
-                    f.write("(")
-                    for k, o in enumerate(List(graph, triple.object)):
-                        if k != 0:
-                            f.write(" ")
-                        f.write(name_maker(o))
-                    f.write(")")
-                else:
-                    f.write(name_maker(triple.object))
+            f.write((",\n" + " " * pred_indent_size).join(object_names))
             f.write(" ;\n")
         f.write(" " * subj_indent_size + ".\n\n")
+
+    subjects = [subject for subject in graph.subjects() if subject not in consumed]
+    for subject_name, subject in turtle_sorted_names(subjects, subject_repr):
+        skip = (RDF_FIRST, RDF_REST) if subject in as_subject else ()
+        write_block(subject_name, block_predicates(subject, skip))
+
+    # A list whose only reference is from inside itself was never reached
+    # from a subject block; write its cells as ordinary triples.
+    for head in inline:
+        if head in rendered:
+            continue
+        rendered.add(head)
+        node = head
+        while node != RDF_NIL:
+            write_block(name_maker(node), block_predicates(node))
+            (rest,) = graph.match(subject=node, predicate=RDF_REST)
+            node = rest.object

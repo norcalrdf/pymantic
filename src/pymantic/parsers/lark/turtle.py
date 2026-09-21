@@ -18,7 +18,7 @@ import re
 
 from pymantic.parsers.base import BaseParser
 from pymantic.primitives import BlankNode, Literal, NamedNode, Triple
-from pymantic.util import decode_literal, grouper, smart_urljoin
+from pymantic.util import decode_literal, grouper, resolve_iri
 
 RDF_TYPE = NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
 RDF_NIL = NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#nil")
@@ -42,7 +42,7 @@ sparql_prefix: /PREFIX/i PNAME_NS IRIREF
 triples: subject predicate_object_list
        | blank_node_property_list predicate_object_list?
 predicate_object_list: verb object_list (";" (verb object_list)?)*
-?object_list: object ("," object)*
+object_list: object ("," object)*
 ?verb: predicate | /a/
 ?subject: iri | blank_node | collection
 ?predicate: iri
@@ -107,31 +107,31 @@ def validate_iri(iri):
     return iri
 
 
-def unpack_predicate_object_list(subject, pol):
-    if not isinstance(subject, (NamedNode, BlankNode)):
-        for triple_or_node in subject:
-            if isinstance(triple_or_node, Triple):
-                yield triple_or_node
-            else:
-                subject = triple_or_node
-                break
+def unpack_node(value):
+    """Return (triples, node) for a transformed subject or object.
 
-    for predicate, object_ in grouper(pol, 2):
+    A blank node property list or collection transforms to a generator that
+    yields the triples it contains and then, last, the node that stands for
+    it. A plain term comes with no triples."""
+    if isinstance(value, (NamedNode, Literal, BlankNode)):
+        return [], value
+    *triples, node = value
+    return triples, node
+
+
+def unpack_predicate_object_list(subject, pol):
+    triples, subject = unpack_node(subject)
+    yield from triples
+
+    for predicate, objects in grouper(pol, 2):
         if isinstance(predicate, Token):
             if predicate.value != "a":
                 raise ValueError(predicate)
             predicate = RDF_TYPE
 
-        if not isinstance(object_, (NamedNode, Literal, BlankNode)):
-            if isinstance(object_, Tree):
-                object_ = object_.children
-            for triple_or_node in object_:
-                if isinstance(triple_or_node, Triple):
-                    yield triple_or_node
-                else:
-                    object_ = triple_or_node
-                    yield Triple(subject, predicate, object_)
-        else:
+        for object_ in objects:
+            triples, object_ = unpack_node(object_)
+            yield from triples
             yield Triple(subject, predicate, object_)
 
 
@@ -149,7 +149,7 @@ class TurtleTransformer(BaseParser, Transformer):
 
         if iriref_or_pname.startswith("<"):
             return self.make_named_node(
-                smart_urljoin(self.base_iri, self.decode_iriref(iriref_or_pname))
+                resolve_iri(self.base_iri, self.decode_iriref(iriref_or_pname))
             )
 
         return iriref_or_pname
@@ -157,15 +157,17 @@ class TurtleTransformer(BaseParser, Transformer):
     def predicate_object_list(self, children):
         return children
 
+    def object_list(self, children):
+        return children
+
     def triples(self, children):
         if len(children) == 2:
-            subject = children[0]
-            for triple in unpack_predicate_object_list(subject, children[1]):
-                yield triple
+            subject, pol = children
+            yield from unpack_predicate_object_list(subject, pol)
         elif len(children) == 1:
-            for triple_or_node in children[0]:
-                if isinstance(triple_or_node, Triple):
-                    yield triple_or_node
+            # A blank node property list on its own, e.g. "[ <p> <o> ] ."
+            triples, _ = unpack_node(children[0])
+            yield from triples
 
     def prefixed_name(self, children):
         (pname,) = children
@@ -174,7 +176,7 @@ class TurtleTransformer(BaseParser, Transformer):
 
     def prefix_id(self, children):
         ns, iriref = children
-        iri = smart_urljoin(self.base_iri, self.decode_iriref(iriref))
+        iri = resolve_iri(self.base_iri, self.decode_iriref(iriref))
         ns = ns[:-1]  # Drop trailing : from namespace
         self.prefixes[ns] = iri
 
@@ -190,7 +192,7 @@ class TurtleTransformer(BaseParser, Transformer):
         if base_directive.startswith("@") and base_directive != "@base":
             raise ValueError("Unexpected @base: " + base_directive)
 
-        self.base_iri = smart_urljoin(self.base_iri, self.decode_iriref(base_iriref))
+        self.base_iri = resolve_iri(self.base_iri, self.decode_iriref(base_iriref))
 
         return []
 
@@ -217,13 +219,8 @@ class TurtleTransformer(BaseParser, Transformer):
         prev_node = RDF_NIL
         for value in reversed(children):
             this_bn = self.make_blank_node()
-            if not isinstance(value, (NamedNode, Literal, BlankNode)):
-                for triple_or_node in value:
-                    if isinstance(triple_or_node, Triple):
-                        yield triple_or_node
-                    else:
-                        value = triple_or_node
-                        break
+            triples, value = unpack_node(value)
+            yield from triples
             yield self.make_triple(this_bn, RDF_FIRST, value)
             yield self.make_triple(this_bn, RDF_REST, prev_node)
             prev_node = this_bn

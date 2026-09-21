@@ -21,9 +21,10 @@ __all__ = [
 import collections
 from collections import defaultdict
 import datetime
+import itertools
 from operator import itemgetter
 
-from pymantic.serializers import nt_escape
+from pymantic.serializers import nt_escape, validate_language
 import pymantic.uri_schemes as uri_schemes
 from pymantic.util import quote_normalized_iri
 
@@ -106,10 +107,11 @@ def to_curie(uri, namespaces, seperator=":", explicit=False):
             matches.append((prefix, namespace))
     if len(matches) > 0:
         prefix, namespace = sorted(matches, key=lambda pair: -len(pair[1]))[0]
+        curie = prefix + seperator + uri[len(namespace) :]
         if explicit:
-            return f"[{uri.replace(namespace, prefix + seperator)}]"
+            return f"[{curie}]"
         else:
-            return uri.replace(namespace, prefix + seperator)
+            return curie
     return uri
 
 
@@ -211,7 +213,10 @@ class Quad(tuple):
     graph = property(itemgetter(3))
 
     def __str__(self):
-        return f"{str(self.subject)} {str(self.predicate)} {str(self.object)} {str(self.graph)} .\n"
+        return (
+            f"{self.subject.toNT()} {self.predicate.toNT()} "
+            f"{self.object.toNT()} {self.graph.toNT()} .\n"
+        )
 
 
 def q_as_t(quad):
@@ -291,6 +296,7 @@ class Literal(tuple):
     def toNT(self):
         quoted = '"' + nt_escape(self.value) + '"'
         if self.language:
+            validate_language(self.language)
             return f"{quoted}@{self.language}"
         elif self.datatype:
             return f"{quoted}^^{self.datatype.toNT()}"
@@ -339,9 +345,14 @@ class BlankNode:
 
     interfaceName = "BlankNode"
 
+    _labels = itertools.count()
+
+    def __init__(self):
+        self._value = "b" + str(next(BlankNode._labels))
+
     @property
     def value(self):
-        return "".join(chr(ord(c) + 17) for c in hex(id(self))[2:])
+        return self._value
 
     def __repr__(self):
         return "BlankNode()"

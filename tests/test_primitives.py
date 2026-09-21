@@ -286,3 +286,55 @@ def test_BlankNode_id():
     b1 = BlankNode()
     b2 = BlankNode()
     assert b1.value != b2.value
+
+
+def test_BlankNode_label_is_stable_unique_and_not_an_address():
+    import gc
+    import re
+
+    b1 = BlankNode()
+    label = b1.value
+    assert b1.value == label
+    assert str(b1) == "_:" + label
+    assert b1.toNT() == "_:" + label
+    # Valid BLANK_NODE_LABEL for both the N-Triples and Turtle grammars.
+    assert re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_\-]*", label)
+    assert format(id(b1), "x") not in label
+    seen = {label}
+    for _ in range(100):
+        node = BlankNode()
+        assert node.value not in seen
+        seen.add(node.value)
+        del node
+        gc.collect()
+
+
+def test_BlankNode_ntriples_round_trip():
+    from io import StringIO
+
+    from pymantic.parsers import ntriples_parser
+    from pymantic.serializers import serialize_ntriples
+
+    b = BlankNode()
+    p = NamedNode("http://x/p")
+    graph = Graph()
+    graph.add(Triple(b, p, b))
+    f = StringIO()
+    serialize_ntriples(graph, f)
+    f.seek(0)
+    parsed = Graph()
+    ntriples_parser.parse(f, parsed)
+    (triple,) = list(parsed)
+    assert triple.subject.interfaceName == "BlankNode"
+    assert triple.subject is triple.object
+
+
+def test_to_curie_only_shrinks_leading_namespace():
+    from pymantic.primitives import to_curie
+
+    namespaces = {"ex": "http://example.com/"}
+    assert (
+        to_curie("http://example.com/a?u=http://example.com/b", namespaces)
+        == "ex:a?u=http://example.com/b"
+    )
+    assert to_curie("http://other.example/a", namespaces) == "http://other.example/a"

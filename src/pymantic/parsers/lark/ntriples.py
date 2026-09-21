@@ -33,7 +33,7 @@ quad: subject predicate object graph "."
 ?graph: iriref
 literal: STRING_LITERAL_QUOTE ("^^" iriref | LANGTAG)?
 
-LANGTAG: "@" /[a-zA-Z]/+ ("-" /[a-zA-Z0_9]/+)*
+LANGTAG: "@" /[a-zA-Z]/+ ("-" /[a-zA-Z0-9]/+)*
 EOL: /[\r\n]/+
 iriref: "<" (/[^\x00-\x20<>"{}|^`\\]/ | UCHAR)* ">"
 STRING_LITERAL_QUOTE: "\"" (/[^\x22\\\x0A\x0D]/ | ECHAR | UCHAR)* "\""

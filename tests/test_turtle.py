@@ -125,6 +125,6 @@ turtle_test_cases = {
 }
 
 
-@pytest.mark.parametrize(["turtle_test_case_name"], zip(turtle_test_cases.keys()))
+@pytest.mark.parametrize("turtle_test_case_name", list(turtle_test_cases))
 def test_turtle(turtle_test_case_name):
     turtle_test_cases[turtle_test_case_name].execute()

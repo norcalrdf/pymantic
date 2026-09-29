@@ -197,6 +197,24 @@ RDF_REST = "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"
 RDF_NIL = "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"
 
 
+def list_cell_shape(graph, node):
+    """(first, rest, has_other_predicates) if node looks like an RDF list
+    cell: a blank node with exactly one rdf:first and one rdf:rest."""
+    if getattr(node, "interfaceName", None) != "BlankNode":
+        return None
+    firsts, rests, others = [], [], False
+    for triple in graph.match(subject=node):
+        if triple.predicate == RDF_FIRST:
+            firsts.append(triple.object)
+        elif triple.predicate == RDF_REST:
+            rests.append(triple.object)
+        else:
+            others = True
+    if len(firsts) != 1 or len(rests) != 1:
+        return None
+    return firsts[0], rests[0], others
+
+
 def plan_collections(graph):
     """Decide which blank nodes to write with Turtle's ( ... ) syntax.
 
@@ -212,31 +230,17 @@ def plan_collections(graph):
     other shape is written as ordinary triples so no information is lost."""
     references = Counter(triple.object for triple in graph)
 
-    def cell(node):
-        """(first, rest, has_other_predicates) if node looks like a list cell."""
-        if getattr(node, "interfaceName", None) != "BlankNode":
-            return None
-        firsts, rests, others = [], [], False
-        for triple in graph.match(subject=node):
-            if triple.predicate == RDF_FIRST:
-                firsts.append(triple.object)
-            elif triple.predicate == RDF_REST:
-                rests.append(triple.object)
-            else:
-                others = True
-        if len(firsts) != 1 or len(rests) != 1:
-            return None
-        return firsts[0], rests[0], others
-
     inline, as_subject, consumed = {}, {}, set()
     for node in list(graph.subjects()):
-        shape = cell(node)
+        shape = list_cell_shape(graph, node)
         if shape is None:
             continue
         _, _, has_others = shape
         if references[node] == 1:
             (reference,) = graph.match(object=node)
-            if reference.predicate == RDF_REST and cell(reference.subject):
+            if reference.predicate == RDF_REST and list_cell_shape(
+                graph, reference.subject
+            ):
                 # A cell inside another chain; its head decides.
                 continue
             if has_others:
@@ -249,7 +253,7 @@ def plan_collections(graph):
         members, cells = [], []
         current = node
         while current != RDF_NIL:
-            shape = cell(current)
+            shape = list_cell_shape(graph, current)
             if shape is None or current in cells:
                 break
             first, rest, has_others = shape
@@ -264,89 +268,106 @@ def plan_collections(graph):
     return inline, as_subject, consumed
 
 
+class _TurtleWriter:
+    """Writes one graph to a stream as Turtle.
+
+    The parts of the output share state: blank node labels are handed out
+    as nodes are first named, and an inline collection is written once, at
+    its one reference, after which it is only named. This object holds that
+    state for the length of one serialization."""
+
+    def __init__(self, graph, f, base, profile, bnode_name_generator):
+        self.graph = graph
+        self.f = f
+        self.base = base
+        self.profile = profile
+        self.name_map = OrderedDict()
+        self.bnode_name_maker = bnode_name_generator()
+        self.inline, self.as_subject, self.consumed = plan_collections(graph)
+        self.rendered = set()
+
+    def write(self):
+        if self.base is not None:
+            self.f.write("@base <" + turtle_iri_escape(self.base) + "> .\n")
+        for prefix, iri in self.profile.prefixes.items():
+            if prefix and not PN_PREFIX_RE.fullmatch(prefix):
+                raise ValueError("Invalid Turtle prefix name")
+            self.f.write("@prefix " + prefix + ": <" + turtle_iri_escape(iri) + "> .\n")
+
+        subjects = [s for s in self.graph.subjects() if s not in self.consumed]
+        for subject_name, subject in turtle_sorted_names(subjects, self.subject_repr):
+            skip = (RDF_FIRST, RDF_REST) if subject in self.as_subject else ()
+            self.write_block(subject_name, self.block_predicates(subject, skip))
+
+        # A list whose only reference is from inside itself was never reached
+        # from a subject block; write its cells as ordinary triples.
+        for head in self.inline:
+            if head in self.rendered:
+                continue
+            self.rendered.add(head)
+            node = head
+            while node != RDF_NIL:
+                self.write_block(self.name(node), self.block_predicates(node))
+                (rest,) = self.graph.match(subject=node, predicate=RDF_REST)
+                node = rest.object
+
+    def name(self, node):
+        return turtle_repr(
+            node, self.profile, self.name_map, self.bnode_name_maker, self.base
+        )
+
+    def collection_repr(self, members):
+        return "(" + " ".join(self.object_repr(member) for member in members) + ")"
+
+    def object_repr(self, node):
+        # An inline head is written where its one reference is; once written
+        # it is only ever named again, which is what keeps a list that
+        # contains itself from recursing forever.
+        if node in self.inline and node not in self.rendered:
+            self.rendered.add(node)
+            return self.collection_repr(self.inline[node])
+        return self.name(node)
+
+    def subject_repr(self, node):
+        if node in self.as_subject:
+            return self.collection_repr(self.as_subject[node])
+        return self.name(node)
+
+    def block_predicates(self, subject, skip=()):
+        predicates = set(t.predicate for t in self.graph.match(subject=subject))
+        predicates.difference_update(skip)
+        return [
+            (
+                predicate_name,
+                [
+                    self.object_repr(t.object)
+                    for t in self.graph.match(subject=subject, predicate=predicate)
+                ],
+            )
+            for predicate_name, predicate in turtle_sorted_names(predicates, self.name)
+        ]
+
+    def write_block(self, subject_name, predicates):
+        subj_indent_size = len(subject_name) + 1
+        self.f.write(subject_name + " ")
+        for i, (predicate_name, object_names) in enumerate(predicates):
+            if i != 0:
+                self.f.write(" " * subj_indent_size)
+            pred_indent_size = subj_indent_size + len(predicate_name) + 1
+            self.f.write(predicate_name + " ")
+            self.f.write((",\n" + " " * pred_indent_size).join(object_names))
+            self.f.write(" ;\n")
+        self.f.write(" " * subj_indent_size + ".\n\n")
+
+
 def serialize_turtle(
     graph, f, base=None, profile=None, bnode_name_generator=default_bnode_name_generator
 ):
     """Serialize a graph to f as turtle, optionally using base IRI base
     and prefix map from profile. If provided, subject_key will be used to order
     subjects, and predicate_key predicates within a subject."""
-
-    if base is not None:
-        f.write("@base <" + turtle_iri_escape(base) + "> .\n")
     if profile is None:
         from pymantic.primitives import Profile
 
         profile = Profile()
-    for prefix, iri in profile.prefixes.items():
-        if prefix and not PN_PREFIX_RE.fullmatch(prefix):
-            raise ValueError("Invalid Turtle prefix name")
-        f.write("@prefix " + prefix + ": <" + turtle_iri_escape(iri) + "> .\n")
-
-    name_map = OrderedDict()
-    bnode_name_maker = bnode_name_generator()
-
-    def name_maker(n):
-        return turtle_repr(n, profile, name_map, bnode_name_maker, base)
-
-    inline, as_subject, consumed = plan_collections(graph)
-    rendered = set()
-
-    def collection_repr(members):
-        return "(" + " ".join(object_repr(member) for member in members) + ")"
-
-    def object_repr(node):
-        # An inline head is written where its one reference is; once written
-        # it is only ever named again, which is what keeps a list that
-        # contains itself from recursing forever.
-        if node in inline and node not in rendered:
-            rendered.add(node)
-            return collection_repr(inline[node])
-        return name_maker(node)
-
-    def subject_repr(node):
-        if node in as_subject:
-            return collection_repr(as_subject[node])
-        return name_maker(node)
-
-    def block_predicates(subject, skip=()):
-        predicates = set(t.predicate for t in graph.match(subject=subject))
-        predicates.difference_update(skip)
-        return [
-            (
-                predicate_name,
-                [
-                    object_repr(t.object)
-                    for t in graph.match(subject=subject, predicate=predicate)
-                ],
-            )
-            for predicate_name, predicate in turtle_sorted_names(predicates, name_maker)
-        ]
-
-    def write_block(subject_name, predicates):
-        subj_indent_size = len(subject_name) + 1
-        f.write(subject_name + " ")
-        for i, (predicate_name, object_names) in enumerate(predicates):
-            if i != 0:
-                f.write(" " * subj_indent_size)
-            pred_indent_size = subj_indent_size + len(predicate_name) + 1
-            f.write(predicate_name + " ")
-            f.write((",\n" + " " * pred_indent_size).join(object_names))
-            f.write(" ;\n")
-        f.write(" " * subj_indent_size + ".\n\n")
-
-    subjects = [subject for subject in graph.subjects() if subject not in consumed]
-    for subject_name, subject in turtle_sorted_names(subjects, subject_repr):
-        skip = (RDF_FIRST, RDF_REST) if subject in as_subject else ()
-        write_block(subject_name, block_predicates(subject, skip))
-
-    # A list whose only reference is from inside itself was never reached
-    # from a subject block; write its cells as ordinary triples.
-    for head in inline:
-        if head in rendered:
-            continue
-        rendered.add(head)
-        node = head
-        while node != RDF_NIL:
-            write_block(name_maker(node), block_predicates(node))
-            (rest,) = graph.match(subject=node, predicate=RDF_REST)
-            node = rest.object
+    _TurtleWriter(graph, f, base, profile, bnode_name_generator).write()

@@ -363,9 +363,13 @@ class _TurtleWriter:
 def serialize_turtle(
     graph, f, base=None, profile=None, bnode_name_generator=default_bnode_name_generator
 ):
-    """Serialize a graph to f as turtle, optionally using base IRI base
-    and prefix map from profile. If provided, subject_key will be used to order
-    subjects, and predicate_key predicates within a subject."""
+    """Serialize a graph to f as Turtle.
+
+    If base is given it is written as @base and IRIs that start with it are
+    written relative to it. The prefixes in profile are declared and used to
+    abbreviate IRIs. bnode_name_generator is called once to get an iterator
+    of blank node labels. Subjects, and predicates within a subject, are
+    ordered by their written form."""
     if profile is None:
         from pymantic.primitives import Profile
 

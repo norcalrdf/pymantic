@@ -168,6 +168,8 @@ def iri_escape(iri):
     UCHAR escapes because Turtle forbids them in an IRI even when escaped;
     a term holding one is not a valid IRI, and is written as the valid IRI
     its percent-encoding gives."""
+    if IRIREF_FORBIDDEN.isdisjoint(iri):
+        return iri
     return "".join(
         (
             "".join("%%%02X" % byte for byte in char.encode("utf-8"))

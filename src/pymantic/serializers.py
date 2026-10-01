@@ -27,26 +27,19 @@ NT_ECHAR = {
 }
 
 
-def nt_needs_uchar(char):
-    return (
-        char <= "\u001f"
-        or char == "\u007f"
-        or "\ud800" <= char <= "\udfff"
-        or char in "\ufffe\uffff"
-    )
+# Every character nt_escape changes: those in NT_ECHAR, and as \\u the other
+# C0 controls, DEL, surrogates and the non-characters U+FFFE and U+FFFF.
+NT_ESCAPED_RE = re.compile('[\x00-\x1f\x7f"\\\\\ud800-\udfff\ufffe\uffff]')
+
+
+def nt_escape_char(match):
+    char = match.group()
+    return NT_ECHAR.get(char) or "\\u%04X" % ord(char)
 
 
 def nt_escape(node_string):
     """Escape a string for canonical N-Triples and N-Quads output."""
-    output_string = ""
-    for char in node_string:
-        if char in NT_ECHAR:
-            output_string += NT_ECHAR[char]
-        elif nt_needs_uchar(char):
-            output_string += "\\u%04X" % ord(char)
-        else:
-            output_string += char
-    return output_string
+    return NT_ESCAPED_RE.sub(nt_escape_char, node_string)
 
 
 def stable_lines(graph_or_dataset):
@@ -182,17 +175,21 @@ def iri_escape(iri):
     )
 
 
-def turtle_string_escape(string):
-    """Escape a string appropriately for output in turtle form."""
+def turtle_string_escapes():
     from pymantic.util import ECHAR_MAP
 
+    # An apostrophe needs no escape inside a double-quoted string.
+    return {ord(char): escape for char, escape in ECHAR_MAP.items() if char != "'"}
+
+
+TURTLE_STRING_ESCAPES = turtle_string_escapes()
+
+
+def turtle_string_escape(string):
+    """Escape a string appropriately for output in turtle form."""
     # Single pass, so a backslash inserted by one escape is never escaped
-    # again. An apostrophe needs no escape inside a double-quoted string.
-    return (
-        '"'
-        + "".join(char if char == "'" else ECHAR_MAP.get(char, char) for char in string)
-        + '"'
-    )
+    # again.
+    return '"' + string.translate(TURTLE_STRING_ESCAPES) + '"'
 
 
 def turtle_repr(

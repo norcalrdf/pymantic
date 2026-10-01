@@ -298,18 +298,18 @@ def plan_collections(graph, references=None):
     other shape is written as ordinary triples so no information is lost."""
     if references is None:
         references = Counter(triple.object for triple in graph)
+    # A node that is not a subject has no rdf:first, so it is no cell.
+    shapes = {node: list_cell_shape(graph, node) for node in graph.subjects()}
 
     inline, as_subject, consumed = {}, {}, set()
-    for node in list(graph.subjects()):
-        shape = list_cell_shape(graph, node)
+    for node in shapes:
+        shape = shapes[node]
         if shape is None:
             continue
         _, _, has_others = shape
         if references[node] == 1:
             (reference,) = graph.match(object=node)
-            if reference.predicate == RDF_REST and list_cell_shape(
-                graph, reference.subject
-            ):
+            if reference.predicate == RDF_REST and shapes.get(reference.subject):
                 # A cell inside another chain; its head decides.
                 continue
             if has_others:
@@ -322,7 +322,7 @@ def plan_collections(graph, references=None):
         members, cells = [], []
         current = node
         while current != RDF_NIL:
-            shape = list_cell_shape(graph, current)
+            shape = shapes.get(current)
             if shape is None or current in cells:
                 break
             first, rest, has_others = shape
@@ -528,6 +528,9 @@ class _TurtleWriter:
         self.used_prefixes = set() if stable else None
         self.out = StringIO() if stable else f
         self.name_map = OrderedDict()
+        # Every term's written name, so a term named again, such as a
+        # predicate on many subjects, is not shrunk and escaped again.
+        self.names = {}
         self.bnode_name_maker = bnode_name_generator()
         self.blank_order = {}
         if stable:
@@ -597,14 +600,17 @@ class _TurtleWriter:
                 self.f.write("@prefix " + prefix + ": <" + iri_escape(iri) + "> .\n")
 
     def name(self, node):
-        return turtle_repr(
-            node,
-            self.profile,
-            self.name_map,
-            self.bnode_name_maker,
-            self.base,
-            used_prefixes=self.used_prefixes,
-        )
+        name = self.names.get(node)
+        if name is None:
+            name = self.names[node] = turtle_repr(
+                node,
+                self.profile,
+                self.name_map,
+                self.bnode_name_maker,
+                self.base,
+                used_prefixes=self.used_prefixes,
+            )
+        return name
 
     def blank_rank(self, node):
         return self.blank_order.get(node, -1)
@@ -660,28 +666,27 @@ class _TurtleWriter:
             return self.collection_repr(self.as_subject[node])
         return self.name(node)
 
-    def objects_of(self, subject, predicate):
-        # A term written in both literal forms is one triple in the graph,
-        # so no dedup is needed here. Blank nodes are never deduplicated:
-        # two distinct blank nodes are two RDF terms even when both are
-        # written as [].
-        objects = [
-            t.object for t in self.graph.match(subject=subject, predicate=predicate)
-        ]
-        if self.stable:
-            objects.sort(key=self.object_key)
-        return objects
-
     def block_predicates(self, subject, skip=()):
-        predicates = set(t.predicate for t in self.graph.match(subject=subject))
-        predicates.difference_update(skip)
-        return [
-            (
-                predicate_name,
-                [self.object_repr(o) for o in self.objects_of(subject, predicate)],
-            )
-            for predicate_name, predicate in turtle_sorted_names(predicates, self.name)
-        ]
+        # Objects keep the graph's order for their predicate. A term written
+        # in both literal forms is one triple in the graph, so no dedup is
+        # needed here. Blank nodes are never deduplicated: two distinct
+        # blank nodes are two RDF terms even when both are written as [].
+        objects_by_predicate = {}
+        for triple in self.graph.match(subject=subject):
+            if triple.predicate not in skip:
+                objects = objects_by_predicate.get(triple.predicate)
+                if objects is None:
+                    objects = objects_by_predicate[triple.predicate] = []
+                objects.append(triple.object)
+        blocks = []
+        for predicate_name, predicate in turtle_sorted_names(
+            objects_by_predicate, self.name
+        ):
+            objects = objects_by_predicate[predicate]
+            if self.stable:
+                objects.sort(key=self.object_key)
+            blocks.append((predicate_name, [self.object_repr(o) for o in objects]))
+        return blocks
 
     def write_block(self, subject_name, predicates):
         if len(subject_name) > MAX_ALIGNED_SUBJECT or "\n" in subject_name:

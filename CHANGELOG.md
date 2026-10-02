@@ -47,8 +47,9 @@ All notable changes to pymantic are recorded here. The format follows
   expands, even when it is also a URI scheme such as `geo` or `urn`; a value
   whose part after the colon starts with `//` is always an absolute IRI; and
   a value with an undeclared prefix is taken as an absolute IRI instead of
-  raising `ValueError`. Bracketed safe CURIEs (`[foo:bar]`) are no longer
-  recognised.
+  raising `ValueError`, with an `UnknownSchemeWarning` when its scheme isn't
+  registered with IANA, since that usually means a mistyped prefix.
+  Bracketed safe CURIEs (`[foo:bar]`) are no longer recognised.
 - `rdf.Resource` scalars resolve prefixes the global profile declares, such
   as `xsd`, the same way predicates do.
 - Numeric escapes that produce surrogate code points (`\uD800` to `\uDFFF`)
@@ -149,12 +150,13 @@ All notable changes to pymantic are recorded here. The format follows
 - `pymantic.vocab.skos`, which has been unimportable since the Python 3 port.
 - The unpackaged `pymantic/scripts` directory.
 - The direct dependency on `lxml`. Nothing in pymantic imports it any more.
-- `pymantic.primitives.parse_curie`, `parse_curies` and `to_curie`, and the
-  `pymantic.uri_schemes` list they used to tell URIs from CURIEs. Use
+- `pymantic.primitives.parse_curie`, `parse_curies` and `to_curie`. Use
   `PrefixMap.resolve` and `PrefixMap.shrink`.
 
 ### Added
 
+- `pymantic.uri_schemes.schemes` lists every scheme in the IANA registry as
+  of 2026-09-22, lowercased; `scripts/update_uri_schemes.py` regenerates it.
 - The W3C RDF 1.1 and 1.2 test suites for N-Triples, N-Quads and Turtle are
   vendored under `tests/w3c` and run by `tests/test_w3c.py`, including a
   serializer round trip for every Turtle evaluation test and the canonical

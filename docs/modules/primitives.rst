@@ -55,6 +55,8 @@ provide a simple API for working directly with Triples, and RDF Terms.
     .. autoclass:: Profile
         :members:
         
+    .. autoclass:: UnknownSchemeWarning
+        
     Helper Functions
     ================
     

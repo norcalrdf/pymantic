@@ -1,5 +1,6 @@
 import datetime
 import pytest
+import warnings
 
 from pymantic.primitives import (
     Graph,
@@ -8,6 +9,7 @@ from pymantic.primitives import (
     Prefix,
     PrefixMap,
     Triple,
+    UnknownSchemeWarning,
 )
 import pymantic.rdf
 import pymantic.util
@@ -31,12 +33,68 @@ def testResolveAbsoluteIRIs(reset_metaresource):
 
 
 def testResolveUndeclaredPrefixAsIRI(reset_metaresource):
-    """A value whose prefix isn't declared is taken as an absolute IRI."""
+    """A value whose prefix isn't declared is taken as an absolute IRI, with
+    no warning when its scheme is registered, in any case."""
     prefixes = PrefixMap({"foo": "WRONG!"})
-    assert prefixes.resolve("urn:isbn:1234567890123") == NamedNode(
-        "urn:isbn:1234567890123"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert prefixes.resolve("urn:isbn:1234567890123") == NamedNode(
+            "urn:isbn:1234567890123"
+        )
+        assert prefixes.resolve("MAILTO:a@example.com") == NamedNode(
+            "MAILTO:a@example.com"
+        )
+        assert prefixes.resolve("http://example.com") == NamedNode("http://example.com")
+
+
+def testResolveUnknownSchemeWarns(reset_metaresource):
+    """An undeclared prefix that isn't a registered scheme either, which is
+    probably a typo, still resolves as an absolute IRI but warns."""
+    prefixes = PrefixMap({"rdfs": "http://www.w3.org/2000/01/rdf-schema#"})
+    with pytest.warns(UnknownSchemeWarning, match="'rdsf'"):
+        assert prefixes.resolve("rdsf:label") == NamedNode("rdsf:label")
+
+
+def testUnknownSchemeWarningPointsAtCaller(reset_metaresource):
+    """The warning names the user's line, not pymantic's internals, even when
+    it comes through Resource lookups and scalar declarations."""
+
+    class Thing(pymantic.rdf.Resource):
+        prefixes = {"ex": "http://example.com/"}
+
+    with pytest.warns(UnknownSchemeWarning) as record:
+        Thing.resolve("rdsf:label")
+    assert record[0].filename == __file__
+
+    with pytest.warns(UnknownSchemeWarning) as record:
+
+        class Other(pymantic.rdf.Resource):
+            scalars = frozenset(("rdsf:label",))
+
+    assert record[0].filename == __file__
+
+
+def testResolveLeavesNamedNodesAlone(reset_metaresource):
+    """An already-resolved NamedNode isn't expanded again, even when its
+    scheme is a declared prefix."""
+    prefixes = PrefixMap({"urn": "http://example.com/urn#"})
+    assert prefixes.resolve(NamedNode("urn:isbn:1")) == NamedNode("urn:isbn:1")
+
+    class Thing(pymantic.rdf.Resource):
+        prefixes = {"urn": "http://example.com/urn#"}
+
+    assert Thing.resolve(NamedNode("urn:isbn:1")) == NamedNode("urn:isbn:1")
+
+
+def testResolveBarePrefixName(reset_metaresource):
+    """A bare declared prefix name resolves to its namespace, unless a default
+    prefix is set, which takes precedence as it always has."""
+    assert PrefixMap({"foo": "http://example.com/foo#"}).resolve("foo") == (
+        NamedNode("http://example.com/foo#")
     )
-    assert prefixes.resolve("bar:baz") == NamedNode("bar:baz")
+    assert PrefixMap({"": "http://default/", "foo": "http://example.com/foo#"}).resolve(
+        "foo"
+    ) == NamedNode("http://default/foo")
 
 
 def testResolveDeclaredPrefixWinsOverScheme(reset_metaresource):

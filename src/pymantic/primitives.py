@@ -14,15 +14,20 @@ __all__ = [
     "is_language",
     "lang_match",
     "Profile",
+    "UnknownSchemeWarning",
 ]
 
 import collections
 from collections import defaultdict
 import datetime
+import inspect
 import itertools
 from operator import itemgetter
+import os
+import warnings
 
 from pymantic.serializers import nt_escape, validate_language
+from pymantic.uri_schemes import schemes as registered_schemes
 from pymantic.util import ABSOLUTE_IRI, quote_normalized_iri
 
 
@@ -535,6 +540,31 @@ class Dataset:
 # RDF Enviroment Interfaces
 
 
+class UnknownSchemeWarning(UserWarning):
+    """A prefixed name was resolved as an absolute IRI although its prefix is
+    neither declared nor a registered URI scheme, which usually means the
+    prefix is mistyped."""
+
+
+_PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__)) + os.sep
+
+
+def _stacklevel_outside_package():
+    """Return the warnings.warn stacklevel, from the caller's point of view,
+    of the first frame outside pymantic. Prefixed names usually reach
+    PrefixMap.resolve through Profile, Resource or MetaResource, so a fixed
+    stacklevel would blame pymantic instead of the user's typo."""
+    frame = inspect.currentframe()
+    if frame is None:  # Interpreters without frame support.
+        return 2
+    frame = frame.f_back.f_back  # Skip this function and its caller.
+    level = 2
+    while frame is not None and frame.f_code.co_filename.startswith(_PACKAGE_DIR):
+        frame = frame.f_back
+        level += 1
+    return level
+
+
 class PrefixMap(collections.OrderedDict):
     """A map of prefixes to IRIs, and provides methods to
     turn one in to the other.
@@ -576,14 +606,29 @@ class PrefixMap(collections.OrderedDict):
         This follows JSON-LD's compact IRI expansion: a value whose part after
         the first colon starts with "//" is an absolute IRI; otherwise a
         declared prefix is expanded; otherwise a value that is syntactically
-        an absolute IRI is returned as one. A value with no colon uses the
-        default prefix. Anything else raises ValueError."""
+        an absolute IRI is returned as one, with an UnknownSchemeWarning if
+        its scheme isn't registered with IANA. A value with no colon uses the
+        default prefix, or failing that is a declared prefix name and resolves
+        to its namespace. A NamedNode is already resolved and is returned
+        unchanged. Anything else raises ValueError."""
+        if isinstance(value, NamedNode):
+            return value
         prefix, colon, suffix = value.partition(":")
         if not colon:
-            prefix, suffix = "", value
-        if not suffix.startswith("//") and prefix in self:
+            if "" in self:
+                return Prefix(self[""])(value)
+            if value in self:
+                return Prefix(self[value])("")
+        elif not suffix.startswith("//") and prefix in self:
             return Prefix(self[prefix])(suffix)
         if colon and ABSOLUTE_IRI.match(value):
+            if prefix.lower() not in registered_schemes:
+                warnings.warn(
+                    f"{prefix!r} in {value!r} is neither a declared prefix nor a"
+                    " registered URI scheme; resolving it as an absolute IRI",
+                    UnknownSchemeWarning,
+                    stacklevel=_stacklevel_outside_package(),
+                )
             return NamedNode(value)
         raise ValueError(f"Could not resolve {value!r} with prefixes {dict(self)}")
 

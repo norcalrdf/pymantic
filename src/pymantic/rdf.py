@@ -167,10 +167,11 @@ class Resource(metaclass=MetaResource):
         The prefix is checked up front because PrefixMap.resolve takes an
         undeclared prefix to be an absolute IRI scheme, so it would never
         fail over to the global profile."""
-        prefix, colon, _ = key.partition(":")
-        if not colon:
-            prefix = ""
-        if prefix in cls.prefixes:
+        if ":" in key:
+            declared = key.partition(":")[0] in cls.prefixes
+        else:
+            declared = "" in cls.prefixes or key in cls.prefixes
+        if declared:
             return cls.prefixes.resolve(key)
         return cls.global_profile.resolve(key)
 

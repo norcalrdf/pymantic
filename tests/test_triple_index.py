@@ -2,6 +2,7 @@ import pytest
 import random
 
 from pymantic import offset_index
+from pymantic.dict_index import NestedDictTripleIndex
 from pymantic.offset_index import DELTA_MIN, FOLD_DIVISOR, OffsetTripleIndex
 from pymantic.triple_index import RESORT_DIVISOR, SMALL_MERGE, TripleIndex
 
@@ -50,13 +51,15 @@ def check_against_reference(index, ref, rng):
     assert index.ids() == {i for t in ref for i in t}
 
 
-@pytest.fixture(params=["sorted", "offsets", "offsets-small-folds"])
+@pytest.fixture(params=["sorted", "offsets", "offsets-small-folds", "dict"])
 def index_class(request, monkeypatch):
     """Each index implementation. The small-folds variant lowers DELTA_MIN
     so the small graphs in these tests fold, leaving rows in main, dead
     rows and delta rows all in play."""
     if request.param == "sorted":
         return TripleIndex
+    if request.param == "dict":
+        return NestedDictTripleIndex
     if request.param == "offsets-small-folds":
         monkeypatch.setattr(offset_index, "DELTA_MIN", 4)
     return OffsetTripleIndex
@@ -295,6 +298,9 @@ def pending_columns(index):
     """The columns an add appends to before any query."""
     if isinstance(index, TripleIndex):
         return index._columns()[9:]
+    if isinstance(index, NestedDictTripleIndex):
+        # No columns: each ordering's first level and the keys.
+        return [index._spo, index._pos, index._osp, index._keys]
     return index._delta_columns()
 
 
@@ -558,3 +564,31 @@ def test_offsets_change_between_main_and_delta_raises(read):
     index.remove(1, 0, 0)
     with pytest.raises(RuntimeError):
         next(it)
+
+
+# NestedDictTripleIndex: pruning and reads that must not create entries.
+
+
+def test_dict_remove_prunes_emptied_levels():
+    index = NestedDictTripleIndex()
+    index.add(1, 2, 3)
+    index.add(1, 2, 4)
+    index.add(1, 5, 3)
+    index.remove(1, 2, 3)
+    assert index._spo == {1: {2: {4}, 5: {3}}}
+    assert index._pos == {2: {4: {1}}, 5: {3: {1}}}
+    assert index._osp == {4: {1: {2}}, 3: {1: {5}}}
+    index.remove_many([(1, 2, 4), (1, 5, 3)])
+    assert index._spo == index._pos == index._osp == {}
+    assert len(index) == 0
+
+
+def test_dict_reads_do_not_create_entries():
+    index = NestedDictTripleIndex()
+    index.add(1, 2, 3)
+    for s, p, o in [(9, None, None), (1, 9, None), (None, 9, 9), (9, None, 3)]:
+        assert list(index.match(s, p, o)) == []
+    assert (9, 9, 9) not in index
+    assert index._spo == {1: {2: {3}}}
+    assert index._pos == {2: {3: {1}}}
+    assert index._osp == {3: {1: {2}}}

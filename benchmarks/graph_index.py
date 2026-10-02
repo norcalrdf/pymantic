@@ -47,7 +47,8 @@ The batch and interleave cases add to the loaded graph, so they run last.
 --small-merge and --resort-divisor set pymantic.triple_index's merge
 constants for the run, to tune them; a tree without that module rejects them.
 --index offsets runs Graph and Dataset on pymantic.offset_index's
-OffsetTripleIndex instead of the default sorted TripleIndex.
+OffsetTripleIndex instead of the default sorted TripleIndex; --index dict
+runs them on pymantic.dict_index's NestedDictTripleIndex.
 
 --dataset-per-file loads fhir-r5-examples as a Dataset with one named graph
 per .ttl file (the graph's name is the file's file:// IRI) and reports load
@@ -362,12 +363,17 @@ def set_merge_constants(small_merge, resort_divisor):
 def use_index(name):
     """Make Graph and Dataset build the named index. "sorted" leaves the
     tree's own index in place, so the default runs on trees without
-    pymantic.offset_index."""
+    pymantic.offset_index or pymantic.dict_index."""
     if name == "offsets":
         from pymantic import primitives
         from pymantic.offset_index import OffsetTripleIndex
 
         primitives.TripleIndex = OffsetTripleIndex
+    elif name == "dict":
+        from pymantic import primitives
+        from pymantic.dict_index import NestedDictTripleIndex
+
+        primitives.TripleIndex = NestedDictTripleIndex
     print(f"index: {name}")
 
 
@@ -395,7 +401,7 @@ def main():
     )
     ap.add_argument(
         "--index",
-        choices=["sorted", "offsets"],
+        choices=["sorted", "offsets", "dict"],
         default="sorted",
         help="triple index for Graph and Dataset (default sorted)",
     )

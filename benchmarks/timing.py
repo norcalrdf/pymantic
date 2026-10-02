@@ -18,7 +18,8 @@ garbage collector on; --gc-off adds a run set with it disabled. Every line
 shows all run times, so the spread is visible: on a busy machine runs of a
 few seconds vary by 10% or more. --index offsets loads the graphs into
 pymantic.offset_index's OffsetTripleIndex instead of the default sorted
-TripleIndex.
+TripleIndex; --index dict loads them into pymantic.dict_index's
+NestedDictTripleIndex.
 """
 
 import argparse
@@ -98,12 +99,17 @@ def report(name, what, gc_enabled, times, digest):
 def use_index(name):
     """Make Graph and Dataset build the named index. "sorted" leaves the
     tree's own index in place, so the default runs on trees without
-    pymantic.offset_index."""
+    pymantic.offset_index or pymantic.dict_index."""
     if name == "offsets":
         from pymantic import primitives
         from pymantic.offset_index import OffsetTripleIndex
 
         primitives.TripleIndex = OffsetTripleIndex
+    elif name == "dict":
+        from pymantic import primitives
+        from pymantic.dict_index import NestedDictTripleIndex
+
+        primitives.TripleIndex = NestedDictTripleIndex
     print(f"index: {name}")
 
 
@@ -124,7 +130,7 @@ def main():
     )
     ap.add_argument(
         "--index",
-        choices=["sorted", "offsets"],
+        choices=["sorted", "offsets", "dict"],
         default="sorted",
         help="triple index for Graph and Dataset (default sorted)",
     )

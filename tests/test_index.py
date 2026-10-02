@@ -4,7 +4,7 @@ import pytest
 import random
 import sys
 
-from pymantic import offset_index, primitives
+from pymantic import dict_index, offset_index, primitives
 from pymantic.primitives import (
     XSD_STRING,
     BlankNode,
@@ -17,16 +17,22 @@ from pymantic.primitives import (
 )
 
 
-@pytest.fixture(autouse=True, params=["sorted", "offsets", "offsets-small-folds"])
+@pytest.fixture(
+    autouse=True, params=["sorted", "offsets", "offsets-small-folds", "dict"]
+)
 def index_class(request, monkeypatch):
     """Run every test once per index implementation. The small-folds variant
     lowers DELTA_MIN so these small graphs fold, leaving rows in main, dead
     rows and delta rows all in play."""
     if request.param == "sorted":
-        return
+        return request.param
     if request.param == "offsets-small-folds":
         monkeypatch.setattr(offset_index, "DELTA_MIN", 4)
+    if request.param == "dict":
+        monkeypatch.setattr(primitives, "TripleIndex", dict_index.NestedDictTripleIndex)
+        return request.param
     monkeypatch.setattr(primitives, "TripleIndex", offset_index.OffsetTripleIndex)
+    return request.param
 
 
 IRIS = [NamedNode("")] + [NamedNode("http://e/%d" % i) for i in range(5)]
@@ -214,7 +220,9 @@ def tracked_objects():
     sys.implementation.name != "cpython",
     reason="counts objects tracked by CPython's cyclic garbage collector",
 )
-def test_graph_adds_almost_no_tracked_objects():
+def test_graph_adds_almost_no_tracked_objects(index_class):
+    if index_class == "dict":
+        pytest.skip("nested dicts and sets are tracked by design")
     before = tracked_objects()
     triples = [
         Triple(

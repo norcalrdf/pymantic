@@ -634,6 +634,18 @@ def check_lookups_against_match(graph, s, p, o):
             assert got == [(t.predicate, t.object) for t in triples], qs
 
 
+def lookup_terms(rng, ref):
+    """A subject, predicate and object to bind in every combination: from a
+    present triple half the time, so lookups usually find matches;
+    otherwise from the pool, sometimes with an unseen subject."""
+    if ref and rng.random() < 0.5:
+        return rng.choice(list(ref))
+    s, p, o = random_triple(rng)
+    if rng.random() < 0.1:
+        s = UNSEEN
+    return s, p, o
+
+
 @pytest.mark.parametrize("seed", range(10))
 def test_lookups_agree_with_match(seed):
     rng = random.Random(seed)
@@ -658,7 +670,7 @@ def test_lookups_agree_with_match(seed):
                 ref.setdefault(t, None)
         if step % 5 == 0:
             for _ in range(3):
-                check_lookups_against_match(graph, *random_pattern(rng, ref))
+                check_lookups_against_match(graph, *lookup_terms(rng, ref))
 
 
 def test_lookups_of_unknown_terms_are_empty():
@@ -732,3 +744,9 @@ def test_lookups_on_a_view_of_a_removed_graph_raise(lookup):
         list(pending)
     with pytest.raises(RuntimeError):
         list(lookup(view))
+
+
+def test_predicate_objects_needs_a_subject():
+    g = Graph().add(Triple(S, P, Literal("a")))
+    with pytest.raises(TypeError, match="predicate_objects needs a subject"):
+        g.predicate_objects(None)

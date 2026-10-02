@@ -632,6 +632,13 @@ class Graph:
         order ``match(subject)`` yields the triples. This builds no
         `Triple`, so it is the fast path for reading all of one subject's
         properties."""
+        # Checked here rather than in the generator so the mistake surfaces
+        # at the call instead of as a scan of the whole graph.
+        if subject is None:
+            raise TypeError("predicate_objects needs a subject")
+        return self._predicate_objects(subject)
+
+    def _predicate_objects(self, subject):
         pattern = _pattern_ids(self._dictionary, subject, None, None)
         if pattern is None:
             self._check_index()

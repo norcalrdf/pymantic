@@ -2386,19 +2386,13 @@ def generated_triples(seed):
 
 
 def written_turtle(graph, stable):
-    """The graph as Turtle, or the error writing it raised: a few W3C
-    fixtures hold language tags the writer refuses."""
-    from pymantic.compare import Undecidable
     from pymantic.primitives import Profile
     from pymantic.serializers import serialize_turtle
 
     profile = Profile()
     profile.setPrefix("e", NamedNode("http://e/"))
     out = StringIO()
-    try:
-        serialize_turtle(graph, out, profile=profile, stable=stable)
-    except (Undecidable, ValueError) as error:
-        return repr(error)
+    serialize_turtle(graph, out, profile=profile, stable=stable)
     return out.getvalue()
 
 

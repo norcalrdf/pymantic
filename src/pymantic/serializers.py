@@ -69,12 +69,12 @@ def default_bnode_name_generator():
 # (https://www.w3.org/TR/turtle/#sec-grammar-grammar), used to check that an
 # escaped local name is a valid PN_LOCAL.
 PN_CHARS_BASE = (
-    "A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF"
-    "\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF"
-    "\uFDF0-\uFFFD\U00010000-\U000EFFFF"
+    "A-Za-z\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u02ff\u0370-\u037d\u037f-\u1fff"
+    "\u200c-\u200d\u2070-\u218f\u2c00-\u2fef\u3001-\ud7ff\uf900-\ufdcf"
+    "\ufdf0-\ufffd\U00010000-\U000effff"
 )
 PN_CHARS_U = PN_CHARS_BASE + "_"
-PN_CHARS = PN_CHARS_U + "\\-0-9\u00B7\u0300-\u036F\u203F-\u2040"
+PN_CHARS = PN_CHARS_U + "\\-0-9\u00b7\u0300-\u036f\u203f-\u2040"
 PN_PREFIX_RE = re.compile(
     "[" + PN_CHARS_BASE + "](?:[" + PN_CHARS + ".]*[" + PN_CHARS + "])?"
 )
@@ -129,9 +129,11 @@ def turtle_iri_escape(iri):
     the UTF-8 bytes of characters the IRIREF production forbids. All other
     characters, including non-ASCII, pass through unchanged."""
     return "".join(
-        "".join("%%%02X" % byte for byte in char.encode("utf-8"))
-        if char in IRIREF_FORBIDDEN
-        else char
+        (
+            "".join("%%%02X" % byte for byte in char.encode("utf-8"))
+            if char in IRIREF_FORBIDDEN
+            else char
+        )
         for char in iri
     )
 

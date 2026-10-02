@@ -225,9 +225,7 @@ def testBaseSerialization(primitives, profile, turtle_parser, serialize_turtle):
     f.seek(0)
     turtle_parser.parse(f.read())
     f.seek(0)
-    assert (
-        f.read().strip()
-        == """@base <http://example.com/> .
+    assert f.read().strip() == """@base <http://example.com/> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix dc: <http://purl.org/dc/terms/> .
@@ -240,7 +238,6 @@ def testBaseSerialization(primitives, profile, turtle_parser, serialize_turtle):
 <foo> dc:title "Foo" ;
       .
     """.strip()
-    )
 
 
 def testBaseAndPrefixSerialization(
@@ -266,9 +263,7 @@ def testBaseAndPrefixSerialization(
     f.seek(0)
     turtle_parser.parse(f.read())
     f.seek(0)
-    assert (
-        f.read().strip()
-        == """@base <http://example.com/> .
+    assert f.read().strip() == """@base <http://example.com/> .
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix ex: <http://example.com/> .
@@ -282,7 +277,6 @@ ex:baz dc:subject ex:foo ;
 ex:foo dc:title "Foo" ;
        .
     """.strip()
-    )
 
 
 def testMultiplePredicates(primitives, profile, turtle_parser, serialize_turtle):
@@ -305,9 +299,7 @@ def testMultiplePredicates(primitives, profile, turtle_parser, serialize_turtle)
     f.seek(0)
     turtle_parser.parse(f.read())
     f.seek(0)
-    assert (
-        f.read().strip()
-        == """
+    assert f.read().strip() == """
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix ex: <http://example.com/> .
@@ -321,7 +313,6 @@ ex:garply dc:author "Baz" ;
           dc:subject ex:thegarply ;
           dc:title "Garply" ;
           .""".strip()
-    )
 
 
 def testListSerialization(primitives, profile, turtle_parser, serialize_turtle):
@@ -338,16 +329,13 @@ def testListSerialization(primitives, profile, turtle_parser, serialize_turtle):
     f.seek(0)
     turtle_parser.parse(f.read())
     f.seek(0)
-    assert (
-        f.read().strip()
-        == """
+    assert f.read().strip() == """
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix ex: <http://example.com/> .
 @prefix dc: <http://purl.org/dc/terms/> .
 ex:foo dc:author ("Foo" "Bar" "Baz") ;
        .""".strip()
-    )
 
 
 def test_turtle_string_escape():
@@ -554,8 +542,8 @@ def test_nt_escape_writes_non_ascii_raw():
     """Characters that need neither ECHAR nor UCHAR are written natively."""
     from pymantic.serializers import nt_escape
 
-    assert nt_escape("caf\u00e9 \u65e5\u672c \U0001F600 \U0010FFFF") == (
-        "caf\u00e9 \u65e5\u672c \U0001F600 \U0010FFFF"
+    assert nt_escape("caf\u00e9 \u65e5\u672c \U0001f600 \U0010ffff") == (
+        "caf\u00e9 \u65e5\u672c \U0001f600 \U0010ffff"
     )
 
 
@@ -570,12 +558,12 @@ def test_nt_escape_non_xml_chars_use_uchar():
 def test_ntriples_non_ascii_round_trip(primitives):
     s = primitives.NamedNode("http://x/s")
     p = primitives.NamedNode("http://x/p")
-    o = primitives.Literal("caf\u00e9 \u65e5\u672c \U0001F600 \ufffe")
+    o = primitives.Literal("caf\u00e9 \u65e5\u672c \U0001f600 \ufffe")
     graph = primitives.Graph().add(primitives.Triple(s, p, o))
     f = StringIO()
     serialize_ntriples(graph, f)
     assert f.getvalue() == (
-        '<http://x/s> <http://x/p> "caf\u00e9 \u65e5\u672c \U0001F600 \\uFFFE" .\n'
+        '<http://x/s> <http://x/p> "caf\u00e9 \u65e5\u672c \U0001f600 \\uFFFE" .\n'
     )
     f.seek(0)
     parsed = primitives.Graph()

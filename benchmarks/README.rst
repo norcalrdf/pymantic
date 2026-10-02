@@ -65,9 +65,11 @@ Tools
     full collection takes, and the collections during ``canonical_labels``.
 ``graph_index.py``
     The ``Graph`` and ``Dataset`` index: load time, bytes per triple,
-    collector-tracked objects, ``match`` time for each pattern and iteration
-    speed; ``--dataset-per-file`` loads the FHIR examples as one named graph
-    per file. Uses only the public API, so run it on two source trees to
+    collector-tracked objects, ``match`` time for each pattern, iteration
+    speed, and adds interleaved with queries (for tuning the merge
+    constants); ``--retained`` adds the memory of a parsed graph, terms
+    included, and ``--dataset-per-file`` loads the FHIR examples as one named
+    graph per file. Uses only the public API, so run it on two source trees to
     compare an index change.
 ``compare_implementations.py``
     The Measurements table of ``docs/graph-comparison.rst``: pymantic against

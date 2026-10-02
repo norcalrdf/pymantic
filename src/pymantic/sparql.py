@@ -16,7 +16,6 @@ ERROR_BODY_LIMIT = 1000
 
 
 class SPARQLQueryException(Exception):
-
     """Raised when the SPARQL store returns an HTTP status code other than 200 OK.
 
     :ivar status_code: The HTTP status code of the response.
@@ -39,14 +38,12 @@ class SPARQLQueryException(Exception):
 
 
 class UnknownSPARQLReturnTypeException(Exception):
-
     """Raised when the SPARQL store provides a response with an unrecognized content-type."""
 
     pass
 
 
 class _SelectOrUpdate:
-
     """A server that can run SPARQL queries."""
 
     def __init__(
@@ -172,7 +169,6 @@ class _Update(_SelectOrUpdate):
 
 
 class SPARQLServer:
-
     """A server that can run SPARQL queries."""
 
     def __init__(

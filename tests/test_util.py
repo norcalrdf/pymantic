@@ -36,15 +36,15 @@ def test_normalize_iri_escaped_ampersand():
 def test_normalize_iri_escaped_international():
     uri = "http://example.com/foo/bar?garply=aap&maz=bi%C3%89s"
     normalized = normalize_iri(uri)
-    assert normalized == "http://example.com/foo/bar?garply=aap&maz=bi\u00C9s"
+    assert normalized == "http://example.com/foo/bar?garply=aap&maz=bi\u00c9s"
     assert normalized == normalize_iri(normalized)
     assert quote_normalized_iri(normalized) == uri
 
 
 def test_decode_literal_escapes():
     assert decode_literal(r"a\tb\nc\\d\"e\'f") == "a\tb\nc\\d\"e'f"
-    assert decode_literal(r"\u00e9\U0001F0A1") == "\u00e9\U0001F0A1"
-    assert decode_literal(r"\ud7ff\ue000\U0010FFFF") == "\ud7ff\ue000\U0010FFFF"
+    assert decode_literal(r"\u00e9\U0001F0A1") == "\u00e9\U0001f0a1"
+    assert decode_literal(r"\ud7ff\ue000\U0010FFFF") == "\ud7ff\ue000\U0010ffff"
 
 
 @pytest.mark.parametrize(

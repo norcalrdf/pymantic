@@ -1,0 +1,69 @@
+[
+  {
+    "name": "schemaorg-shapes",
+    "about": "schema.org 30.1 SHACL shapes: blank-node property shapes, sh:in and sh:or lists",
+    "url": "https://raw.githubusercontent.com/schemaorg/schemaorg/5f2d8cdec99b7329459ef6584e94b6a840f88471/data/releases/30.1/schemaorg-shapes.shacl",
+    "sha256": "f28fded108fc8f4bbb7a9112d927ffb3bccf0bb1b89848f9207dc59af83a9748",
+    "download": "schemaorg-shapes.shacl",
+    "target": "schemaorg-shapes.shacl"
+  },
+  {
+    "name": "fhir-r5-examples",
+    "about": "FHIR R5 (5.0.0) examples in Turtle: nested blank-node trees and lists, 645k triples merged",
+    "url": "https://hl7.org/fhir/R5/examples-ttl.zip",
+    "sha256": "b5a772a07050238e2079ba9b43994c7c33389be8f492c6f1722bd1ac408b30d6",
+    "download": "fhir-r5-examples-ttl.zip",
+    "target": "fhir-r5-examples",
+    "post": "unzip"
+  },
+  {
+    "name": "fhir-r5-ontology",
+    "about": "FHIR R5 (5.0.0) RDF ontology: OWL restrictions",
+    "url": "https://hl7.org/fhir/R5/fhir.ttl",
+    "sha256": "0ced303dc994ef7a05613aca91d911ab463477ad779851a0e65195d39de5497d",
+    "download": "fhir-r5.ttl",
+    "target": "fhir-r5.ttl"
+  },
+  {
+    "name": "brick",
+    "about": "Brick 1.4.2 building ontology: OWL restrictions and SHACL shapes",
+    "url": "https://github.com/BrickSchema/Brick/releases/download/v1.4.2/Brick.ttl",
+    "sha256": "c4a9a35355da6be158123f5dced3a7ad0714d3a2cab51c6a80c4720c3c8d28f0",
+    "download": "brick.ttl",
+    "target": "brick.ttl"
+  },
+  {
+    "name": "obi",
+    "about": "Ontology for Biomedical Investigations, release 2026-07-27: OWL restrictions, unionOf/intersectionOf",
+    "url": "http://purl.obolibrary.org/obo/obi/2026-07-27/obi.owl",
+    "sha256": "8874abcca971ee26b4e4442198387916d788d14af3519e1040474908ed12b946",
+    "download": "obi.owl",
+    "target": "obi.nt",
+    "post": "rdfxml-to-ntriples"
+  },
+  {
+    "name": "doid",
+    "about": "Disease Ontology, release 2026-09-30: owl:Axiom annotations and restrictions",
+    "url": "http://purl.obolibrary.org/obo/doid/releases/2026-09-30/doid.owl",
+    "sha256": "7b80ccc70f5d84e7bf3dd93fd2a2f3883506076e35f592bd750490708bb5ab1f",
+    "download": "doid.owl",
+    "target": "doid.nt",
+    "post": "rdfxml-to-ntriples"
+  },
+  {
+    "name": "dash",
+    "about": "TopBraid DASH SHACL vocabulary, as served by datashapes.org (Wayback snapshot of 2026-06-16)",
+    "url": "https://web.archive.org/web/20260616024454id_/https://datashapes.org/dash.ttl",
+    "sha256": "01a32d725a0093910d17596102dc38a0ead231fa9d8ebed0bb433abfb705ebf4",
+    "download": "dash.ttl",
+    "target": "dash.ttl"
+  },
+  {
+    "name": "wot-td-validation",
+    "about": "W3C WoT Thing Description SHACL shapes",
+    "url": "https://raw.githubusercontent.com/w3c/wot-thing-description/ad241b051f52df2a98b98a4eb98eb587763aee1a/validation/td-validation.ttl",
+    "sha256": "f9110737968956c48299eb7b96a2b04b08ed75d1f91577f37bfc45e5911d0b54",
+    "download": "wot-td-validation.ttl",
+    "target": "wot-td-validation.ttl"
+  }
+]

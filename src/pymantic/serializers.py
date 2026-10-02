@@ -1,6 +1,8 @@
 from collections import Counter, OrderedDict
 import re
 
+from pymantic.util import strips_to_relative_reference
+
 
 def validate_language(language):
     """Reject language tags that cannot be emitted as an RDF LANGTAG."""
@@ -159,7 +161,7 @@ def turtle_repr(node, profile, name_map, bnode_name_maker, base=None):
             name = escape_prefix_local(name)
         if name is None or name == node:
             iri = str(node)
-            if base and iri.startswith(base):
+            if base and strips_to_relative_reference(base, iri):
                 iri = ("#" if base.endswith("#") else "") + iri[len(base) :]
             name = f"<{turtle_iri_escape(iri)}>"
     elif node.interfaceName == "BlankNode":

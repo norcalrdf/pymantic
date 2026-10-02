@@ -6,6 +6,7 @@ from pymantic.util import (
     quote_normalized_iri,
     resolve_iri,
     smart_urljoin,
+    strips_to_relative_reference,
 )
 
 
@@ -157,3 +158,22 @@ def test_resolve_iri(base, reference, expected):
 
 def test_smart_urljoin_resolves_like_resolve_iri():
     assert smart_urljoin("http://ab//de//ghi", "../xyz#") == "http://ab//de/xyz#"
+
+
+@pytest.mark.parametrize(
+    "base, iri, expected",
+    [
+        ("http://x/a/", "http://x/a/b", True),
+        ("http://x/a#", "http://x/a#b", True),
+        ("http://x/a#", "http://x/a#", True),
+        ("http://x/a/", "http://x/a/", True),
+        ("http://x/a/", "http://y/a/b", False),
+        ("http://x/a", "http://x/ab", False),
+        ("http://x/a", "http://x/a/b", False),
+        ("http://x/a/", "http://x/a/b:c", False),
+        ("http://x/a/", "http://x/a//b", False),
+        ("http://x/a#f", "http://x/a#f", False),
+    ],
+)
+def test_strips_to_relative_reference(base, iri, expected):
+    assert strips_to_relative_reference(base, iri) is expected

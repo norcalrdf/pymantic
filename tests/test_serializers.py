@@ -462,6 +462,57 @@ def test_named_node_with_base_iri_escaping(primitives, profile, turtle_repr):
     assert name == "<#bar%20baz>"
 
 
+@pytest.mark.parametrize(
+    "iri, base",
+    [
+        # Shares the base as a string prefix but not as a path segment.
+        ("http://x/ab", "http://x/a"),
+        # The remainder's first segment would read as a scheme.
+        ("http://x/a/b:c", "http://x/a/"),
+        # The remainder would read as an absolute path.
+        ("http://x/a//b", "http://x/a/"),
+        # An empty reference drops the base's fragment.
+        ("http://x/a#f", "http://x/a#f"),
+    ],
+)
+def test_named_node_with_base_stays_absolute_when_relative_form_misresolves(
+    primitives, profile, turtle_repr, iri, base
+):
+    name = turtle_repr(
+        node=primitives.NamedNode(iri),
+        profile=profile,
+        name_map=None,
+        bnode_name_maker=None,
+        base=base,
+    )
+    assert name == f"<{iri}>"
+
+
+def test_named_node_equal_to_hash_base(primitives, profile, turtle_repr):
+    name = turtle_repr(
+        node=primitives.NamedNode("http://x/a#"),
+        profile=profile,
+        name_map=None,
+        bnode_name_maker=None,
+        base="http://x/a#",
+    )
+    assert name == "<#>"
+
+
+def test_turtle_base_round_trip(primitives, profile, turtle_parser, serialize_turtle):
+    s = primitives.NamedNode("http://x/ab")
+    p = primitives.NamedNode("http://x/p")
+    o = primitives.NamedNode("http://x/a/b:c")
+    o2 = primitives.NamedNode("http://x/a/c")
+    graph = primitives.Graph()
+    graph.add(primitives.Triple(s, p, o))
+    graph.add(primitives.Triple(s, p, o2))
+    f = StringIO()
+    serialize_turtle(graph=graph, f=f, profile=profile, base="http://x/a/")
+    assert "<c>" in f.getvalue()
+    assert set(turtle_parser.parse(f.getvalue())) == set(graph)
+
+
 def test_turtle_iri_injection_round_trip(
     primitives, profile, turtle_parser, serialize_turtle
 ):

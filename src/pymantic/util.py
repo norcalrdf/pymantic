@@ -199,6 +199,19 @@ def smart_urljoin(base, url):
     return resolve_iri(base, url)
 
 
+def strips_to_relative_reference(base, iri):
+    """Whether removing `base` from the front of `iri` leaves a relative
+    reference that resolves back to `iri`, as the Turtle serializer writes
+    it: the remainder, with a leading ``#`` when the base ends in one. A
+    string prefix of the base is not always a reference to it: against
+    <http://x/a>, stripping <http://x/ab> leaves <b>, which resolves to
+    <http://x/b>."""
+    if not iri.startswith(base):
+        return False
+    relative = ("#" if base.endswith("#") else "") + iri[len(base) :]
+    return resolve_iri(base, relative) == iri
+
+
 def grouper(iterable, n, fillvalue=None):
     "Collect data into fixed-length chunks or blocks"
     # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"

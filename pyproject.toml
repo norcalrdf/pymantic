@@ -4,7 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-W always"
+# The second -W comes after "-W always" so it wins for that one warning:
+# betamax 0.9.0, the latest release, calls datetime.utcnow() while recording
+# in tests/test_SPARQL.py. Fixed upstream but unreleased:
+# https://github.com/betamaxpy/betamax/issues/209
+addopts = """-W always
+    -W 'ignore:datetime.datetime.utcnow() is deprecated:DeprecationWarning:betamax.adapter'"""
 testpaths = [
     "tests",
 ]

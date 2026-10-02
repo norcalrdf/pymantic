@@ -30,6 +30,7 @@ def star_import_parsers():
 @without_pyld
 def test_star_import_omits_jsonld_parser_without_pyld():
     assert star_import_parsers() == [
+        "linetrig_parser",
         "nquads_parser",
         "ntriples_parser",
         "turtle_parser",
@@ -40,6 +41,7 @@ def test_star_import_omits_jsonld_parser_without_pyld():
 def test_star_import_includes_jsonld_parser_with_pyld():
     assert star_import_parsers() == [
         "jsonld_parser",
+        "linetrig_parser",
         "nquads_parser",
         "ntriples_parser",
         "turtle_parser",

@@ -196,9 +196,10 @@ class OffsetTripleIndex:
         keys = self._keys
         if key in keys:
             return False
-        # Check the range before any change rather than relying on
-        # array.insert to reject it: GraalPy grows the column with a 0
-        # before raising OverflowError, which would misalign the columns.
+        # Check the range before any change rather than relying on the
+        # arrays to reject it: GraalPy's array.append grows a column with a
+        # 0 before raising OverflowError, and a stale index only stores the
+        # key, so nothing else would check it.
         if not (0 <= s <= _MASK32 and 0 <= p <= _MASK32 and 0 <= o <= _MASK32):
             raise OverflowError("OffsetTripleIndex ids must be in range(2**32)")
         keys[key] = None

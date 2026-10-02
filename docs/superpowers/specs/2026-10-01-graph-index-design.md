@@ -92,11 +92,14 @@ tuple equality ignores the subclass, so a bare tuple subclass would merge a
 triple term and a literal with equal parts into one id.
 
 **Compaction.** A triple refers to at most 3 terms, so the live terms number
-at most 3n for n triples (quads, in a dataset). After a remove, if
-`len(_terms) > 6n`, at least half the dictionary is provably dead, and
-`compact()` runs:
+at most 3n for n triples (quads, in a dataset; plus one per graph name).
+After a remove, if the number of interned terms, `len(_ids)`, exceeds
+`6n + names`, at least half of them are provably dead, and `compact()`
+runs. It counts `_ids`, not `_terms`: freed slots stay in `_terms` as `None`
+and must not keep the trigger firing.
 
 1. Scan the index arrays (and, in a dataset, the graph names) for live ids.
+   The scan is the caller's job; `compact(live_ids)` frees every other id.
 2. Set each dead id's slot to `None`, delete it from `_ids`, push it on
    `_free`.
 
@@ -188,6 +191,11 @@ blank nodes can be shared between its graphs (RDF 1.2 Concepts 4.1).
   inside the dataset; edits to it do not reach the dataset.
 - `Triple in dataset` means the triple is in the default graph. A `Quad` is
   checked in its graph. `__contains__` returns a `bool`.
+- `match(..., graph=None)` keeps today's meaning, any graph, and yields
+  `Quad`s whose `graph` is `None` for the default graph.
+- `remove_graph(None)` raises `ValueError`: the default graph always exists.
+- `Graph.add` raises `TypeError` for anything that is not three terms, so a
+  `Quad` can no longer be put in a `Graph`.
 - Compaction counts quads across all graphs, and the live scan covers every
   graph's arrays and every graph name.
 
@@ -206,8 +214,8 @@ same meaning.
 
 pymantic gets a Line-TriG reader and writer (about 100-150 lines, reusing the
 N-Triples grammar). The reader rejects any line outside the profile with its
-line number. They land on their own branch before the index; the index
-tests use them.
+line number. They are the first commits on this branch, ahead of the index;
+the index tests use them.
 
 ## Behavior changes (for the changelog)
 
@@ -224,6 +232,9 @@ tests use them.
   are unaffected: they sort.
 - `match` and the graph return the graph's own instance of each term, equal
   to the one added.
+- `Graph()` without a name has `uri` `None`, not `NamedNode("None")`.
+- The N-Quads parser returns a `Dataset`. Passing it a `Graph` raises
+  `TypeError`; `Graph.add` rejects `Quad`s.
 - `Dataset`: reads no longer create graphs; `remove_graph` works; empty named
   graphs persist; `Triple in dataset` checks only the default graph;
   `__contains__` returns a `bool`; `add_graph` copies, so the passed `Graph`
@@ -241,7 +252,8 @@ New `tests/test_index.py`, with Dataset fixtures in Line-TriG:
   `objects` must agree. Stdlib `random` with fixed seeds.
 - Regressions for each fixed bug in Behavior changes.
 - Term dictionary: free-list reuse, the compaction trigger at the
-  `len(_terms) > 6n` boundary, `OverflowError` past 2^32 (with the limit
+  `len(_ids) > 6n + names` boundary, the trigger not refiring after a
+  compaction, `OverflowError` past 2^32 (with the limit
   patched low), and a `Literal` and a triple term with colliding parts
   getting distinct ids. Until the 2.0 triple-term type exists, that test
   uses a stand-in class meeting the stated requirement and is replaced when

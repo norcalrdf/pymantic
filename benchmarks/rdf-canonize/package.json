@@ -1,0 +1,10 @@
+{
+  "name": "pymantic-benchmarks-rdf-canonize",
+  "version": "1.0.0",
+  "description": "Runs rdf-canonize for benchmarks/compare_implementations.py",
+  "type": "commonjs",
+  "dependencies": {
+    "rdf-canonize": "5.0.0"
+  },
+  "private": true
+}

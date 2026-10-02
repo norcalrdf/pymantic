@@ -237,6 +237,11 @@ reference RDFC-1.0 implementation in Node, shown at the best of its work
 factor settings because its default aborts on 18 of the RDFC-1.0 suite's own
 inputs; and rdflib 7.6.0's canonicalizer, which is what its ``isomorphic``
 computes. rdflib was capped at 60 seconds per input, the others at 120.
+``benchmarks/compare_implementations.py`` produces this table; see
+``benchmarks/README.rst`` for fetching the schema.org data. Its synthetic
+graphs use the same generators, though the 5000-person graph now has a seed
+of its own, and which rdf-canonize work factor gave each row above was not
+recorded, so the script tries several and reports the fastest that finishes.
 
 .. list-table::
    :header-rows: 1

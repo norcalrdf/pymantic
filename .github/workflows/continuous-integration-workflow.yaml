@@ -28,6 +28,21 @@ jobs:
       - run: pip install tox
       - run: tox
 
+  core:
+    name: Pymantic Tests (without JSON-LD)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: "pip"
+      - run: pip install tox
+      - run: tox -e core
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

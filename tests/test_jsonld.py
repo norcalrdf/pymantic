@@ -7,17 +7,22 @@ make the parsing host issue arbitrary HTTP requests.
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
-from pyld.jsonld import JsonLdError, requests_document_loader
 import pytest
 import threading
 import uuid
 
-from pymantic.parsers.jsonld import (
+# JSON-LD support is the optional jsonld extra.
+pytest.importorskip("pyld", reason="needs the jsonld extra")
+
+from pyld.jsonld import JsonLdError, requests_document_loader  # noqa: E402
+
+from pymantic.parsers import jsonld_parser  # noqa: E402
+from pymantic.parsers.jsonld import (  # noqa: E402
     PyLDLoader,
     RemoteContextsDisabledError,
     UnsafePyLDLoader,
 )
-from pymantic.primitives import Literal, NamedNode, Quad
+from pymantic.primitives import Graph, Literal, NamedNode, Quad  # noqa: E402
 
 NAME_IRI = "http://ex/name"
 XSD_STRING = NamedNode("http://www.w3.org/2001/XMLSchema#string")
@@ -117,6 +122,22 @@ def test_options_loader_overrides_constructor_loader(context_server):
         parser.parse_json(document, options={"documentLoader": refuse})
 
     assert context_server.requests == []
+
+
+def test_jsonld_basic():
+    jsonld = """[{
+  "@id": "http://example.com/id1",
+  "@type": ["http://example.com/t1"],
+  "http://example.com/term1": ["v1"],
+  "http://example.com/term2": [{"@value": "v2", "@type": "http://example.com/t2"}],
+  "http://example.com/term3": [{"@value": "v3", "@language": "en"}],
+  "http://example.com/term4": [4],
+  "http://example.com/term5": [50, 51]
+}]
+"""
+    g = Graph()
+    jsonld_parser.parse_json(json.loads(jsonld), g)
+    assert len(g) == 7
 
 
 def test_inline_context_needs_no_loader():

@@ -1,5 +1,7 @@
 """Parse RDF serialized as jsonld
 
+JSON-LD support needs the ``jsonld`` extra: ``pip install 'pymantic[jsonld]'``.
+
 Usage::
 
   from pymantic.parsers.jsonld import jsonld_parser
@@ -30,7 +32,16 @@ for documents you trust::
 """
 
 import json
-from pyld.jsonld import JsonLdError, requests_document_loader, to_rdf
+
+try:
+    from pyld.jsonld import JsonLdError, requests_document_loader, to_rdf
+except ModuleNotFoundError as e:
+    if e.name != "pyld":
+        raise
+    raise ImportError(
+        "JSON-LD support requires pyld; "
+        "install it with: pip install 'pymantic[jsonld]'"
+    ) from e
 
 from .base import BaseParser
 

@@ -6,17 +6,20 @@ generation run during canonical_labels and how long they take.
 
     python benchmarks/gc_census.py fhir-r5-examples
     python benchmarks/gc_census.py fhir-r5-examples --freeze
+    python benchmarks/gc_census.py fhir-r5-examples --index adjacency
 
 Young collections are cheap; a full (generation 2) collection walks every
 tracked object, the input graph included, so its cost is paid by any
 long-lived program holding the graph. --freeze calls gc.freeze() after
 loading, which takes the graph out of the collector's reach and shows how
 much of the full collections' cost is pymantic.compare's own objects.
+--index picks the triple index implementation (see index_choice.py).
 """
 
 import argparse
 from collections import Counter, defaultdict
 import gc
+import index_choice
 import inputs
 import time
 
@@ -62,8 +65,10 @@ def main():
     ap.add_argument("input", help="one input name from benchmarks/inputs.py")
     ap.add_argument("--freeze", action="store_true", help="gc.freeze() after loading")
     ap.add_argument("--types", type=int, default=8, help="tracked types to list")
+    index_choice.add_argument(ap)
     args = ap.parse_args()
     print(f"pymantic from {pymantic.__file__}")
+    index_choice.use(args.index)
 
     gc.collect()
     before = len(gc.get_objects())

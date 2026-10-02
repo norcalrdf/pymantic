@@ -1,7 +1,14 @@
 import datetime
 import pytest
 
-from pymantic.primitives import Graph, Literal, NamedNode, Prefix, Triple
+from pymantic.primitives import (
+    Graph,
+    Literal,
+    NamedNode,
+    Prefix,
+    PrefixMap,
+    Triple,
+)
 import pymantic.rdf
 import pymantic.util
 
@@ -16,59 +23,96 @@ def reset_metaresource():
     pymantic.rdf.MetaResource._classes = {}
 
 
-def testCurieURI(reset_metaresource):
-    """Test CURIE parsing of explicit URIs."""
-    test_ns = {
-        "http": Prefix("WRONG!"),
-        "urn": Prefix("WRONG!"),
-    }
-    assert pymantic.rdf.parse_curie("http://example.com", test_ns) == NamedNode(
-        "http://example.com"
-    )
-    assert pymantic.rdf.parse_curie("urn:isbn:1234567890123", test_ns) == NamedNode(
+def testResolveAbsoluteIRIs(reset_metaresource):
+    """A value whose suffix starts with // is always an absolute IRI, even
+    when its scheme is also a declared prefix."""
+    prefixes = PrefixMap({"http": "reallybadidea/"})
+    assert prefixes.resolve("http://example.com") == NamedNode("http://example.com")
+
+
+def testResolveUndeclaredPrefixAsIRI(reset_metaresource):
+    """A value whose prefix isn't declared is taken as an absolute IRI."""
+    prefixes = PrefixMap({"foo": "WRONG!"})
+    assert prefixes.resolve("urn:isbn:1234567890123") == NamedNode(
         "urn:isbn:1234567890123"
     )
+    assert prefixes.resolve("bar:baz") == NamedNode("bar:baz")
 
 
-def testCurieDefaultPrefix(reset_metaresource):
-    """Test CURIE parsing of CURIEs in the default Prefix."""
-    test_ns = {"": Prefix("foo/"), "wrong": Prefix("WRONG!")}
-    assert pymantic.rdf.parse_curie("bar", test_ns) == NamedNode("foo/bar")
-    assert pymantic.rdf.parse_curie("[bar]", test_ns) == NamedNode("foo/bar")
-    assert pymantic.rdf.parse_curie("baz", test_ns) == NamedNode("foo/baz")
-    assert pymantic.rdf.parse_curie("[aap]", test_ns) == NamedNode("foo/aap")
-
-
-def testCurieprefixes(reset_metaresource):
-    """Test CURIE parsing of CURIEs in non-default prefixes."""
-    test_ns = {
-        "": Prefix("WRONG!"),
-        "foo": Prefix("foobly/"),
-        "bar": Prefix("bardle/"),
-        "http": Prefix("reallybadidea/"),
-    }
-    assert pymantic.rdf.parse_curie("foo:aap", test_ns) == NamedNode("foobly/aap")
-    assert pymantic.rdf.parse_curie("[bar:aap]", test_ns) == NamedNode("bardle/aap")
-    assert pymantic.rdf.parse_curie("[foo:baz]", test_ns) == NamedNode("foobly/baz")
-    assert pymantic.rdf.parse_curie("bar:baz", test_ns) == NamedNode("bardle/baz")
-    assert pymantic.rdf.parse_curie("[http://example.com]", test_ns) == NamedNode(
-        "reallybadidea///example.com"
+def testResolveDeclaredPrefixWinsOverScheme(reset_metaresource):
+    """A declared prefix expands even when it is also a URI scheme."""
+    prefixes = PrefixMap(
+        {
+            "geo": "http://www.w3.org/2003/01/geo/wgs84_pos#",
+            "urn": "http://example.com/urn/",
+        }
+    )
+    assert prefixes.resolve("geo:lat") == NamedNode(
+        "http://www.w3.org/2003/01/geo/wgs84_pos#lat"
+    )
+    assert prefixes.resolve("urn:isbn:1234567890123") == NamedNode(
+        "http://example.com/urn/isbn:1234567890123"
     )
 
 
-def testUnparseableCuries(reset_metaresource):
-    """Test some CURIEs that shouldn't parse."""
-    test_ns = {
-        "foo": Prefix("WRONG!"),
-    }
+def testResolveDefaultPrefix(reset_metaresource):
+    """A value with no colon, or an empty prefix, uses the default prefix."""
+    prefixes = PrefixMap({"": "foo/", "wrong": "WRONG!"})
+    assert prefixes.resolve("bar") == NamedNode("foo/bar")
+    assert prefixes.resolve(":baz") == NamedNode("foo/baz")
+
+
+def testResolveDeclaredPrefixes(reset_metaresource):
+    """Declared prefixes expand."""
+    prefixes = PrefixMap({"": "WRONG!", "foo": "foobly/", "bar": "bardle/"})
+    assert prefixes.resolve("foo:aap") == NamedNode("foobly/aap")
+    assert prefixes.resolve("bar:baz") == NamedNode("bardle/baz")
+
+
+def testUnresolvableValues(reset_metaresource):
+    """Values that are neither prefixed names nor absolute IRIs raise."""
+    prefixes = PrefixMap({"foo": "WRONG!"})
     with pytest.raises(ValueError):
-        pymantic.rdf.parse_curie("[bar]", test_ns)
+        prefixes.resolve("bar")
     with pytest.raises(ValueError):
-        pymantic.rdf.parse_curie("bar", test_ns)
+        prefixes.resolve(":bar")
     with pytest.raises(ValueError):
-        pymantic.rdf.parse_curie("bar:baz", test_ns)
+        prefixes.resolve("_:b0")
     with pytest.raises(ValueError):
-        pymantic.rdf.parse_curie("[bar:baz]", test_ns)
+        prefixes.resolve("1bar:baz")
+
+
+def testResourceResolveFallsBackToGlobalProfile(reset_metaresource):
+    """A prefix the class doesn't declare resolves through the global profile,
+    and one neither declares is taken as an absolute IRI."""
+
+    class Thing(pymantic.rdf.Resource):
+        prefixes = {"ex": "http://example.com/"}
+
+    assert Thing.resolve("ex:a") == NamedNode("http://example.com/a")
+    assert Thing.resolve("xsd:string") == XSD("string")
+    assert Thing.resolve("urn:x") == NamedNode("urn:x")
+
+
+def testScalarsResolveThroughGlobalProfile(reset_metaresource):
+    """Scalars resolve like predicates do, including prefixes only the global
+    profile declares."""
+
+    class Thing(pymantic.rdf.Resource):
+        prefixes = {"ex": "http://example.com/"}
+        scalars = frozenset(("ex:a", "xsd:string"))
+
+    assert NamedNode("http://example.com/a") in Thing.scalars
+    assert XSD("string") in Thing.scalars
+    assert NamedNode("xsd:string") not in Thing.scalars
+
+
+def testUnresolvableScalarRaises(reset_metaresource):
+    """A scalar that resolves to nothing fails when the class is defined."""
+    with pytest.raises(ValueError, match="labl"):
+
+        class Thing(pymantic.rdf.Resource):
+            scalars = frozenset(("labl",))
 
 
 def testMetaResourceNothingUseful(reset_metaresource):

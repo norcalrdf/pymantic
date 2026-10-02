@@ -6,9 +6,9 @@ from pymantic.primitives import (
     Graph,
     Literal,
     NamedNode,
+    PrefixMap,
     Quad,
     Triple,
-    to_curie,
 )
 
 
@@ -16,11 +16,10 @@ def en(s):
     return Literal(s, "en")
 
 
-def test_to_curie_multi_match():
+def test_shrink_multi_match():
     """Test that the longest match for prefix is used"""
-    namespaces = {"short": "aa", "long": "aaa"}
-    curie = to_curie("aaab", namespaces)
-    assert curie == "long:b"
+    prefixes = PrefixMap({"short": "aa", "long": "aaa"})
+    assert prefixes.shrink("aaab") == "long:b"
 
 
 def test_simple_add():
@@ -329,15 +328,13 @@ def test_BlankNode_ntriples_round_trip():
     assert triple.subject is triple.object
 
 
-def test_to_curie_only_shrinks_leading_namespace():
-    from pymantic.primitives import to_curie
-
-    namespaces = {"ex": "http://example.com/"}
+def test_shrink_only_shrinks_leading_namespace():
+    prefixes = PrefixMap({"ex": "http://example.com/"})
     assert (
-        to_curie("http://example.com/a?u=http://example.com/b", namespaces)
+        prefixes.shrink("http://example.com/a?u=http://example.com/b")
         == "ex:a?u=http://example.com/b"
     )
-    assert to_curie("http://other.example/a", namespaces) == "http://other.example/a"
+    assert prefixes.shrink("http://other.example/a") == "http://other.example/a"
 
 
 def ordered_triples(n=3):

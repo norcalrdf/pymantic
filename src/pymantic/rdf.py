@@ -13,7 +13,6 @@ from pymantic.primitives import (
     Triple,
     is_language,
     lang_match,
-    parse_curie,
 )
 import pymantic.util as util
 
@@ -37,13 +36,22 @@ class MetaResource(type):
             for prefix in dct["prefixes"]:
                 prefixes[prefix] = Prefix(dct["prefixes"][prefix])
         dct["prefixes"] = prefixes
-        if "scalars" in dct:
-            for scalar in dct["scalars"]:
-                scalars.add(parse_curie(scalar, prefixes))
-        dct["scalars"] = frozenset(scalars)
+        own_scalars = dct.pop("scalars", ())
         dct["_meta_resource"] = cls
 
-        return type.__new__(cls, name, bases, dct)
+        new_class = type.__new__(cls, name, bases, dct)
+        # Resolve scalars the way predicates are resolved, which needs the
+        # finished class so prefixes it doesn't declare reach the global
+        # profile. Classes that aren't Resources only have their prefixes.
+        resolve = getattr(new_class, "resolve", prefixes.resolve)
+        for scalar in own_scalars:
+            # An unknown term resolves to None through the global profile.
+            predicate = resolve(scalar)
+            if predicate is None:
+                raise ValueError(f"Could not resolve scalar {scalar!r}")
+            scalars.add(predicate)
+        new_class.scalars = frozenset(scalars)
+        return new_class
 
 
 def register_class(rdf_type):
@@ -71,8 +79,8 @@ class Resource(metaclass=MetaResource):
     sets. By subclassing Resource, you can take advantage of a number of
     quality-of-life features:
 
-    1) Bind prefixes to prefixes, and refer to them using CURIEs when
-       accessing predicates or explicitly resolving CURIEs. Store a dictionary
+    1) Bind prefixes to namespaces, and refer to them using prefixed names
+       when accessing predicates or explicitly resolving names. Store a dictionary
        mapping prefixes to URLs in the 'prefixes' attribute of your subclass.
        The prefixes dictionaries on all parents are merged with this
        dictionary, and those at the bottom are prioritized. The values in the
@@ -153,11 +161,18 @@ class Resource(metaclass=MetaResource):
 
     @classmethod
     def resolve(cls, key):
-        """Use this class's prefixes to resolve a curie"""
-        try:
+        """Resolve a prefixed name or term with this class's prefixes, falling
+        back to the global profile when the class doesn't declare the prefix.
+
+        The prefix is checked up front because PrefixMap.resolve takes an
+        undeclared prefix to be an absolute IRI scheme, so it would never
+        fail over to the global profile."""
+        prefix, colon, _ = key.partition(":")
+        if not colon:
+            prefix = ""
+        if prefix in cls.prefixes:
             return cls.prefixes.resolve(key)
-        except ValueError:
-            return cls.global_profile.resolve(key)
+        return cls.global_profile.resolve(key)
 
     def __eq__(self, other):
         if isinstance(other, Resource):
@@ -255,7 +270,7 @@ class Resource(metaclass=MetaResource):
         """Fetch predicates off this subject by key dictionary-style.
 
         This is the primary mechanism for predicate access. You can either
-        provide a predicate name, as a complete URL or CURIE:
+        provide a predicate name, as a complete URL or prefixed name:
 
         resource['rdfs:label']
         resource['http://www.w3.org/2000/01/rdf-schema#label']

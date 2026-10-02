@@ -41,6 +41,16 @@ All notable changes to pymantic are recorded here. The format follows
   3.12 or Pyodide. Without the extra, the rest of pymantic works, and
   importing `pymantic.parsers.jsonld`, or importing `jsonld_parser` from
   `pymantic.parsers`, raises an `ImportError` naming the extra.
+- Prefixed names (`PrefixMap.resolve`, `Profile.resolve`, and the
+  `rdf.Resource` predicate, scalar and class lookups) resolve by JSON-LD's
+  compact IRI rule instead of CURIE Syntax 1.0. A declared prefix always
+  expands, even when it is also a URI scheme such as `geo` or `urn`; a value
+  whose part after the colon starts with `//` is always an absolute IRI; and
+  a value with an undeclared prefix is taken as an absolute IRI instead of
+  raising `ValueError`. Bracketed safe CURIEs (`[foo:bar]`) are no longer
+  recognised.
+- `rdf.Resource` scalars resolve prefixes the global profile declares, such
+  as `xsd`, the same way predicates do.
 - Numeric escapes that produce surrogate code points (`\uD800` to `\uDFFF`)
   or values above U+10FFFF are rejected in all parsers, as the Turtle and
   N-Triples grammars require.
@@ -139,6 +149,9 @@ All notable changes to pymantic are recorded here. The format follows
 - `pymantic.vocab.skos`, which has been unimportable since the Python 3 port.
 - The unpackaged `pymantic/scripts` directory.
 - The direct dependency on `lxml`. Nothing in pymantic imports it any more.
+- `pymantic.primitives.parse_curie`, `parse_curies` and `to_curie`, and the
+  `pymantic.uri_schemes` list they used to tell URIs from CURIEs. Use
+  `PrefixMap.resolve` and `PrefixMap.shrink`.
 
 ### Added
 

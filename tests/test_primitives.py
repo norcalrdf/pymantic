@@ -571,5 +571,8 @@ def test_graph_without_a_name_has_no_uri():
 
 def test_graph_rejects_a_quad():
     q = next(generate_quads(1))
-    with pytest.raises(TypeError):
-        Graph().add(q)
+    g = Graph()
+    with pytest.raises(TypeError, match="a Graph holds triples"):
+        g.add(q)
+    assert len(g) == 0
+    assert list(g) == []

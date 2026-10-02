@@ -5,7 +5,7 @@ import pytest
 
 from pymantic.compare import isomorphic
 from pymantic.parsers import linetrig_parser
-from pymantic.primitives import Dataset, Graph, NamedNode, Quad
+from pymantic.primitives import BlankNode, Dataset, Graph, NamedNode, Quad
 from pymantic.serializers import serialize_linetrig
 
 S = NamedNode("http://e/s")
@@ -31,6 +31,32 @@ def test_empty_named_graph_exists():
     ds = linetrig_parser.parse("<http://e/g> { }\n")
     assert len(ds) == 0
     assert [g.uri for g in ds.graphs if g.uri is not None] == [G]
+
+
+def test_empty_graph_with_a_blank_node_name_exists():
+    ds = linetrig_parser.parse("_:g { }\n")
+    assert len(ds) == 0
+    (name,) = [g.uri for g in ds.graphs if g.uri is not None]
+    assert isinstance(name, BlankNode)
+
+
+@pytest.mark.parametrize("ending", ["\r\n", "\r", "\n"], ids=["crlf", "cr", "lf"])
+def test_every_line_ending_separates_lines(ending):
+    text = ending.join([TRIPLE, "<http://e/g> { " + TRIPLE + " }", "<http://e/h> { }"])
+    for source in (text, text + ending):
+        ds = linetrig_parser.parse(source)
+        assert Quad(S, P, O, None) in ds
+        assert Quad(S, P, O, G) in ds
+        assert len(ds) == 2
+        assert sorted(g.uri.value for g in ds.graphs if g.uri is not None) == [
+            "http://e/g",
+            "http://e/h",
+        ]
+
+
+def test_line_number_counts_cr_and_crlf_endings():
+    with pytest.raises(ValueError, match="line 3"):
+        linetrig_parser.parse(TRIPLE + "\r" + TRIPLE + "\r\nnot a statement\n")
 
 
 def test_empty_graph_line_after_triples_keeps_them():

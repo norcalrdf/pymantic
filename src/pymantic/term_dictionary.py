@@ -40,6 +40,7 @@ class TermDictionary:
         return self._ids.get(term)
 
     def __len__(self):
+        # Live terms, not slots: freed ids still occupy `terms`.
         return len(self._ids)
 
     def compact(self, live_ids):

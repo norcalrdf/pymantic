@@ -77,6 +77,30 @@ def test_compact_with_every_id_live_frees_nothing():
     assert len(d) == 3
 
 
+def test_compacting_twice_frees_nothing_the_second_time():
+    d = TermDictionary()
+    ids = [d.intern(NamedNode("http://e/%d" % n)) for n in range(4)]
+    assert d.compact({ids[0]}) == 3
+    assert d.compact({ids[0]}) == 0
+    # Each freed id is reusable once: no id was listed free twice.
+    reused = [d.intern(NamedNode("http://e/new%d" % n)) for n in range(3)]
+    assert sorted(reused) == ids[1:]
+    assert d.intern(NamedNode("http://e/last")) == 4
+    assert len(d.terms) == 5
+
+
+def test_compacting_after_the_free_list_was_reused_frees_each_id_once():
+    d = TermDictionary()
+    ids = [d.intern(NamedNode("http://e/%d" % n)) for n in range(4)]
+    d.compact({ids[0]})
+    reused = [d.intern(NamedNode("http://e/new%d" % n)) for n in range(3)]
+    assert d.compact({ids[0]}) == 3
+    assert d.compact({ids[0]}) == 0
+    again = [d.intern(NamedNode("http://e/more%d" % n)) for n in range(3)]
+    assert sorted(again) == sorted(reused)
+    assert len(d.terms) == 4
+
+
 def test_intern_raises_overflow_error_at_max_terms(monkeypatch):
     monkeypatch.setattr(term_dictionary, "MAX_TERMS", 3)
     d = TermDictionary()

@@ -109,33 +109,38 @@ compaction. Wasted space stays linear in live triples.
 
 ### Index layout
 
-Each graph has:
+The index is an adjacency list kept three ways, chosen by the trial
+described under "Index trial" below. Each graph has:
 
 - `_keys`: a dict from packed key to `None`. A packed key is
   `s << 64 | p << 32 | o`, an untracked int. The dict is membership, the
   duplicate check, and insertion order: removing and re-adding a key moves it
-  to the end, as `_triples` does today.
-- SPO, POS and OSP orderings, each three parallel `array('I')` columns sorted
-  together lexicographically: 9 arrays, about 36 bytes per triple.
-- A pending buffer: three `array('I')` columns of adds not yet in the
-  orderings.
+  to the end, as `_triples` did.
+- SPO, POS and OSP orderings, each a dict from a first-position id to a
+  row: the sorted packed `second << 32 | third` values of the triples with
+  that first id. `match(s)` is one dict lookup; `match(s, p)` adds a bisect
+  within the row.
+- A row is a tuple. CPython untracks a tuple holding only ints (at creation
+  since 3.14, after its first collection before that), so an ordering costs
+  the collector one dict whatever its size. A row longer than `LIST_DEGREE`
+  (rdf:type in POS, say) is a sorted list instead, so inserts do not rebuild
+  it; only those few rows are tracked.
+- A pending list of adds not yet in the orderings.
 
 Operations:
 
 - `add`: intern the three terms; if the key is new, insert it in `_keys` and
-  append to the buffer.
-- Merge: the first query that needs the orderings sorts the buffer into each
-  ordering. A small buffer is merged; a large one (a bulk load, starting from
-  empty) is sorted once. The threshold between the two is set from the
-  benchmarks.
-- `remove`: delete from `_keys`; delete from the buffer by a linear scan,
-  or from each ordering by bisect. Removing one triple is O(n) per ordering
-  because the arrays shift.
-- `removeMatches`: collect the matches first, then delete them in one
-  rebuild of the orderings.
+  append it to the pending list.
+- Merge: the next query that needs the orderings moves pending adds in. A
+  few are inserted value by value; a batch larger than
+  `max(FOLD_MIN, len(keys) // FOLD_DIVISOR)` is folded: sorted per ordering,
+  grouped by first id, and each touched row rebuilt once.
+- `remove`: delete from `_keys` and bisect the value out of each ordering's
+  row, dropping a row when it empties.
+- `removeMatches`: collect the matches first, then remove them in one pass.
 
-Tracked objects per graph: `_keys`, 12 arrays, and a few fixed attributes.
-Per triple: none from the index.
+Tracked objects per graph: `_keys`, three ordering dicts, the pending list,
+and the list rows of high fan-out keys. Per triple: none.
 
 ### match and iteration
 
@@ -225,11 +230,18 @@ the index tests use them.
   matches.
 - A falsy term such as `NamedNode("")` passed to `match` is a real term, not
   a wildcard.
-- `match` on a pattern with a bound term yields in term-id order (the order
-  terms were first seen in the graph), not per-subject insertion order. In
-  default (non-stable) Turtle output, the objects listed under one predicate
-  can come out in a different order. Stable Turtle and `pymantic.compare`
-  are unaffected: they sort.
+- `match` on a pattern with a bound term yields in index order, not
+  per-subject insertion order. Default (non-stable) Turtle output order
+  (blocks, blank node labels, objects under a predicate) follows index order
+  and is not guaranteed; the old order was never designed (Gavin,
+  2026-10-02). Only `stable=True` output is ordered by content, and it and
+  `pymantic.compare` are unchanged.
+- `subjects()`, `predicates()` and `objects()` with no arguments return lists
+  of distinct terms in term-id order, not dict key views in first-seen
+  order. With arguments they are new Triple-free lookups (`objects(s, p)`
+  and friends), alongside the new `predicate_objects(s)`.
+- `Graph.add` and `Graph.remove` raise `TypeError` for anything that is not
+  three terms, so JSON-LD and N-Quads must be parsed into a `Dataset`.
 - `match` and the graph return the graph's own instance of each term, equal
   to the one added.
 - `Graph()` without a name has `uri` `None`, not `NamedNode("None")`.
@@ -292,7 +304,138 @@ Acceptance:
   measured before and after go in the changelog.
 - Load time and Turtle write time on 3.14 are no slower than today.
 
+## Index trial
+
+The first implementation (sorted `array('I')` columns, the layout this spec
+first described) met the GC and memory goals but missed the speed ones:
+`match(subject=s)` cost 0.95 us against 0.41 us for the old index, Turtle
+writing was up to 62% slower, and one add followed by a query cost ~120 us
+on large graphs, because a merge inserted into nine arrays. `rdf.py`'s
+Resource layer makes one small subject-keyed lookup after another, so lookup
+speed matters beyond the writer.
+
+`Graph` and `Dataset` only use the index through its interface, so
+candidates were swapped in behind it and run under the same tests (the
+20-seed model tests, the mutation and detach rules, the Graph and Dataset
+tests) and the same benchmarks (`benchmarks/graph_index.py`,
+`benchmarks/timing.py`, `benchmarks/gc_census.py`, each with `--index`).
+
+Candidates:
+
+- **sorted**: the first implementation.
+- **offsets**: sorted columns plus a per-term offsets array for O(1) range
+  starts, a small sorted delta for new rows, a set of dead rows, folded into
+  the main columns past a threshold.
+- **B+tree**: per ordering, a list of leaves of `array('I')` columns and a
+  list of each leaf's first key (array leaves, because list-of-int leaves
+  cost ~177 B/triple and doubled full-GC time with no lookup gain).
+- **adjacency**: the layout above.
+- **dict**: the original nested-dict design over ids, as a control.
+
+### Measurements
+
+FHIR R5 examples merged into one graph (645,566 triples), best of 3-5 runs;
+"old" is the unchanged index at 3938832. Index memory and tracked objects
+exclude the caller's terms and Triples. Turtle times are with the
+Triple-free writer.
+
+Python 3.14:
+
+| | old | sorted | offsets | B+tree | adjacency | dict |
+|---|---|---|---|---|---|---|
+| index B/triple | 1030 | 164 | 172 | 165 | 421 | 1082 |
+| tracked objects/triple | 3.79 | 0 | 0 | 0.02 | 0 | 3.79 |
+| full GC, graph loaded | 411 ms | 53 | 54 | 55 | 61 | 280 |
+| load | 1.59 s | 0.64 | 0.68 | 0.62 | 0.68 | 1.52 |
+| 1000 `match(s)` | 1.02 ms | 1.84 | 1.27 | 1.85 | 1.45 | 1.86 |
+| 1000 `match(s, p)` | 0.86 ms | 1.83 | 1.30 | 1.95 | 1.45 | 1.68 |
+| 1000 adds then a query | 1.6 ms | 121 | 7.9 | 3.3 | 6.6 | 1.9 |
+| 1000 add-then-match rounds | 3.2 ms | 126 | 4.4 (one run 464) | 6.6 | 9.5 | 4.6 |
+| default Turtle | 1.44 s | | 1.87 | 2.17 | 1.64 | |
+| stable Turtle | 7.42 s | | 7.95 | 8.26 | 7.73 | |
+
+3.13 and 3.12 gave the same ranking. Python 3.15.0rc2:
+
+| | old | offsets | adjacency |
+|---|---|---|---|
+| index B/triple | 1030 | 172 | 421 |
+| full GC | 432 ms | 54 | 61 |
+| 1000 `match(s)` | 1.03 ms | 1.26 | 1.43 |
+| 1000 adds then a query | 1.6 ms | 5.8 | 6.9 |
+| default / stable Turtle | 1.43 / 7.37 s | 1.91 / 8.29 | 1.66 / 7.80 |
+
+PyPy 3.12 (no memory figures there):
+
+| | old | offsets | B+tree | adjacency |
+|---|---|---|---|---|
+| full GC | 222 ms | 49 | 51 | 69 |
+| 1000 `match(s)` | 1.60 ms | 0.92 | 4.08 | 1.23 |
+| 1000 adds then a query | 1.7 ms | 14.8 | 3.7 | 5.9 |
+| default / stable Turtle | 1.67 / 5.84 s | 1.69 / 5.88 | 1.95 / 6.29 | 1.66 / 5.85 |
+
+Pyodide 3.14 (Turtle on obi, 118k triples):
+
+| | old | offsets | B+tree | adjacency |
+|---|---|---|---|---|
+| index B/triple | 604 | 120 | 113 | 248 |
+| full GC | 1499 ms | 137 | 141 | 152 |
+| 1000 adds then a query | 200 ms | 8.0 | 6.2 | 12.6 |
+| obi default / stable Turtle | 0.47 / 1.07 s | 0.43 / 1.09 | 0.47 / 1.15 | 0.40 / 1.08 |
+
+`canonical_labels` and stable Turtle digests were identical for every
+candidate on every interpreter.
+
+### Findings
+
+- Every array or tuple based candidate meets the GC and memory goals: full
+  collections 7-10x faster, index memory 2.4-6x smaller, load 2.5x faster.
+- No candidate matches the old index on small lookups. The old index handed
+  back Triples it already stored; anything over ids builds them per result.
+  The dict control (old structure, over ids) wrote FHIR Turtle 0.45 s slower
+  than the old index, so about half the writer gap was Triple building, not
+  index structure. The Triple-free `Graph` lookups and writer recovered
+  9-10% for every candidate with byte-identical output.
+- `canonical_labels` did not get faster. Each full collection is ~9x
+  cheaper, but CPython now runs ~4x as many during it (2 vs 8 on FHIR, 3.14):
+  its full-collection trigger is relative to the long-lived tracked objects,
+  which the old index inflated. Its GC time is now `pymantic.compare`'s own
+  working objects.
+- sorted: adds ~100x slower than the others, no lookup advantage. Out.
+- dict: the old GC load. Control only. Out.
+- B+tree: as lean as sorted and the best adds, but lookups no faster than
+  sorted (a bisect inside a boxed `array('I')` leaf) and 4x slower on PyPy,
+  so the slowest writer everywhere. Out.
+- offsets: the fastest `match()`, but a fold pause (~460 ms on FHIR, about
+  one interleave run in five) and slow adds on PyPy.
+- adjacency: never worst on any measure; the fastest writer on every
+  interpreter (within 14% of the old index on CPython FHIR default Turtle,
+  4% stable, equal on PyPy, faster on obi and Pyodide); no fold pauses. Its
+  cost is memory: 421 B/triple, 2.4x offsets, 2.4x less than the old index.
+
+### Decision (Gavin, 2026-10-02)
+
+Adjacency. The other candidates are deleted.
+
+### PyO3
+
+A Rust index behind the same interface is possible later, but would not
+help much now. A profile of FHIR default Turtle with adjacency (3.14,
+cProfile, shares approximate): writer code 45%, built-ins it calls 24%,
+`Graph` id-to-term translation 21%, index 8%, term dictionary 2%. A free
+index would save under a tenth of the write; `canonical_labels` does not
+touch the index. The clear win would be memory (packed u32 rows instead of
+Python int objects). Costs: wheels per platform, a wasm build for Pyodide,
+and on PyPy a C extension is often slower than the JIT running pure Python.
+The pure-Python index stays either way.
+
 ## Future work
+
+- An optional PyO3 index behind the same interface, if memory on very large
+  graphs becomes the constraint (see "Index trial", PyO3). The pure-Python
+  index stays as the fallback, and both run the same model tests.
+- `pymantic.compare`'s working state is now what the collector walks during
+  `canonical_labels`; keeping it in int structures is the next GC gain.
+- `rdf.py`'s `(s, p, ?)` reads should use `Graph.objects(s, p)`.
 
 - A component index for lookups inside triple terms (three more `array('I')`
   columns from a triple term's parts to its id), when a SPARQL engine or

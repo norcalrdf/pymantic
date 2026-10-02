@@ -286,10 +286,8 @@ def parse(string_or_stream, graph=None, base=""):
         # Presume string.
         string = string_or_stream
 
-    if isinstance(string_or_stream, bytes):
-        string = string_or_stream.decode("utf-8")
-    else:
-        string = string_or_stream
+    if isinstance(string, bytes):
+        string = string.decode("utf-8")
 
     tree = turtle_lark.parse(string)
     tr = TurtleTransformer(base_iri=base)

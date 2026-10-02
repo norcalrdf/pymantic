@@ -4,6 +4,8 @@ import pytest
 import random
 import sys
 
+from pymantic.adjacency_index import AdjacencyTripleIndex
+import pymantic.primitives
 from pymantic.primitives import (
     XSD_STRING,
     BlankNode,
@@ -14,6 +16,21 @@ from pymantic.primitives import (
     Quad,
     Triple,
 )
+from pymantic.triple_index import TripleIndex
+
+# Every implementation of the triple index interface; each test here runs
+# once per entry, with Graph and Dataset building that index.
+INDEXES = [
+    TripleIndex,
+    AdjacencyTripleIndex,
+]
+
+
+@pytest.fixture(autouse=True, params=INDEXES, ids=lambda cls: cls.__name__)
+def index_class(request, monkeypatch):
+    monkeypatch.setattr(pymantic.primitives, "TripleIndex", request.param)
+    return request.param
+
 
 IRIS = [NamedNode("")] + [NamedNode("http://e/%d" % i) for i in range(5)]
 BLANKS = [BlankNode() for _ in range(4)]

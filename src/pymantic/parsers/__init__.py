@@ -1,6 +1,11 @@
 from importlib.util import find_spec
 
-from .lark import linetrig_parser, nquads_parser, ntriples_parser, turtle_parser
+from .lark import (
+    linetrig_parser,
+    nquads_parser,
+    ntriples_parser,
+    turtle_parser,
+)
 
 __all__ = ["ntriples_parser", "nquads_parser", "linetrig_parser", "turtle_parser"]
 

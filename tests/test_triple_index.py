@@ -1,6 +1,5 @@
-import random
-
 import pytest
+import random
 
 from pymantic.triple_index import RESORT_DIVISOR, SMALL_MERGE, TripleIndex
 

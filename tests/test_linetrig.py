@@ -1,7 +1,6 @@
 """Tests for the Line-TriG reader (docs/line-trig.rst)."""
 
 from io import StringIO
-
 import pytest
 
 from pymantic.compare import isomorphic

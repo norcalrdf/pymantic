@@ -11,11 +11,10 @@ Every line is parsed on its own, so a statement outside the profile is
 rejected with a ``ValueError`` naming its line number.
 """
 
-import re
 from collections import namedtuple
-
 from lark import Lark
 from lark.exceptions import LarkError
+import re
 
 from pymantic.primitives import Graph, Quad
 

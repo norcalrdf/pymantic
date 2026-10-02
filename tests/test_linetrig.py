@@ -4,13 +4,16 @@ from io import StringIO
 
 import pytest
 
+from pymantic.compare import isomorphic
 from pymantic.parsers import linetrig_parser
-from pymantic.primitives import NamedNode, Quad
+from pymantic.primitives import Dataset, Graph, NamedNode, Quad
+from pymantic.serializers import serialize_linetrig
 
 S = NamedNode("http://e/s")
 P = NamedNode("http://e/p")
 O = NamedNode("http://e/o")  # noqa: E741
 G = NamedNode("http://e/g")
+EMPTY = NamedNode("http://e/empty")
 
 TRIPLE = "<http://e/s> <http://e/p> <http://e/o> ."
 
@@ -96,3 +99,31 @@ OUT_OF_PROFILE = {
 def test_out_of_profile_line_is_rejected_with_its_line_number(line, wrap):
     with pytest.raises(ValueError, match="line 2"):
         linetrig_parser.parse(wrap(TRIPLE + "\n" + line + "\n"))
+
+
+def test_writer_puts_default_graph_first_then_named_then_empty():
+    ds = Dataset()
+    ds.add(Quad(S, P, O, G))
+    ds.add(Quad(S, P, O, None))
+    ds.add_graph(Graph(), named=EMPTY)
+    out = StringIO()
+    serialize_linetrig(ds, out)
+    assert out.getvalue() == (
+        "<http://e/s> <http://e/p> <http://e/o> .\n"
+        "<http://e/g> { <http://e/s> <http://e/p> <http://e/o> . }\n"
+        "<http://e/empty> { }\n"
+    )
+
+
+def test_round_trip_keeps_empty_graphs_and_shared_blank_nodes():
+    original = linetrig_parser.parse(
+        "_:g { _:b <http://e/p> <http://e/o> . }\n"
+        "_:b <http://e/p> _:g .\n"
+        "<http://e/empty> { }\n"
+        '<http://e/g> { <http://e/s> <http://e/p> "a\\nb\\u2028c"@en . }\n'
+    )
+    out = StringIO()
+    serialize_linetrig(original, out)
+    reparsed = linetrig_parser.parse(out.getvalue())
+    assert isomorphic(original, reparsed)
+    assert [g.uri for g in reparsed.graphs if len(g) == 0] == [EMPTY]

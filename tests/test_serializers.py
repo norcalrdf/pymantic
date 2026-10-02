@@ -1,5 +1,5 @@
-from io import StringIO
 import functools
+from io import StringIO
 import pathlib
 import pytest
 import random

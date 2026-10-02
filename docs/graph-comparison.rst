@@ -160,10 +160,13 @@ Points the description above leaves open, and how :mod:`pymantic.compare`
 settles them:
 
 * **Hashes.** Class codes are 64-bit integers from a fixed FNV-style mix.
-  IRIs and literals are coded by an 8-byte BLAKE2b digest of their
-  N-Triples form, cached per term. Python's own ``hash`` is not used because
-  it is seeded per process, which would make stable output differ between
-  runs. BLAKE2b here is a cheap, fixed digest, not a security measure.
+  IRIs and literals are coded by the first 8 bytes of the SHA-256 of their
+  N-Triples form, cached per comparison. Python's own ``hash`` is not used
+  because it is seeded per process, which would make stable output differ
+  between runs. SHA-256 here is a fixed digest available on every Python
+  implementation, not a security measure; BLAKE2b was the first choice, but
+  GraalPy cannot produce its short digests, and SHA-256 costs no more on
+  CPython and less on PyPy.
 * **Term identity.** The term model itself is canonical: every
   :class:`~pymantic.primitives.Literal` carries a datatype, filled in on
   construction with ``xsd:string`` for a simple literal and

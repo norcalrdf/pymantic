@@ -463,6 +463,28 @@ def test_work_limit_can_only_lower_the_budget():
 # Canonical labels -----------------------------------------------------------
 
 
+def test_digests_are_truncated_sha256():
+    """Term codes and label digests are the leading bytes of SHA-256, which
+    every Python implementation provides (GraalPy's BLAKE2 cannot produce
+    short digests), so stable output is the same on all of them."""
+    import hashlib
+
+    from pymantic.compare import form_digest, term_code
+
+    key = "<http://example/\u00e9>"
+    expected = hashlib.sha256(key.encode("utf-8")).digest()[:8]
+    assert term_code(key) == int.from_bytes(expected, "big")
+
+    # A one-node molecule's canonical form is its statements with the node
+    # written _:0, one per line, terms separated by spaces.
+    g = Graph()
+    g.add(Triple(BlankNode(), NamedNode(EX + "p"), Literal("v")))
+    form = '_:0 <http://example.org/p> "v" '
+    digest = hashlib.sha256(form.encode("utf-8")).hexdigest()[:12]
+    assert list(canonical_labels(g).values()) == ["b" + digest]
+    assert form_digest((("_:0", "<http://example.org/p>", '"v"', ""),)) == digest
+
+
 SHAPES = """
 :Shape :property _:p1, _:p2, _:p3 .
 _:p1 :path :name ; :minCount 1 ; :in _:l1 .

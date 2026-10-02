@@ -4,6 +4,7 @@ import pytest
 import random
 import sys
 
+from pymantic import offset_index, primitives
 from pymantic.primitives import (
     XSD_STRING,
     BlankNode,
@@ -14,6 +15,19 @@ from pymantic.primitives import (
     Quad,
     Triple,
 )
+
+
+@pytest.fixture(autouse=True, params=["sorted", "offsets", "offsets-small-folds"])
+def index_class(request, monkeypatch):
+    """Run every test once per index implementation. The small-folds variant
+    lowers DELTA_MIN so these small graphs fold, leaving rows in main, dead
+    rows and delta rows all in play."""
+    if request.param == "sorted":
+        return
+    if request.param == "offsets-small-folds":
+        monkeypatch.setattr(offset_index, "DELTA_MIN", 4)
+    monkeypatch.setattr(primitives, "TripleIndex", offset_index.OffsetTripleIndex)
+
 
 IRIS = [NamedNode("")] + [NamedNode("http://e/%d" % i) for i in range(5)]
 BLANKS = [BlankNode() for _ in range(4)]

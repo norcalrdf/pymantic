@@ -9,18 +9,21 @@ faster and changes nothing: run it once per tree and compare the lines.
     python benchmarks/timing.py fhir-r5-examples schemaorg-shapes
     PYTHONPATH=<other tree>/src python benchmarks/timing.py fhir-r5-examples
     python benchmarks/timing.py synthetic --repeat 5 --what labels
+    python benchmarks/timing.py obi --what turtle --index adjacency
 
 Inputs are names from benchmarks/inputs.py, or the kinds real, synthetic and
 rdfc10 (default: real). --what picks labels, turtle (default output) and
 stable (stable=True Turtle). Each time is the best of --repeat runs with the
 garbage collector on; --gc-off adds a run set with it disabled. Every line
 shows all run times, so the spread is visible: on a busy machine runs of a
-few seconds vary by 10% or more.
+few seconds vary by 10% or more. --index picks the triple index
+implementation (see index_choice.py).
 """
 
 import argparse
 import gc
 import hashlib
+import index_choice
 import inputs
 import io
 import time
@@ -110,9 +113,11 @@ def main():
     ap.add_argument(
         "--gc-off", action="store_true", help="also time with the collector off"
     )
+    index_choice.add_argument(ap)
     args = ap.parse_args()
     what = args.what.split(",")
     print(f"pymantic from {pymantic.__file__}")
+    index_choice.use(args.index)
     for name in inputs.select(args.inputs):
         try:
             graph = inputs.load(name)

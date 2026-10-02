@@ -9,6 +9,7 @@ on the old and the new index.
     PYTHONPATH=<other tree>/src python benchmarks/graph_index.py
     python benchmarks/graph_index.py --dataset-per-file
     python benchmarks/graph_index.py obi --small-merge 128 --resort-divisor 32
+    python benchmarks/graph_index.py obi --index adjacency
 
 Inputs are names from benchmarks/inputs.py, or the kinds real, synthetic and
 rdfc10 (default: fhir-r5-examples obi doid schemaorg-shapes). Every timing is
@@ -45,6 +46,7 @@ the best of --repeat runs, with every run shown. Per input:
 The batch and interleave cases add to the loaded graph, so they run last.
 --small-merge and --resort-divisor set pymantic.triple_index's merge
 constants for the run, to tune them; a tree without that module rejects them.
+--index picks the triple index implementation (see index_choice.py).
 
 --dataset-per-file loads fhir-r5-examples as a Dataset with one named graph
 per .ttl file (the graph's name is the file's file:// IRI) and reports load
@@ -57,6 +59,7 @@ import argparse
 from collections import Counter
 import gc
 import glob
+import index_choice
 import inputs
 import os
 import pathlib
@@ -382,8 +385,10 @@ def main():
     ap.add_argument(
         "--resort-divisor", type=int, help="set triple_index.RESORT_DIVISOR"
     )
+    index_choice.add_argument(ap)
     args = ap.parse_args()
     print(f"pymantic from {pymantic.__file__}")
+    index_choice.use(args.index)
     set_merge_constants(args.small_merge, args.resort_divisor)
     for name in inputs.select(args.inputs or DEFAULT_INPUTS):
         try:

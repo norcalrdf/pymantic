@@ -316,6 +316,44 @@ def test_fully_bound_match_is_empty_for_an_id_out_of_range(bad):
     assert list(index.match(0, 1, 0)) == [(0, 1, 0)]
 
 
+# A negative id borrows from the column above it, so each of these packs to
+# the key of a present triple, or to a negative key.
+NEGATIVES = {
+    (0, 1, -1): (0, 0, 2**32 - 1),
+    (1, -1, 0): (0, 2**32 - 1, 0),
+    (-1, 0, 0): None,
+}
+PRESENT = sorted(t for t in NEGATIVES.values() if t is not None)
+
+
+def index_of_negative_aliases():
+    index = TripleIndex()
+    for spo in PRESENT:
+        index.add(*spo)
+    return index
+
+
+@pytest.mark.parametrize("bad", NEGATIVES)
+def test_negative_id_is_rejected(bad):
+    index = index_of_negative_aliases()
+    with pytest.raises(OverflowError, match="TripleIndex ids"):
+        index.add(*bad)
+    with pytest.raises(OverflowError, match="TripleIndex ids"):
+        index.remove(*bad)
+    with pytest.raises(OverflowError, match="TripleIndex ids"):
+        index.remove_many([bad])
+    assert bad not in index
+    assert list(index.match(*bad)) == []
+    s, p, o = bad
+    assert list(index.match(s, p, None)) == []
+    assert list(index.match(None, p, o)) == []
+    assert list(index.match(s, None, o)) == []
+    assert sorted(index) == PRESENT
+    assert sorted(index.match(None, None, None)) == PRESENT
+    for spo in PRESENT:
+        assert spo in index
+
+
 def test_subjects_drops_subject_after_last_triple_removed():
     index = TripleIndex()
     index.add(1, 2, 3)

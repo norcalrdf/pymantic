@@ -191,15 +191,16 @@ blank nodes can be shared between its graphs (RDF 1.2 Concepts 4.1).
 - Compaction counts quads across all graphs, and the live scan covers every
   graph's arrays and every graph name.
 
-N-Quads cannot carry an empty named graph (the N-Quads note says so), so a
-dataset written as N-Quads loses them. Line-TriG keeps them.
+N-Quads cannot carry an empty named graph
+([RDF 1.2 N-Quads](https://www.w3.org/TR/rdf12-n-quads/) says so in a
+note), so a dataset written as N-Quads loses them. Line-TriG keeps them.
 
 ### Line-TriG
 
 Datasets with empty named graphs and shared blank nodes need test fixtures,
 and N-Quads cannot express the first. Line-TriG, a line-oriented profile of
-TriG defined in `docs/line-trig.rst`, can: one statement per line in
-N-Triples term syntax, `G { S P O . }` for a named-graph triple, `G { }` for
+TriG ([RDF 1.2 TriG](https://www.w3.org/TR/rdf12-trig/)) defined in
+`docs/line-trig.rst`, can: one statement per line in N-Triples term syntax, `G { S P O . }` for a named-graph triple, `G { }` for
 an empty named graph. Every Line-TriG document is a TriG document with the
 same meaning.
 

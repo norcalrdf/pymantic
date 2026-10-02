@@ -2,16 +2,17 @@
 Line-TriG
 =========
 
-Line-TriG is a line-oriented profile of TriG for writing RDF datasets. Every
-Line-TriG document is a TriG document with the same meaning, so any TriG
-parser reads it. Pymantic uses it for dataset test fixtures.
+Line-TriG is a line-oriented profile of `RDF 1.2 TriG`_ for writing RDF
+datasets. Every Line-TriG document is a TriG document with the same meaning,
+so any TriG parser reads it. Pymantic uses it for dataset test fixtures.
 
 Why
 ===
 
-N-Quads cannot write an empty named graph: there is no quad to put on the
-line. A dataset with ``<g>`` holding no triples is not the same dataset as
-one without ``<g>``, so N-Quads loses information. TriG can write an empty
+`RDF 1.2 N-Quads`_ cannot write an empty named graph: there is no quad to
+put on the line, as the spec notes. A dataset with ``<g>`` holding no
+triples is not the same dataset as one without ``<g>``, so N-Quads loses
+information. TriG can write an empty
 graph, but full TriG is a large grammar. Line-TriG keeps what makes N-Quads
 pleasant, one statement per line in N-Triples term syntax, and borrows TriG's
 braces for named graphs.
@@ -68,9 +69,9 @@ Grammar
     graphName    ::= IRIREF | BLANK_NODE_LABEL
 
 ``subject``, ``predicate``, ``object``, ``IRIREF``, ``BLANK_NODE_LABEL``,
-``EOL`` and comments are the N-Triples productions, with the same
-whitespace and comment rules. When N-Triples gains triple terms (RDF 1.2),
-Line-TriG gains them with it.
+``EOL`` and comments are the `RDF 1.2 N-Triples`_ productions, with the
+same whitespace and comment rules, so Line-TriG has every term N-Triples
+has, including triple terms and directional language-tagged strings.
 
 Why it is valid TriG
 --------------------
@@ -102,3 +103,17 @@ A Line-TriG reader rejects any line outside the profile, with the line
 number, even if the line is valid TriG. That keeps fixtures in the profile,
 so they stay line-diffable and readable by both a Line-TriG reader and a
 full TriG parser.
+
+References
+==========
+
+All three are W3C Working Drafts as of October 2026.
+
+.. _RDF 1.2 TriG: https://www.w3.org/TR/rdf12-trig/
+.. _RDF 1.2 N-Triples: https://www.w3.org/TR/rdf12-n-triples/
+.. _RDF 1.2 N-Quads: https://www.w3.org/TR/rdf12-n-quads/
+
+- `RDF 1.2 TriG`_: the grammar productions cited above, the union of graph
+  statements sharing a name, and document-scoped blank node labels.
+- `RDF 1.2 N-Triples`_: the term syntax.
+- `RDF 1.2 N-Quads`_: the note that N-Quads cannot serialize empty graphs.

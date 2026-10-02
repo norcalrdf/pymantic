@@ -1567,6 +1567,59 @@ def test_turtle_stable_long_literal_does_not_push_the_next_list_member(
     ) in text
 
 
+def write_turtle(graph, serialize_turtle, profile, **kwargs):
+    f = StringIO()
+    serialize_turtle(graph, f, profile=profile, **kwargs)
+    return f.getvalue()
+
+
+@pytest.mark.parametrize("stable", [False, True])
+def test_turtle_aligns_predicates_under_a_subject_of_40_columns(
+    primitives, profile, serialize_turtle, stable
+):
+    subject = primitives.NamedNode("http://x/" + "s" * 29)  # <...> is 40 columns
+    graph = primitives.Graph()
+    graph.add(
+        primitives.Triple(
+            subject, primitives.NamedNode("http://x/p"), primitives.Literal("a")
+        )
+    )
+    graph.add(
+        primitives.Triple(
+            subject, primitives.NamedNode("http://x/q"), primitives.Literal("b")
+        )
+    )
+    text = write_turtle(graph, serialize_turtle, profile, stable=stable)
+    name = "<http://x/" + "s" * 29 + ">"
+    assert len(name) == 40
+    pad = " " * 41
+    assert (
+        name + ' <http://x/p> "a" ;\n' + pad + '<http://x/q> "b" ;\n' + pad + ".\n"
+        in text
+    )
+
+
+@pytest.mark.parametrize("stable", [False, True])
+def test_turtle_breaks_after_a_subject_longer_than_40_columns(
+    primitives, profile, serialize_turtle, stable
+):
+    subject = primitives.NamedNode("http://x/" + "s" * 30)  # 41 columns
+    graph = primitives.Graph()
+    graph.add(
+        primitives.Triple(
+            subject, primitives.NamedNode("http://x/p"), primitives.Literal("a")
+        )
+    )
+    graph.add(
+        primitives.Triple(
+            subject, primitives.NamedNode("http://x/q"), primitives.Literal("b")
+        )
+    )
+    text = write_turtle(graph, serialize_turtle, profile, stable=stable)
+    name = "<http://x/" + "s" * 30 + ">"
+    assert (name + '\n    <http://x/p> "a" ;\n    <http://x/q> "b" ;\n    .\n') in text
+
+
 @pytest.mark.parametrize(
     "turtle",
     [

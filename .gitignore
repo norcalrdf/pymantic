@@ -8,3 +8,7 @@ docs/_build
 build
 .tox
 nosetests-*.xml
+# Benchmark data, profiles and Node packages (see benchmarks/README.rst)
+benchmarks/data/
+benchmarks/out/
+benchmarks/rdf-canonize/node_modules/

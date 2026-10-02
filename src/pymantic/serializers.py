@@ -480,12 +480,14 @@ def plan_inline_blank_nodes(
     return planner.inlined, planner.labelled_heads
 
 
-# Turtle layout. A subject block lines its predicates up after the subject;
-# a multi-line subject goes on a line of its own and its predicates are
+# Turtle layout. A subject block lines its predicates up after the subject
+# while the subject is at most MAX_ALIGNED_SUBJECT columns wide; a wider or
+# multi-line subject goes on a line of its own and its predicates are
 # indented INDENT. A multi-line [ ... ] or ( ... ) puts its contents INDENT
 # columns in from the line it opens on and its closing bracket back at that
 # line's indentation, so indentation grows with nesting depth alone, never
 # with the length of the names or literals written before it.
+MAX_ALIGNED_SUBJECT = 40
 INDENT = 4
 
 
@@ -682,7 +684,7 @@ class _TurtleWriter:
         ]
 
     def write_block(self, subject_name, predicates):
-        if "\n" in subject_name:
+        if len(subject_name) > MAX_ALIGNED_SUBJECT or "\n" in subject_name:
             self.out.write(subject_name + "\n")
             indent, first_indent = INDENT, INDENT
         else:

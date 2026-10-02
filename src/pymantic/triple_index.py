@@ -137,17 +137,15 @@ class TripleIndex:
         keys = self._keys
         if key in keys:
             return False
+        # Check the range here rather than relying on array.append to
+        # reject it: GraalPy grows the column with a 0 before raising
+        # OverflowError, which would leave the buffer columns misaligned.
+        if not (0 <= s <= _MASK32 and 0 <= p <= _MASK32 and 0 <= o <= _MASK32):
+            raise OverflowError("TripleIndex ids must be in range(2**32)")
         bs, bp, bo = self._buffer
-        try:
-            bs.append(s)
-            bp.append(p)
-            bo.append(o)
-        except Exception:
-            # An id outside range(2**32) fails one append; trim the columns
-            # that took a value so the buffer stays aligned.
-            del bs[len(bo) :]
-            del bp[len(bo) :]
-            raise
+        bs.append(s)
+        bp.append(p)
+        bo.append(o)
         keys[key] = None
         self._version += 1
         return True

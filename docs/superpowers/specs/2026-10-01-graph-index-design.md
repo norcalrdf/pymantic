@@ -286,23 +286,50 @@ Use the tools on the base branch, with data fetched by
 and 3.14, best-of-N, every run printed, differences under 5% treated as
 noise; pypy312 and pyodide314 for correctness and memory.
 
-- `timing.py`: the `canonical_labels` and stable Turtle digests are
-  identical before and after. The default Turtle digest may change, and any
-  difference must come only from object order within a predicate.
-- `gc_census.py`: `defaultdict` and `Triple` drop out of the tracked-object
-  census for a loaded graph.
-- New `benchmarks/graph_index.py`, following the README conventions (names
+- `timing.py`: the `canonical_labels` and stable Turtle digests must be
+  identical before and after.
+- `gc_census.py`: `defaultdict` and `Triple` must drop out of the
+  tracked-object census for a loaded graph.
+- `benchmarks/graph_index.py`, following the README conventions (names
   from `inputs.py`, `--help`, best-of-N): load time, bytes per triple, the 8
-  `match` patterns, full iteration, the `Counter` over objects, and a
-  dataset with one graph per FHIR file. It sets the merge threshold and
-  decides per-graph indexes vs GSPO.
+  `match` patterns, full iteration, the `Counter` over objects, batched and
+  interleaved adds, and a dataset with one graph per FHIR file.
+
+Results (FHIR R5 examples as one graph, 645,566 triples, Python 3.14; "old"
+is the index at 3938832; the full tables are under "Index trial"):
+
+| | old | new |
+|---|---|---|
+| full `gc.collect()`, graph loaded | 411 ms | 61 ms |
+| tracked objects per triple, index only | 3.79 | 0 |
+| index bytes per triple | 1030 | 421 |
+| load (`addAll` of parsed triples) | 1.59 s | 0.68 s |
+| default Turtle | 1.44 s | 1.64 s |
+| stable Turtle | 7.42 s | 7.73 s |
+| FHIR as a dataset, one graph per file: load | 1.56 s | 0.63 s |
+| same: full `gc.collect()` | 283 ms | 91 ms |
+
+- `timing.py`: `canonical_labels` and stable Turtle digests are identical
+  before and after, on every interpreter measured. The default Turtle digest
+  changes. Beyond object order within a predicate, block order and blank
+  node labels change too, since they follow index order; Gavin ruled
+  default output order not guaranteed (2026-10-02, see Behavior changes).
+- `gc_census.py`: `defaultdict` (2.44M) and `Triple` (646k) drop out of the
+  tracked-object census for a loaded FHIR graph; what remains is the terms.
+- Per-graph indexes stay: one graph per FHIR file loads faster than one
+  merged graph, with 0.026 tracked objects per quad, so there is no case
+  for a GSPO index.
 
 Acceptance:
 
-- The index adds close to zero GC-tracked objects per triple.
-- Full-collection time with FHIR loaded drops well below 0.30 s; the
-  measured before and after go in the changelog.
-- Load time and Turtle write time on 3.14 are no slower than today.
+- Met: the index adds close to zero GC-tracked objects per triple (0 on
+  FHIR, 0.001 on obi and schemaorg-shapes).
+- Met: full-collection time with FHIR loaded is 61 ms, well below 0.30 s
+  (411 ms before). The before and after are in the changelog.
+- Met: load time on 3.14 is 2.3x faster (0.68 s against 1.59 s).
+- Not met: Turtle writing on 3.14 is slower than with the old index, 14% by
+  default (1.64 s against 1.44 s) and 4% with `stable=True` (7.73 s against
+  7.42 s). Gavin chose the adjacency index with those numbers (2026-10-02).
 
 ## Index trial
 
@@ -415,6 +442,50 @@ candidate on every interpreter.
 ### Decision (Gavin, 2026-10-02)
 
 Adjacency. The other candidates are deleted.
+
+### Tuning (Task 17)
+
+The constants were measured on 3.14 with `benchmarks/graph_index.py`
+(load, batches of 1, 32, 33 and 1000 adds, interleaved adds, the match
+patterns) and `benchmarks/timing.py --what turtle`, on `fhir-r5-examples`
+and `obi`, best of 5, one constant changed at a time from LIST_DEGREE 256,
+FOLD_MIN 1024, FOLD_DIVISOR 16, with the defaults run first and last.
+
+| change | FHIR | obi |
+|---|---|---|
+| LIST_DEGREE 64 | all within 5% | within 5% except batch 32 (-6.6%), match sp (-6.2%) and match o (-5.4%), each within 5% of one of the two default runs |
+| LIST_DEGREE 1024 | batches +3 to +5.4%, interleave +6.5%, batch 1 +14% (0.007 to 0.008 ms) | batches +8 to +10% |
+| FOLD_DIVISOR 8 | load +4.5%, match s +7%, otherwise within 5% | full GC +7%, match o +5%, otherwise within 5% |
+| FOLD_DIVISOR 32 | all within 5% | full GC +6%, otherwise within 5% |
+| FOLD_MIN 256 | all within 5% | all within 5% |
+| FOLD_MIN 4096 | all within 5% | matches +13 to +18%, full GC +26%; noise, as below |
+
+Load folds the whole graph whatever the constants, and no batch in
+`graph_index.py` (at most 1000 adds into graphs of 118k and 646k triples)
+crosses the fold threshold for any value tried, so FOLD_MIN and
+FOLD_DIVISOR change no code path these runs take, and their columns show
+the session's noise: up to 18% on obi's sub-millisecond matches.
+LIST_DEGREE 1024 loses on adds, as longer tuple rows cost more to rebuild;
+64 gains nothing beyond noise. The constants stay as they were.
+
+A direct measurement of the fold threshold
+(`benchmarks/out/scripts/fold_crossover.py`, not committed: one batch of k
+new triples into a loaded graph, folded against inserted one by one, best
+of 3) shows the threshold is not where the constants put it:
+
+| input (triples) | fold faster from | fold/insert at n/32 | at n/16 (today) |
+|---|---|---|---|
+| fhir-r5-examples (646k) | 1,024 to 4,096 adds | 0.31x | 0.28x |
+| doid (310k) | 1,024 to 4,096 adds | 0.65x | 0.54x |
+| obi (118k) | about 3,700 adds (3%) | 0.97x | 0.83x |
+| schemaorg-shapes (24k) | never clearly (1.0x at 25%) | 1.28x | 1.09x |
+
+(PyPy 3.12 is similar, with folding winning on
+FHIR from 256 adds.) A batch between FOLD_MIN and n/16 on FHIR is inserted
+at up to 3.5x the cost of folding it, about 190 ms for 40k adds. FOLD_DIVISOR
+32 would halve that range at a cost of about 0.2 ms (10-16%) on
+schemaorg-sized graphs for batches of 1,024 to 1,500. Bulk loads and small
+batches are unaffected either way. Left for Gavin to decide.
 
 ### PyO3
 

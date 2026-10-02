@@ -32,6 +32,18 @@ All notable changes to pymantic are recorded here. The format follows
   `serialize_turtle(graph, f, profile=profile, stable=True)` writes the
   document back with its own prefixes. Prefixes already in the profile are
   not used to read the document.
+- Line-TriG, a line-oriented profile of TriG defined in `docs/line-trig.rst`:
+  one statement per line in N-Triples term syntax, `G { S P O . }` for a
+  triple in a named graph and `G { }` for an empty named graph, which
+  N-Quads cannot express. `pymantic.parsers.linetrig_parser` reads it into a
+  `Dataset`, rejecting any line outside the profile with its line number,
+  and `serialize_linetrig(dataset, f)` writes it. Every Line-TriG document
+  is a TriG document with the same meaning.
+- `Graph.subjects(predicate, object)`, `Graph.predicates(subject, object)`
+  and `Graph.objects(subject, predicate)` yield the matching terms directly,
+  and `Graph.predicate_objects(subject)` yields a subject's (predicate,
+  object) pairs. None of them builds a `Triple`, so they are cheaper than
+  reading the same positions from `match`.
 
 ### Security
 
@@ -68,6 +80,38 @@ All notable changes to pymantic are recorded here. The format follows
   3.12 or Pyodide. Without the extra, the rest of pymantic works, and
   importing `pymantic.parsers.jsonld`, or importing `jsonld_parser` from
   `pymantic.parsers`, raises an `ImportError` naming the extra.
+- `Graph` and `Dataset` keep their triples in a new index: each term is
+  interned to an integer id, and each triple is one packed integer key plus
+  one entry in each of three orderings (SPO, POS, OSP), held in tuples of
+  ints that Python's cyclic garbage collector does not track. With the FHIR
+  R5 examples loaded as one graph (645,566 triples) on Python 3.14, a full
+  `gc.collect()` takes about 61 ms instead of 411 ms, the index adds no
+  collector-tracked objects per triple instead of 3.79, and it takes 421
+  bytes per triple instead of 1030. Loading the triples into a graph takes
+  0.68 s instead of 1.59 s. Writing Turtle is slower: 1.64 s instead of
+  1.44 s by default, and 7.73 s instead of 7.42 s with `stable=True`.
+- `match` with any term bound yields triples in index order (by term id)
+  rather than in the order they were added per subject. The default Turtle
+  output's order (of blocks, of blank node labels, and of objects under a
+  predicate) follows that order and is not guaranteed. `stable=True` output
+  and `pymantic.compare` are unchanged.
+- `subjects()`, `predicates()` and `objects()` with no arguments return lists
+  of the distinct terms in term-id order, instead of dict key views in
+  first-seen order.
+- `match` and iteration return the graph's own instance of each term, equal
+  to the one that was added but not necessarily the same object.
+- `Graph.add` and `Graph.remove` raise `TypeError` for anything that is not
+  a triple of three terms, so a `Quad` can no longer be put in a `Graph`.
+  The N-Quads and JSON-LD parsers create a `Dataset` and raise `TypeError`
+  if given a `Graph`.
+- `Graph()` without a name has `uri` `None` instead of `NamedNode("None")`.
+- `Dataset` keeps one term dictionary for all its graphs, so a blank node is
+  the same node in every graph it appears in, including as a graph name. An
+  empty named graph persists until `remove_graph`. `Triple in dataset`
+  checks only the default graph, a `Quad` is checked in its own graph, and
+  `in` returns a `bool`. `add_graph` copies the graph's triples in, so later
+  edits to the `Graph` passed do not reach the dataset. `Dataset.graphs`
+  lists the default graph first, always.
 - Every `Literal` carries a datatype, as RDF 1.1 Concepts requires: a literal
   built with neither datatype nor language gets `xsd:string`, and one built
   with a language gets `rdf:langString`. `Literal("v")` and
@@ -145,6 +189,13 @@ All notable changes to pymantic are recorded here. The format follows
 
 ### Fixed
 
+- `Graph.subjects()`, `predicates()` and `objects()` no longer return a term
+  whose last triple was removed.
+- `Graph.removeMatches` and `Dataset.removeMatches` no longer raise
+  `RuntimeError` when more than one triple matches.
+- A falsy term such as `NamedNode("")` passed to `match` is matched as a
+  term instead of being treated as a wildcard.
+- `Dataset.remove_graph` removes the graph; it did nothing before.
 - The Turtle serializer no longer fails with `RecursionError` on a list
   nested a few hundred levels deep, such as `((((...))))`. Past 32 levels
   the inner list is written as a labelled blank node with its `rdf:first`

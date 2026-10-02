@@ -18,10 +18,13 @@ rdfc10 (default: fhir-r5-examples obi doid schemaorg-shapes). Per input:
             counting the triples list or the terms in it
   gc        objects the collector tracks because of the graph, per triple,
             and the best of 3 full collections
-  match     seconds for 1000 queries per pattern; the bound terms are
-            sampled (random.Random(0)) from the graph's own triples, and
-            the pattern names the bound positions (s, p, o; "-" binds none,
-            run once). Every query's results are consumed.
+  match     seconds per pattern for up to 1000 queries; the pattern names
+            the bound positions (s, p, o). The bound values are sampled
+            (random.Random(0)) from the distinct values of those positions
+            in the graph's own triples, so a pattern with fewer than 1000
+            distinct values runs fewer queries, and the count is printed.
+            "-" binds nothing and is one full pass. Every query's results
+            are consumed.
   iterate   one pass over the graph, and Counter(t.object for t in graph)
 
 --dataset-per-file loads fhir-r5-examples as a Dataset with one named graph
@@ -118,19 +121,21 @@ def build_dataset(quads):
 
 def match_times(graph, triples):
     rng = random.Random(0)
-    sample = rng.sample(triples, min(SAMPLES, len(triples)))
     results = {}
     for name, bound in PATTERNS.items():
-        # Binding nothing returns the whole graph, so it runs once.
-        queries = [None] if name == "-" else sample
+        if name == "-":
+            # Binding nothing returns the whole graph, so it runs once.
+            queries = [(None, None, None)]
+        else:
+            distinct = list(
+                dict.fromkeys(
+                    tuple(x if b else None for x, b in zip(t, bound)) for t in triples
+                )
+            )
+            queries = rng.sample(distinct, min(SAMPLES, len(distinct)))
         t0 = time.perf_counter()
         found = 0
-        for t in queries:
-            terms = (
-                (None,) * 3
-                if t is None
-                else [x if b else None for x, b in zip(t, bound)]
-            )
+        for terms in queries:
             for _ in graph.match(*terms):
                 found += 1
         results[name] = (len(queries), time.perf_counter() - t0, found)
@@ -152,7 +157,7 @@ def report_graph(name, triples, repeat):
     for pattern, (queries, seconds, found) in match_times(graph, triples).items():
         print(
             f"  match {pattern:3} {seconds:8.3f} s for {queries:4} queries, "
-            f"{found} results"
+            f"{found} results" + (" (one full pass)" if pattern == "-" else "")
         )
     t0 = time.perf_counter()
     for _ in graph:

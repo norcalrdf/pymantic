@@ -9,6 +9,7 @@ on the old and the new index.
     PYTHONPATH=<other tree>/src python benchmarks/graph_index.py
     python benchmarks/graph_index.py --dataset-per-file
     python benchmarks/graph_index.py obi --small-merge 128 --resort-divisor 32
+    python benchmarks/graph_index.py obi --index offsets
 
 Inputs are names from benchmarks/inputs.py, or the kinds real, synthetic and
 rdfc10 (default: fhir-r5-examples obi doid schemaorg-shapes). Every timing is
@@ -45,6 +46,8 @@ the best of --repeat runs, with every run shown. Per input:
 The batch and interleave cases add to the loaded graph, so they run last.
 --small-merge and --resort-divisor set pymantic.triple_index's merge
 constants for the run, to tune them; a tree without that module rejects them.
+--index offsets runs Graph and Dataset on pymantic.offset_index's
+OffsetTripleIndex instead of the default sorted TripleIndex.
 
 --dataset-per-file loads fhir-r5-examples as a Dataset with one named graph
 per .ttl file (the graph's name is the file's file:// IRI) and reports load
@@ -356,6 +359,18 @@ def set_merge_constants(small_merge, resort_divisor):
     )
 
 
+def use_index(name):
+    """Make Graph and Dataset build the named index. "sorted" leaves the
+    tree's own index in place, so the default runs on trees without
+    pymantic.offset_index."""
+    if name == "offsets":
+        from pymantic import primitives
+        from pymantic.offset_index import OffsetTripleIndex
+
+        primitives.TripleIndex = OffsetTripleIndex
+    print(f"index: {name}")
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__.splitlines()[0],
@@ -378,12 +393,19 @@ def main():
         action="store_true",
         help="also measure a parsed-and-kept graph, terms included (slow)",
     )
+    ap.add_argument(
+        "--index",
+        choices=["sorted", "offsets"],
+        default="sorted",
+        help="triple index for Graph and Dataset (default sorted)",
+    )
     ap.add_argument("--small-merge", type=int, help="set triple_index.SMALL_MERGE")
     ap.add_argument(
         "--resort-divisor", type=int, help="set triple_index.RESORT_DIVISOR"
     )
     args = ap.parse_args()
     print(f"pymantic from {pymantic.__file__}")
+    use_index(args.index)
     set_merge_constants(args.small_merge, args.resort_divisor)
     for name in inputs.select(args.inputs or DEFAULT_INPUTS):
         try:

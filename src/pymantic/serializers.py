@@ -286,11 +286,11 @@ def list_cell_shape(graph, node):
     if getattr(node, "interfaceName", None) != "BlankNode":
         return None
     firsts, rests, others = [], [], False
-    for triple in graph.match(subject=node):
-        if triple.predicate == RDF_FIRST:
-            firsts.append(triple.object)
-        elif triple.predicate == RDF_REST:
-            rests.append(triple.object)
+    for predicate, object in graph.predicate_objects(node):
+        if predicate == RDF_FIRST:
+            firsts.append(object)
+        elif predicate == RDF_REST:
+            rests.append(object)
         else:
             others = True
     if len(firsts) != 1 or len(rests) != 1:
@@ -298,8 +298,9 @@ def list_cell_shape(graph, node):
     return firsts[0], rests[0], others
 
 
-def plan_collections(graph, references=None):
+def plan_collections(graph, references):
     """Decide which blank nodes to write with Turtle's ( ... ) syntax.
+    ``references`` counts the triples each term is the object of.
 
     Returns (inline, as_subject, consumed). ``inline`` maps a list head that
     is the object of exactly one triple and has no other predicates to its
@@ -311,8 +312,6 @@ def plan_collections(graph, references=None):
     to rdf:nil is made of blank nodes with exactly one rdf:first, exactly one
     rdf:rest, nothing else, and (past the head) exactly one reference; any
     other shape is written as ordinary triples so no information is lost."""
-    if references is None:
-        references = Counter(triple.object for triple in graph)
     # A node that is not a subject has no rdf:first, so it is no cell.
     shapes = {node: list_cell_shape(graph, node) for node in graph.subjects()}
 
@@ -323,10 +322,12 @@ def plan_collections(graph, references=None):
             continue
         _, _, has_others = shape
         if references[node] == 1:
-            (reference,) = graph.match(object=node)
-            if reference.predicate == RDF_REST and shapes.get(reference.subject):
-                # A cell inside another chain; its head decides.
-                continue
+            (predicate,) = graph.predicates(object=node)
+            if predicate == RDF_REST:
+                (subject,) = graph.subjects(object=node)
+                if shapes.get(subject):
+                    # A cell inside another chain; its head decides.
+                    continue
             if has_others:
                 continue
             target = inline
@@ -359,24 +360,23 @@ def list_cells(graph, head):
     node = head
     while node != RDF_NIL:
         cells.append(node)
-        (rest,) = graph.match(subject=node, predicate=RDF_REST)
-        node = rest.object
+        (node,) = graph.objects(node, RDF_REST)
     return cells
 
 
-def inline_candidates(graph, inline, as_subject, consumed, references):
+def inline_candidates(graph, references, inline, as_subject, consumed):
     """Blank nodes that may be written as [ ... ]: the object of exactly one
-    triple, no part in a collection (``inline``, ``as_subject`` and
-    ``consumed`` are from :func:`plan_collections`), and no rdf:first or
-    rdf:rest of their own. ``references`` counts the triples each node is
-    the object of."""
+    triple (``references`` counts the triples each term is the object of),
+    no part in a collection (``inline``, ``as_subject`` and ``consumed`` are
+    from :func:`plan_collections`), and no rdf:first or rdf:rest of their
+    own."""
     candidates = set()
     for node, count in references.items():
         if count != 1 or getattr(node, "interfaceName", None) != "BlankNode":
             continue
         if node in inline or node in as_subject or node in consumed:
             continue
-        if any(t.predicate in (RDF_FIRST, RDF_REST) for t in graph.match(subject=node)):
+        if any(p in (RDF_FIRST, RDF_REST) for p in graph.predicates(subject=node)):
             continue
         candidates.add(node)
     return candidates
@@ -431,10 +431,10 @@ class _InlinePlanner:
             # ordinary predicate's objects below.
             for member in self.as_subject[subject]:
                 self.visit(member, depth + 2)
-        for triple in self.graph.match(subject=subject):
-            if subject in self.as_subject and triple.predicate in (RDF_FIRST, RDF_REST):
+        for predicate, object in self.graph.predicate_objects(subject):
+            if subject in self.as_subject and predicate in (RDF_FIRST, RDF_REST):
                 continue
-            self.visit(triple.object, depth + 1)
+            self.visit(object, depth + 1)
 
     def walk_as_subject(self, node):
         pending = [node]
@@ -454,12 +454,13 @@ class _InlinePlanner:
 
 
 def plan_inline_blank_nodes(
-    graph, inline, as_subject, consumed, rank, references, blank_nodes=True
+    graph, references, inline, as_subject, consumed, rank, blank_nodes=True
 ):
     """Decide which blank nodes to write with Turtle's [ ... ] syntax, and
     which collections are nested too deep to write with ( ... ).
 
-    A blank node qualifies when it is the object of exactly one triple, takes
+    A blank node qualifies when it is the object of exactly one triple
+    (``references`` counts the triples each term is the object of), takes
     no part in a collection (``inline``, ``as_subject`` and ``consumed`` are
     from :func:`plan_collections`) and has no rdf:first or rdf:rest of its
     own. It is written where its one reference is, so that reference must
@@ -470,7 +471,6 @@ def plan_inline_blank_nodes(
     such node keeps its label and is written as a subject, and the walk
     resumes from it so the rest of the cycle is inlined beneath it; ``rank``
     is the canonical blank node order, which makes that choice stable.
-    ``references`` counts the triples each node is the object of.
 
     Each [ and each ( counts one level of depth. A qualifying node or an
     ``inline`` list head the walk meets more than ``MAX_INLINE_DEPTH`` levels
@@ -481,7 +481,7 @@ def plan_inline_blank_nodes(
     (non-stable) output needs. Returns (nodes to inline, list heads to write
     with labels)."""
     candidates = (
-        inline_candidates(graph, inline, as_subject, consumed, references)
+        inline_candidates(graph, references, inline, as_subject, consumed)
         if blank_nodes
         else set()
     )
@@ -561,11 +561,11 @@ class _TurtleWriter:
         )
         self.inlined, labelled_heads = plan_inline_blank_nodes(
             graph,
+            references,
             self.inline,
             self.as_subject,
             self.consumed,
             self.blank_rank,
-            references,
             blank_nodes=stable,
         )
         # A list nested past MAX_INLINE_DEPTH is written as rdf:first/rdf:rest
@@ -687,12 +687,12 @@ class _TurtleWriter:
         # needed here. Blank nodes are never deduplicated: two distinct
         # blank nodes are two RDF terms even when both are written as [].
         objects_by_predicate = {}
-        for triple in self.graph.match(subject=subject):
-            if triple.predicate not in skip:
-                objects = objects_by_predicate.get(triple.predicate)
+        for predicate, object in self.graph.predicate_objects(subject):
+            if predicate not in skip:
+                objects = objects_by_predicate.get(predicate)
                 if objects is None:
-                    objects = objects_by_predicate[triple.predicate] = []
-                objects.append(triple.object)
+                    objects = objects_by_predicate[predicate] = []
+                objects.append(object)
         blocks = []
         for predicate_name, predicate in turtle_sorted_names(
             objects_by_predicate, self.name

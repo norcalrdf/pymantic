@@ -609,3 +609,144 @@ def test_fully_bound_match_is_unaffected_by_removes_while_open():
     ds.add(Quad(x, y, z, other))
     ds.add(Quad(z, y, x, other))
     assert list(found) == []
+
+
+def check_lookups_against_match(graph, s, p, o):
+    """Each Triple-free lookup, for every combination of s, p and o it takes
+    with at least one bound, yields the matching column of what match()
+    yields for that pattern, in match()'s order."""
+    for bs, bp, bo in PATTERNS:
+        qs = s if bs else None
+        qp = p if bp else None
+        qo = o if bo else None
+        triples = list(graph.match(qs, qp, qo))
+        if qs is None and (qp is not None or qo is not None):
+            got = list(graph.subjects(predicate=qp, object=qo))
+            assert got == [t.subject for t in triples], (qp, qo)
+        if qp is None and (qs is not None or qo is not None):
+            got = list(graph.predicates(subject=qs, object=qo))
+            assert got == [t.predicate for t in triples], (qs, qo)
+        if qo is None and (qs is not None or qp is not None):
+            got = list(graph.objects(subject=qs, predicate=qp))
+            assert got == [t.object for t in triples], (qs, qp)
+        if qs is not None and qp is None and qo is None:
+            got = list(graph.predicate_objects(qs))
+            assert got == [(t.predicate, t.object) for t in triples], qs
+
+
+def lookup_terms(rng, ref):
+    """A subject, predicate and object to bind in every combination: from a
+    present triple half the time, so lookups usually find matches;
+    otherwise from the pool, sometimes with an unseen subject."""
+    if ref and rng.random() < 0.5:
+        return rng.choice(list(ref))
+    s, p, o = random_triple(rng)
+    if rng.random() < 0.1:
+        s = UNSEEN
+    return s, p, o
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_lookups_agree_with_match(seed):
+    rng = random.Random(seed)
+    graph = Graph()
+    ref = {}
+    for step in range(300):
+        roll = rng.random()
+        if roll < 0.6:
+            t = random_triple(rng)
+            graph.add(t)
+            ref.setdefault(t, None)
+        elif roll < 0.85:
+            if ref:
+                t = rng.choice(list(ref))
+                graph.remove(t)
+                del ref[t]
+        else:
+            # A batch past the merge threshold, so the next query re-sorts.
+            batch = [random_triple(rng) for _ in range(40)]
+            graph.addAll(batch)
+            for t in batch:
+                ref.setdefault(t, None)
+        if step % 5 == 0:
+            for _ in range(3):
+                check_lookups_against_match(graph, *lookup_terms(rng, ref))
+
+
+def test_lookups_of_unknown_terms_are_empty():
+    g = Graph().add(Triple(S, P, Literal("a")))
+    assert list(g.subjects(predicate=UNSEEN)) == []
+    assert list(g.subjects(P, UNSEEN)) == []
+    assert list(g.predicates(subject=UNSEEN)) == []
+    assert list(g.predicates(S, UNSEEN)) == []
+    assert list(g.objects(subject=UNSEEN)) == []
+    assert list(g.objects(UNSEEN, P)) == []
+    assert list(g.predicate_objects(UNSEEN)) == []
+    # Known terms in a combination no triple has.
+    assert list(g.objects(P, S)) == []
+
+
+def test_lookups_treat_an_empty_iri_as_a_term():
+    empty = NamedNode("")
+    g = Graph().add(Triple(empty, empty, empty)).add(Triple(S, P, Literal("b")))
+    assert list(g.subjects(object=empty)) == [empty]
+    assert list(g.predicates(subject=empty)) == [empty]
+    assert list(g.objects(empty, empty)) == [empty]
+    assert list(g.predicate_objects(empty)) == [(empty, empty)]
+
+
+def test_lookups_without_arguments_are_distinct_term_lists():
+    other = NamedNode("http://e/other")
+    g = Graph().add(Triple(S, P, Literal("a"))).add(Triple(other, P, S))
+    g.add(Triple(S, P, Literal("b")))
+    assert g.subjects() == [S, other]
+    assert g.predicates() == [P]
+    assert g.objects() == [S, Literal("a"), Literal("b")]
+
+
+LOOKUPS = [
+    lambda g: g.subjects(predicate=P),
+    lambda g: g.predicates(subject=S),
+    lambda g: g.objects(subject=S),
+    lambda g: g.predicate_objects(S),
+]
+
+
+@pytest.mark.parametrize("lookup", LOOKUPS)
+@pytest.mark.parametrize("change", ["add", "remove"])
+def test_changing_the_graph_during_a_lookup_raises(lookup, change):
+    g = Graph()
+    for value in ("a", "b", "c"):
+        g.add(Triple(S, P, Literal(value)))
+    found = lookup(g)
+    next(found)
+    if change == "add":
+        g.add(Triple(S, P, Literal("d")))
+    else:
+        g.remove(Triple(S, P, Literal("c")))
+    with pytest.raises(RuntimeError):
+        next(found)
+
+
+@pytest.mark.parametrize("lookup", LOOKUPS)
+def test_lookups_on_a_view_of_a_removed_graph_raise(lookup):
+    name = NamedNode("http://e/g")
+    ds = Dataset()
+    ds.add(Quad(S, P, Literal("a"), name))
+    ds.add(Quad(S, P, Literal("b"), name))
+    (view,) = [g for g in ds.graphs if g.uri == name]
+    assert len(list(lookup(view))) == 2
+    pending = lookup(view)
+    ds.remove_graph(name)
+    # The removal freed every term, so these find unknown terms before
+    # reaching the index.
+    with pytest.raises(RuntimeError):
+        list(pending)
+    with pytest.raises(RuntimeError):
+        list(lookup(view))
+
+
+def test_predicate_objects_needs_a_subject():
+    g = Graph().add(Triple(S, P, Literal("a")))
+    with pytest.raises(TypeError, match="predicate_objects needs a subject"):
+        g.predicate_objects(None)

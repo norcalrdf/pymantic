@@ -588,23 +588,76 @@ class Graph:
         """Return the set of :py:class:`Triple` within the :py:class:`Graph`"""
         return frozenset(self)
 
-    def subjects(self):
-        """Returns a list of the distinct subjects in the graph, in term-id
-        order."""
-        terms = self._dictionary.terms
-        return [terms[i] for i in self._index.subjects()]
+    def subjects(self, predicate=None, object=None):
+        """With no arguments, returns a list of the distinct subjects in the
+        graph, in term-id order.
 
-    def predicates(self):
-        """Returns a list of the distinct predicates in the graph, in term-id
-        order."""
-        terms = self._dictionary.terms
-        return [terms[i] for i in self._index.predicates()]
+        Otherwise yields the subject of each triple matching the predicate
+        and object given, in the order :meth:`match` yields the triples.
+        This builds no `Triple`, so it is cheaper than reading the subjects
+        out of :meth:`match`."""
+        if predicate is None and object is None:
+            terms = self._dictionary.terms
+            return [terms[i] for i in self._index.subjects()]
+        return self._matching_terms(0, None, predicate, object)
 
-    def objects(self):
-        """Returns a list of the distinct objects in the graph, in term-id
-        order."""
+    def predicates(self, subject=None, object=None):
+        """With no arguments, returns a list of the distinct predicates in
+        the graph, in term-id order.
+
+        Otherwise yields the predicate of each triple matching the subject
+        and object given, in the order :meth:`match` yields the triples.
+        This builds no `Triple`, so it is cheaper than reading the
+        predicates out of :meth:`match`."""
+        if subject is None and object is None:
+            terms = self._dictionary.terms
+            return [terms[i] for i in self._index.predicates()]
+        return self._matching_terms(1, subject, None, object)
+
+    def objects(self, subject=None, predicate=None):
+        """With no arguments, returns a list of the distinct objects in the
+        graph, in term-id order.
+
+        Otherwise yields the object of each triple matching the subject and
+        predicate given, in the order :meth:`match` yields the triples.
+        This builds no `Triple`, so it is the fast path for reading the
+        values of one subject's property."""
+        if subject is None and predicate is None:
+            terms = self._dictionary.terms
+            return [terms[i] for i in self._index.objects()]
+        return self._matching_terms(2, subject, predicate, None)
+
+    def predicate_objects(self, subject):
+        """Yields (predicate, object) for each triple of `subject`, in the
+        order ``match(subject)`` yields the triples. This builds no
+        `Triple`, so it is the fast path for reading all of one subject's
+        properties."""
+        # Checked here rather than in the generator so the mistake surfaces
+        # at the call instead of as a scan of the whole graph.
+        if subject is None:
+            raise TypeError("predicate_objects needs a subject")
+        return self._predicate_objects(subject)
+
+    def _predicate_objects(self, subject):
+        pattern = _pattern_ids(self._dictionary, subject, None, None)
+        if pattern is None:
+            self._check_index()
+            return
         terms = self._dictionary.terms
-        return [terms[i] for i in self._index.objects()]
+        for _, p, o in self._index.match(*pattern):
+            yield terms[p], terms[o]
+
+    def _matching_terms(self, column, subject, predicate, object):
+        """Yields the term in position `column` of each triple matching the
+        pattern, which leaves at least one position unbound, so the index's
+        version-checked generator serves every pattern here."""
+        pattern = _pattern_ids(self._dictionary, subject, predicate, object)
+        if pattern is None:
+            self._check_index()
+            return
+        terms = self._dictionary.terms
+        for ids in self._index.match(*pattern):
+            yield terms[ids[column]]
 
     def _ids(self, triple):
         """The id triple of `triple`, or None if a term is unknown."""

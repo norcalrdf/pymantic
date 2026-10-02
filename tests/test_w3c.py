@@ -61,7 +61,8 @@ RDFT = Namespace("http://www.w3.org/ns/rdftest#")
 XSD_STRING = rdflib.URIRef("http://www.w3.org/2001/XMLSchema#string")
 
 # A hung parser must not hang the whole run. signal.alarm exists only on
-# POSIX; elsewhere the guard is a no-op.
+# POSIX; elsewhere the guard is a no-op. Emscripten defines SIGALRM but not
+# alarm, so the guard checks for the function itself.
 PER_TEST_SECONDS = 10
 
 
@@ -181,7 +182,7 @@ ALL_TEST_IDS = {e.id for e in ENTRIES} | {e.id + "[roundtrip]" for e in EVAL_ENT
 
 @pytest.fixture(autouse=True)
 def per_test_timeout():
-    if not hasattr(signal, "SIGALRM"):
+    if not hasattr(signal, "alarm"):
         yield
         return
 

@@ -193,6 +193,8 @@ All notable changes to pymantic are recorded here. The format follows
   whose last triple was removed.
 - `Graph.removeMatches` and `Dataset.removeMatches` no longer raise
   `RuntimeError` when more than one triple matches.
+- `Graph.removeMatches` takes keyword arguments with `None` wildcards, like
+  `match` (it required all three positions).
 - A falsy term such as `NamedNode("")` passed to `match` is matched as a
   term instead of being treated as a wildcard.
 - `Dataset.remove_graph` removes the graph; it did nothing before.

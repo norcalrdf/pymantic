@@ -137,6 +137,75 @@ def test_remove_matches_removes_every_match():
     assert list(g) == [kept]
 
 
+def _removal_graph():
+    """Triples where each single position and each pair of positions has
+    both matching and non-matching triples."""
+    other_s = NamedNode("http://e/other-s")
+    other_p = NamedNode("http://e/other-p")
+    triples = [
+        Triple(S, P, Literal("a")),
+        Triple(S, P, Literal("b")),
+        Triple(S, other_p, Literal("a")),
+        Triple(other_s, P, Literal("a")),
+        Triple(other_s, other_p, Literal("b")),
+    ]
+    g = Graph()
+    for triple in triples:
+        g.add(triple)
+    return g, triples, other_s, other_p
+
+
+@pytest.mark.parametrize(
+    "keywords",
+    [
+        {"subject": "S"},
+        {"predicate": "P"},
+        {"object": "A"},
+        {"subject": "S", "predicate": "P"},
+        {"subject": "S", "object": "A"},
+        {"predicate": "P", "object": "A"},
+        {"subject": "S", "predicate": "P", "object": "A"},
+        {},
+    ],
+    ids=lambda keywords: "+".join(sorted(keywords)) or "none",
+)
+def test_remove_matches_takes_keyword_patterns(keywords):
+    g, triples, other_s, other_p = _removal_graph()
+    values = {"S": S, "P": P, "A": Literal("a")}
+    bound = {name: values[v] for name, v in keywords.items()}
+    expected = [
+        t
+        for t in triples
+        if not all(getattr(t, name) == term for name, term in bound.items())
+    ]
+    assert g.removeMatches(**bound) is g
+    assert list(g) == expected
+
+
+def test_remove_matches_with_nothing_bound_empties_the_graph():
+    g, _, _, _ = _removal_graph()
+    assert g.removeMatches() is g
+    assert len(g) == 0
+    assert list(g) == []
+
+
+def test_view_remove_matches_by_keyword_removes_only_from_that_graph():
+    first, second = NamedNode("http://e/g1"), NamedNode("http://e/g2")
+    other = NamedNode("http://e/other-s")
+    ds = Dataset()
+    ds.add(Quad(S, P, Literal("a"), first))
+    ds.add(Quad(other, P, Literal("a"), first))
+    ds.add(Quad(S, P, Literal("a"), second))
+    ds.add(Quad(S, P, Literal("a"), None))
+    (view,) = [g for g in ds.graphs if g.uri == first]
+    assert view.removeMatches(subject=S) is view
+    assert set(ds) == {
+        Quad(other, P, Literal("a"), first),
+        Quad(S, P, Literal("a"), second),
+        Quad(S, P, Literal("a"), None),
+    }
+
+
 def test_match_treats_an_empty_iri_as_a_term():
     empty = NamedNode("")
     t = Triple(empty, P, Literal("a"))

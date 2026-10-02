@@ -536,9 +536,10 @@ class Graph:
         for s, p, o in self._index.match(*pattern):
             yield _new_triple(Triple, (terms[s], terms[p], terms[o]))
 
-    def removeMatches(self, subject, predicate, object):
+    def removeMatches(self, subject=None, predicate=None, object=None):
         """This method removes those triples in the current graph which match
-        the given arguments."""
+        the given arguments. An argument of None matches any term, as in
+        match(), so calling with no arguments removes every triple."""
         pattern = _pattern_ids(self._dictionary, subject, predicate, object)
         if pattern is None:
             self._check_index()

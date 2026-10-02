@@ -96,10 +96,8 @@ class LineTriGParser(LarkParser):
     @staticmethod
     def _add(dataset, statement):
         if isinstance(statement, EmptyGraph):
-            # add_graph replaces a graph of the same name, which would drop
-            # triples from earlier lines. A graph name is a union.
-            if not any(graph.uri == statement.name for graph in dataset.graphs):
-                dataset.add_graph(Graph(), named=statement.name)
+            # add_graph takes the union, so an existing graph keeps its triples.
+            dataset.add_graph(Graph(), named=statement.name)
         else:
             dataset.add(statement)
 

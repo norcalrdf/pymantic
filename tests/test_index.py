@@ -332,6 +332,11 @@ def check_dataset_against_reference(ds, ref, names, rng):
             assert set(got) == matching_quads(ref, qs, qp, qo, g), (qs, qp, qo, g)
     assert [g.uri for g in ds.graphs][0] is None
     assert named_graphs(ds) == names
+    # Each view reads the shared dictionary, compacted or not.
+    sizes = {name: 0 for name in [None, *names]}
+    for q in ref:
+        sizes[q.graph] += 1
+    assert {g.uri: len(g) for g in ds.graphs} == sizes
     assert len(ds._dictionary) <= 6 * len(ds) + len(names)
 
 
@@ -511,6 +516,8 @@ def test_a_view_of_a_removed_graph_raises():
         view.removeMatches(S, None, None)
     with pytest.raises(RuntimeError):
         view.add(Triple(S, P, Literal("b")))
+    # The refused add interned nothing into the dataset's dictionary.
+    assert len(ds._dictionary) == 0
     # Adding to the name again makes a new graph; the old view stays dead.
     ds.add(Quad(S, P, Literal("c"), name))
     with pytest.raises(RuntimeError):
@@ -566,3 +573,24 @@ def test_compaction_keeps_terms_used_by_other_graphs():
     assert list(ds.match(subject=kept.subject)) == [kept]
     assert list(ds.match(object=kept.object, graph=few)) == [kept]
     assert [g.uri for g in ds.graphs] == [None, many, few]
+
+
+def test_fully_bound_match_is_unaffected_by_removes_while_open():
+    s, p, o = S, P, NamedNode("http://e/o")
+    other = NamedNode("http://e/other")
+    d, e, f = (NamedNode("http://e/" + c) for c in "def")
+    ds = Dataset()
+    ds.add(Quad(d, e, f, None))
+    ds.add(Quad(s, p, o, None))
+    ds.add(Quad(*(NamedNode("http://e/" + c) for c in "abc"), other))
+    ds.remove(Quad(d, e, f, None))
+    found = ds.match(s, p, o)
+    first = next(found)
+    assert first == Quad(s, p, o, None)
+    # Emptying the default graph compacts the dictionary, freeing the ids of
+    # s, p and o; these adds reuse them for other terms in `other`.
+    ds.remove(first)
+    x, y, z = (NamedNode("http://e/" + c) for c in "xyz")
+    ds.add(Quad(x, y, z, other))
+    ds.add(Quad(z, y, x, other))
+    assert list(found) == []

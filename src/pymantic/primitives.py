@@ -474,6 +474,10 @@ class Graph:
         graph instance it was called on."""
         if len(triple) != 3:
             raise TypeError("a Graph holds triples; parse N-Quads into a Dataset")
+        if self._owner is not None:
+            # A view of a removed graph must not intern into its dataset's
+            # dictionary before the index refuses the add.
+            self._check_index()
         intern = self._dictionary.intern
         s, p, o = triple
         self._index.add(intern(s), intern(p), intern(o))
@@ -706,14 +710,19 @@ class Dataset:
         if pattern is None:
             return
         terms = self._dictionary.terms
+        if None not in pattern:
+            # Membership tests, as in Graph.match, so the caller may remove
+            # a match while this generator is open. All done before the
+            # first yield: a remove can compact the dictionary and later
+            # adds reuse the freed ids, so the pattern's ids are only good
+            # until then.
+            triple = tuple(terms[i] for i in pattern)
+            names = [name for name, index in self._indexes(graph) if pattern in index]
+            for name in names:
+                yield _new_triple(Quad, (*triple, name))
+            return
         for name, index in self._indexes(graph):
-            if None not in pattern:
-                # A membership test, as in Graph.match, so the caller may
-                # remove the one match while this generator is open.
-                found = [pattern] if pattern in index else []
-            else:
-                found = index.match(*pattern)
-            for s, p, o in found:
+            for s, p, o in index.match(*pattern):
                 yield _new_triple(Quad, (terms[s], terms[p], terms[o], name))
 
     def removeMatches(self, subject=None, predicate=None, object=None, graph=None):

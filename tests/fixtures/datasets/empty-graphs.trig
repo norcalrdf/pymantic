@@ -1,0 +1,4 @@
+# Two empty named graphs and one that holds a triple.
+<http://e/empty1> { }
+<http://e/full> { <http://e/s> <http://e/p> <http://e/o> . }
+<http://e/empty2> { }

@@ -1,4 +1,5 @@
 import gc
+import pathlib
 import pytest
 import random
 import sys
@@ -257,3 +258,311 @@ def test_remove_of_a_quad_raises_type_error():
     g = Graph().add(Triple(S, P, Literal("a")))
     with pytest.raises(TypeError, match="parse N-Quads into a Dataset"):
         g.remove(Quad(S, P, Literal("a"), NamedNode("http://e/g")))
+
+
+# Dataset
+
+
+FIXTURES = pathlib.Path(__file__).parent / "fixtures" / "datasets"
+G0 = NamedNode("http://e/g0")
+G1 = NamedNode("http://e/g1")
+# BLANKS[0] also appears in triples, so one graph name is shared with them.
+DS_NAMES = [G0, G1, BLANKS[0]]
+DS_GRAPHS = [None] + DS_NAMES
+
+
+def load_dataset(name):
+    # Imported here so the tests that need no fixture still run where the
+    # parsers cannot be imported.
+    from pymantic.parsers import linetrig_parser
+
+    with open(FIXTURES / name, encoding="utf-8") as f:
+        return linetrig_parser.parse(f)
+
+
+def random_quad(rng):
+    return Quad(*random_triple(rng), rng.choice(DS_GRAPHS))
+
+
+def random_quad_pattern(rng, ref):
+    """Like random_pattern, drawing bound values from the quads in ref."""
+    if ref and rng.random() < 0.5:
+        s, p, o, _ = rng.choice(list(ref))
+    else:
+        s, p, o = random_triple(rng)
+        if rng.random() < 0.1:
+            s = UNSEEN
+    bs, bp, bo = rng.choice(PATTERNS)
+    return (s if bs else None, p if bp else None, o if bo else None)
+
+
+def matching_quads(ref, s, p, o, graph=None):
+    return {
+        q
+        for q in matching(ref, s, p, o)
+        if graph is None or (q.graph is not None and q.graph == graph)
+    }
+
+
+def named_graphs(ds):
+    return {g.uri for g in ds.graphs if g.uri is not None}
+
+
+def check_dataset_against_reference(ds, ref, names, rng):
+    assert len(ds) == len(ref)
+    quads = list(ds)
+    assert len(quads) == len(ref)
+    assert set(quads) == set(ref)
+    for q in rng.sample(list(ref), min(3, len(ref))):
+        assert (q in ds) is True
+    for _ in range(3):
+        q = random_quad(rng)
+        assert (q in ds) is (q in ref)
+        t = Triple(q.subject, q.predicate, q.object)
+        assert (t in ds) is (Quad(*t, None) in ref)
+    s, p, o = random_quad_pattern(rng, ref)
+    graph = rng.choice(DS_NAMES)
+    for bs, bp, bo in PATTERNS:
+        qs = s if bs else None
+        qp = p if bp else None
+        qo = o if bo else None
+        for g in (None, graph):
+            got = list(ds.match(qs, qp, qo, g))
+            assert len(got) == len(set(got))
+            assert set(got) == matching_quads(ref, qs, qp, qo, g), (qs, qp, qo, g)
+    assert [g.uri for g in ds.graphs][0] is None
+    assert named_graphs(ds) == names
+    assert len(ds._dictionary) <= 6 * len(ds) + len(names)
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_dataset_agrees_with_a_reference_model(seed):
+    rng = random.Random(seed)
+    ds = Dataset()
+    ref = {}
+    names = set()
+
+    def add(q):
+        ref.setdefault(q, None)
+        if q.graph is not None:
+            names.add(q.graph)
+
+    for _ in range(1000):
+        roll = rng.random()
+        if roll < 0.4:
+            q = random_quad(rng)
+            ds.add(q)
+            add(q)
+        elif roll < 0.65:
+            if ref and rng.random() < 0.8:
+                q = rng.choice(list(ref))
+                ds.remove(q)
+                del ref[q]
+            else:
+                q = random_quad(rng)
+                if q in ref:
+                    continue
+                with pytest.raises(KeyError):
+                    ds.remove(q)
+        elif roll < 0.8:
+            s, p, o = random_quad_pattern(rng, ref)
+            graph = rng.choice(DS_GRAPHS)
+            assert ds.removeMatches(s, p, o, graph) is ds
+            for q in matching_quads(ref, s, p, o, graph):
+                del ref[q]
+        elif roll < 0.87:
+            name = rng.choice(DS_NAMES)
+            if name in names:
+                ds.remove_graph(name)
+                names.discard(name)
+                for q in [q for q in ref if q.graph == name]:
+                    del ref[q]
+            else:
+                with pytest.raises(KeyError):
+                    ds.remove_graph(name)
+        elif roll < 0.94:
+            name = rng.choice(DS_NAMES)
+            triples = [random_triple(rng) for _ in range(rng.randrange(4))]
+            ds.add_graph(Graph().addAll(triples), named=name)
+            names.add(name)
+            for t in triples:
+                add(Quad(*t, name))
+        else:
+            # A batch past the merge threshold, so the next query re-sorts.
+            batch = [random_quad(rng) for _ in range(40)]
+            ds.addAll(batch)
+            for q in batch:
+                add(q)
+        check_dataset_against_reference(ds, ref, names, rng)
+
+
+def test_empty_named_graphs_persist_until_removed():
+    ds = load_dataset("empty-graphs.trig")
+    empty1, full = NamedNode("http://e/empty1"), NamedNode("http://e/full")
+    empty2 = NamedNode("http://e/empty2")
+    assert len(ds) == 1
+    assert named_graphs(ds) == {empty1, full, empty2}
+    ds.remove(Quad(S, P, NamedNode("http://e/o"), full))
+    assert len(ds) == 0
+    assert named_graphs(ds) == {empty1, full, empty2}
+    ds.remove_graph(full)
+    ds.remove_graph(next(g for g in ds.graphs if g.uri == empty1))
+    assert [g.uri for g in ds.graphs] == [None, empty2]
+
+
+def test_remove_graph_rejects_the_default_graph_and_unknown_names():
+    ds = load_dataset("default-only.trig")
+    with pytest.raises(ValueError):
+        ds.remove_graph(None)
+    with pytest.raises(KeyError):
+        ds.remove_graph(NamedNode("http://e/nowhere"))
+    with pytest.raises(KeyError):
+        # Known as a term, but it names no graph.
+        ds.remove_graph(S)
+    assert len(ds) == 3
+    assert [g.uri for g in ds.graphs] == [None]
+
+
+def test_reads_create_no_graphs():
+    ds = Dataset()
+    name = NamedNode("http://e/g")
+    assert list(ds.match(graph=name)) == []
+    assert list(ds.match(S, P, Literal("a"), name)) == []
+    assert Quad(S, P, Literal("a"), name) not in ds
+    assert [g.uri for g in ds.graphs] == [None]
+    assert len(ds._dictionary) == 0
+
+
+def test_triple_membership_is_default_graph_membership():
+    t = Triple(S, P, Literal("a"))
+    ds = Dataset()
+    ds.add(Quad(*t, NamedNode("http://e/g")))
+    assert (t in ds) is False
+    assert (Quad(*t, NamedNode("http://e/g")) in ds) is True
+    ds.add(Quad(*t, None))
+    assert (t in ds) is True
+    assert (Quad(*t, None) in ds) is True
+    assert ("not a statement" in ds) is False
+    assert ((S, P) in ds) is False
+
+
+def test_blank_nodes_are_shared_across_graphs():
+    ds = load_dataset("shared-blank-nodes.trig")
+    (default,) = [q for q in ds if q.graph is None]
+    b = default.subject
+    assert isinstance(b, BlankNode)
+    (in_g1,) = ds.match(graph=NamedNode("http://e/g1"))
+    assert in_g1.subject is b
+    named_by_b = [g for g in ds.graphs if g.uri is b]
+    assert len(named_by_b) == 1
+    assert list(named_by_b[0]) == [Triple(S, P, NamedNode("http://e/o"))]
+    assert {q.graph for q in ds.match(subject=S)} == {b}
+
+
+def test_add_graph_copies_the_graph():
+    ds = load_dataset("shared-blank-nodes.trig")
+    b = next(q.subject for q in ds if q.graph is None)
+    name = NamedNode("http://e/copied")
+    g = Graph().add(Triple(b, P, Literal("x")))
+    ds.add_graph(g, named=name)
+    g.add(Triple(S, P, Literal("later")))
+    assert list(ds.match(graph=name)) == [Quad(b, P, Literal("x"), name)]
+    (copied,) = ds.match(graph=name)
+    assert copied.subject is b
+    # Same name again: the union of both graphs.
+    ds.add_graph(Graph().add(Triple(S, P, Literal("y"))), named=name)
+    assert set(ds.match(graph=name)) == {
+        Quad(b, P, Literal("x"), name),
+        Quad(S, P, Literal("y"), name),
+    }
+
+
+def test_add_graph_uses_the_graph_uri_as_its_name():
+    name = NamedNode("http://e/g")
+    ds = Dataset()
+    ds.add_graph(Graph(name).add(Triple(S, P, Literal("a"))))
+    assert list(ds) == [Quad(S, P, Literal("a"), name)]
+    with pytest.raises(ValueError):
+        ds.add_graph(Graph())
+
+
+def test_a_view_of_a_removed_graph_raises():
+    name = NamedNode("http://e/g")
+    ds = Dataset()
+    ds.add(Quad(S, P, Literal("a"), name))
+    (view,) = [g for g in ds.graphs if g.uri == name]
+    pending = view.match(subject=S)
+    ds.remove_graph(name)
+    with pytest.raises(RuntimeError):
+        len(view)
+    with pytest.raises(RuntimeError):
+        list(view)
+    with pytest.raises(RuntimeError):
+        list(pending)
+    # The removal emptied the dataset, so compaction freed every term and
+    # these reads find unknown terms before reaching the index.
+    with pytest.raises(RuntimeError):
+        Triple(S, P, Literal("a")) in view
+    with pytest.raises(RuntimeError):
+        list(view.match(S, P, Literal("a")))
+    with pytest.raises(RuntimeError):
+        view.remove(Triple(S, P, Literal("a")))
+    with pytest.raises(RuntimeError):
+        view.removeMatches(S, None, None)
+    with pytest.raises(RuntimeError):
+        view.add(Triple(S, P, Literal("b")))
+    # Adding to the name again makes a new graph; the old view stays dead.
+    ds.add(Quad(S, P, Literal("c"), name))
+    with pytest.raises(RuntimeError):
+        len(view)
+
+
+def test_view_edits_reach_the_dataset():
+    name = NamedNode("http://e/g")
+    ds = Dataset()
+    ds.add(Quad(S, P, Literal("a"), name))
+    (view,) = [g for g in ds.graphs if g.uri == name]
+    view.add(Triple(S, P, Literal("b")))
+    view.remove(Triple(S, P, Literal("a")))
+    assert list(ds) == [Quad(S, P, Literal("b"), name)]
+
+
+def test_match_takes_a_graph_name_as_a_plain_string():
+    q = Quad(S, P, Literal("a"), NamedNode("http://e/g"))
+    ds = Dataset()
+    ds.add(q)
+    assert list(ds.match(graph="http://e/g")) == [q]
+    assert list(ds.match(S, P, Literal("a"), "http://e/g")) == [q]
+
+
+def test_dataset_remove_of_an_absent_quad_raises_key_error():
+    name = NamedNode("http://e/g")
+    ds = Dataset()
+    ds.add(Quad(S, P, Literal("a"), name))
+    for absent in (
+        Quad(S, P, Literal("a"), None),
+        Quad(S, P, Literal("a"), NamedNode("http://e/other")),
+        Quad(S, P, Literal("b"), name),
+    ):
+        with pytest.raises(KeyError):
+            ds.remove(absent)
+    assert len(ds) == 1
+
+
+def test_compaction_keeps_terms_used_by_other_graphs():
+    many, few = NamedNode("http://e/many"), NamedNode("http://e/few")
+    quads = [
+        Quad(NamedNode("http://e/s%d" % i), P, Literal(str(i)), many)
+        for i in range(100)
+    ]
+    ds = Dataset().addAll(quads)
+    # Its terms are first seen in `many` and outlive every quad there.
+    kept = Quad(quads[0].subject, P, quads[0].object, few)
+    ds.add(kept)
+    for q in quads:
+        ds.remove(q)
+    assert len(ds._dictionary) <= 6 * len(ds) + 2
+    assert list(ds) == [kept]
+    assert list(ds.match(subject=kept.subject)) == [kept]
+    assert list(ds.match(object=kept.object, graph=few)) == [kept]
+    assert [g.uri for g in ds.graphs] == [None, many, few]

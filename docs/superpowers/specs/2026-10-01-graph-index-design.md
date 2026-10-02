@@ -239,6 +239,7 @@ the index tests use them.
   graphs persist; `Triple in dataset` checks only the default graph;
   `__contains__` returns a `bool`; `add_graph` copies, so the passed `Graph`
   is not the dataset's graph.
+- `Dataset.graphs` always lists the default graph, first.
 
 ## Testing
 

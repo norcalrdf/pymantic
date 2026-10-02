@@ -17,11 +17,15 @@ Ids must be in ``range(2**32)``. ``None`` is a wildcard in `match`.
 from array import array
 from bisect import bisect_left, bisect_right
 
-__all__ = ["SMALL_MERGE", "TripleIndex"]
+__all__ = ["RESORT_DIVISOR", "SMALL_MERGE", "TripleIndex"]
 
-# Buffers up to this size are inserted by bisect; larger ones trigger a
-# re-sort. Tuned in Task 9.
+# A pending buffer is inserted row by row with bisect unless it holds more
+# than SMALL_MERGE rows and more than 1/RESORT_DIVISOR of the index, in
+# which case every ordering is re-sorted. Inserting shifts the columns, so
+# its cost grows with the index; the relative bound keeps a modest batch on
+# a large index from paying for a full re-sort. Tuned in Task 9.
 SMALL_MERGE = 32
+RESORT_DIVISOR = 64
 
 _MASK32 = 0xFFFFFFFF
 _MASK64 = 0xFFFFFFFFFFFFFFFF
@@ -34,6 +38,11 @@ _ROLES = ((0, 1, 2), (2, 0, 1), (1, 2, 0))
 
 _CHANGED = "TripleIndex changed during iteration"
 _DETACHED = "TripleIndex has been detached"
+
+
+def _changed(index):
+    """The error for a generator whose index changed under it."""
+    return RuntimeError(_DETACHED if index._detached else _CHANGED)
 
 
 def _empty_columns():
@@ -72,7 +81,8 @@ def _delete(columns, a, b, c):
     c0, c1, c2 = columns
     # The keys dict says the row is present, so a miss here means the
     # orderings and the keys disagree.
-    assert c0[i] == a and c1[i] == b and c2[i] == c
+    if i == len(c0) or c0[i] != a or c1[i] != b or c2[i] != c:
+        raise RuntimeError("TripleIndex orderings disagree with its keys")
     del c0[i]
     del c1[i]
     del c2[i]
@@ -127,11 +137,18 @@ class TripleIndex:
         keys = self._keys
         if key in keys:
             return False
-        keys[key] = None
         bs, bp, bo = self._buffer
-        bs.append(s)
-        bp.append(p)
-        bo.append(o)
+        try:
+            bs.append(s)
+            bp.append(p)
+            bo.append(o)
+        except Exception:
+            # An id outside range(2**32) fails one append; trim the columns
+            # that took a value so the buffer stays aligned.
+            del bs[len(bo) :]
+            del bp[len(bo) :]
+            raise
+        keys[key] = None
         self._version += 1
         return True
 
@@ -240,7 +257,7 @@ class TripleIndex:
         bs, bp, bo = self._buffer
         if not bs:
             return
-        if len(bs) > SMALL_MERGE:
+        if len(bs) > max(SMALL_MERGE, len(self._keys) // RESORT_DIVISOR):
             self._resort()
             return
         spo, pos, osp = self._orders
@@ -265,22 +282,27 @@ class TripleIndex:
         self.resorts += 1
 
     # Each generator checks for detach on its first next(), since it may
-    # have been created before the detach.
+    # have been created before the detach. After every yield it checks the
+    # version before reading on, so a change is caught even after the last
+    # result, as dict iteration does.
 
     def _lookup(self, s, p, o):
         if self._detached:
             raise RuntimeError(_DETACHED)
+        version = self._version
         if (s << 64 | p << 32 | o) in self._keys:
             yield (s, p, o)
+            if self._version != version:
+                raise _changed(self)
 
     def _walk_keys(self):
         if self._detached:
             raise RuntimeError(_DETACHED)
         version = self._version
         for key in self._keys:
-            if self._version != version:
-                raise RuntimeError(_CHANGED)
             yield (key >> 64, (key >> 32) & _MASK32, key & _MASK32)
+            if self._version != version:
+                raise _changed(self)
 
     def _scan(self, order, a, b):
         """Yield the rows of `order` whose first column is `a` and, unless
@@ -299,10 +321,10 @@ class TripleIndex:
         i_s, i_p, i_o = _ROLES[order]
         cs, cp, co = columns[i_s], columns[i_p], columns[i_o]
         for i in range(lo, hi):
-            # Check before reading: a change may have shortened the columns.
-            if self._version != version:
-                raise RuntimeError(_CHANGED)
             yield (cs[i], cp[i], co[i])
+            # A change may have shortened the columns; stop before reading.
+            if self._version != version:
+                raise _changed(self)
 
     def _distinct(self, order):
         if self._detached:
@@ -313,8 +335,8 @@ class TripleIndex:
         i = 0
         n = len(column)
         while i < n:
-            if self._version != version:
-                raise RuntimeError(_CHANGED)
             value = column[i]
             yield value
+            if self._version != version:
+                raise _changed(self)
             i = bisect_right(column, value, i)

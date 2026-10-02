@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from pymantic.triple_index import SMALL_MERGE, TripleIndex
+from pymantic.triple_index import RESORT_DIVISOR, SMALL_MERGE, TripleIndex
 
 IDS = range(16)
 
@@ -53,12 +53,12 @@ def random_triple(rng):
     return (rng.choice(IDS), rng.choice(IDS), rng.choice(IDS))
 
 
-def run_model(seed, operations=2000, max_size=250):
+def run_model(seed, operations=2000, max_size=250, check_every=1):
     rng = random.Random(seed)
     index = TripleIndex()
     # A dict used as an ordered set: re-adding after a remove moves to the end.
     ref = {}
-    for _ in range(operations):
+    for step in range(operations):
         roll = rng.random()
         # Bias toward removal once the graph is large, to keep it small
         # enough that collisions and empty results stay common.
@@ -82,12 +82,21 @@ def run_model(seed, operations=2000, max_size=250):
             spo = random_triple(rng)
             assert index.add(*spo) == (spo not in ref)
             ref[spo] = None
-        check_against_reference(index, ref, rng)
+        if step % check_every == 0:
+            check_against_reference(index, ref, rng)
+    check_against_reference(index, ref, rng)
 
 
 @pytest.mark.parametrize("seed", range(20))
 def test_model(seed):
     run_model(seed)
+
+
+@pytest.mark.parametrize("seed", range(20, 30))
+def test_model_with_pending_adds(seed):
+    # Querying only every 7th operation leaves adds pending when removes run,
+    # both single adds (merged by bisect) and batches (merged by re-sort).
+    run_model(seed, check_every=7)
 
 
 def test_readd_moves_to_end():
@@ -189,6 +198,40 @@ def test_mutation_during_iteration_raises(read, mutate):
         next(it)
 
 
+def one_result_readers():
+    return [
+        ("iter", iter),
+        ("match s", lambda index: index.match(1, None, None)),
+        ("match o", lambda index: index.match(None, None, 3)),
+        ("match s p o", lambda index: index.match(1, 2, 3)),
+        ("subjects", lambda index: index.subjects()),
+    ]
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda index: index.remove(1, 2, 3),
+        lambda index: index.add(7, 7, 7),
+        lambda index: index.detach(),
+    ],
+    ids=["remove", "add", "detach"],
+)
+@pytest.mark.parametrize(
+    "read",
+    [r for _, r in one_result_readers()],
+    ids=[name for name, _ in one_result_readers()],
+)
+def test_mutation_after_last_result_raises(read, mutate):
+    index = TripleIndex()
+    index.add(1, 2, 3)
+    it = read(index)
+    assert next(it) in [(1, 2, 3), 1]
+    mutate(index)
+    with pytest.raises(RuntimeError):
+        next(it)
+
+
 def test_query_merges_single_adds_without_resorting():
     rng = random.Random(6)
     index = TripleIndex()
@@ -207,6 +250,45 @@ def test_large_batch_of_adds_resorts():
     assert index.resorts == 0
     assert list(index.match(None, 3, None)) == [(3, 3, 3)]
     assert index.resorts == 1
+
+
+def test_resort_threshold_grows_with_index():
+    index = TripleIndex()
+    loaded = 64 * RESORT_DIVISOR
+    for i in range(loaded):
+        index.add(i, 0, i)
+    list(index.match(0, None, None))
+    assert index.resorts == 1
+
+    # More than SMALL_MERGE rows, but at most 1/RESORT_DIVISOR of the index:
+    # merged by bisect.
+    batch = (loaded + 64) // RESORT_DIVISOR
+    assert SMALL_MERGE < batch
+    for i in range(batch):
+        index.add(i, 1, i)
+    assert sorted(index.match(None, 1, None)) == [(i, 1, i) for i in range(batch)]
+    assert index.resorts == 1
+
+    # A batch above the relative bound re-sorts.
+    batch = len(index) // RESORT_DIVISOR + 10
+    for i in range(batch):
+        index.add(i, 2, i)
+    assert sorted(index.match(None, 2, None)) == [(i, 2, i) for i in range(batch)]
+    assert index.resorts == 2
+    assert list(index.subjects()) == list(range(loaded))
+
+
+def test_out_of_range_id_leaves_index_unchanged():
+    index = TripleIndex()
+    index.add(1, 2, 3)
+    for bad in [(2**32, 0, 0), (0, 2**32, 0), (0, 0, 2**32), (0, 0, -1)]:
+        with pytest.raises(OverflowError):
+            index.add(*bad)
+    assert list(index) == [(1, 2, 3)]
+    assert all(len(c) == 1 for c in index._columns()[9:])
+    index.add(4, 5, 6)
+    assert sorted(index.match(None, None, None)) == [(1, 2, 3), (4, 5, 6)]
+    assert sorted(index.match(4, None, None)) == [(4, 5, 6)]
 
 
 def test_subjects_drops_subject_after_last_triple_removed():
@@ -267,3 +349,15 @@ def test_columns_are_unsigned_int_arrays():
     assert len(columns) == 12
     assert len({id(c) for c in columns}) == 12
     assert all(c.typecode == "I" for c in columns)
+
+
+def test_remove_detects_orderings_out_of_step_with_keys():
+    index = TripleIndex()
+    index.add(1, 2, 3)
+    index.add(4, 5, 6)
+    list(index.match(1, None, None))
+    # Corrupt one ordering so it no longer holds a triple the keys hold.
+    for column in index._columns()[3:6]:
+        column.pop()
+    with pytest.raises(RuntimeError, match="disagree"):
+        index.remove(4, 5, 6)

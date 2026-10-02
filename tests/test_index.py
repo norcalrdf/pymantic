@@ -234,7 +234,8 @@ def test_graph_adds_almost_no_tracked_objects():
     del triples
     delta = tracked_objects() - before
     assert len(g) == 10_000
-    assert delta < distinct_terms + 50
+    # Leaf-based indexes hold a few tracked arrays per thousand triples.
+    assert delta < distinct_terms + 50 + len(g) // 50
 
 
 def test_removing_the_match_of_a_fully_bound_pattern():

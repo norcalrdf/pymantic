@@ -230,18 +230,18 @@ Measurements
 ============
 
 Canonical blank node labels for one graph already in memory, parsing
-excluded, measured on 2026-09-20 with Python 3.14 and Node 26 on the same
-inputs for four implementations: this module; pyld 3.3.0's ``URDNA2015``,
-which is RDFC-1.0's algorithm in pure Python; rdf-canonize 5.0.0, the
-reference RDFC-1.0 implementation in Node, shown at the best of its work
-factor settings because its default aborts on 18 of the RDFC-1.0 suite's own
-inputs; and rdflib 7.6.0's canonicalizer, which is what its ``isomorphic``
-computes. rdflib was capped at 60 seconds per input, the others at 120.
-``benchmarks/compare_implementations.py`` produces this table; see
-``benchmarks/README.rst`` for fetching the schema.org data. Its synthetic
-graphs use the same generators, though the 5000-person graph now has a seed
-of its own, and which rdf-canonize work factor gave each row above was not
-recorded, so the script tries several and reports the fastest that finishes.
+excluded, measured on 2026-10-02 with Python 3.14.7 and Node 26.8.2 on the
+same inputs for four implementations: this module; pyld 3.3.0's
+``URDNA2015``, which is RDFC-1.0's algorithm in pure Python; rdf-canonize
+5.0.0, the reference RDFC-1.0 implementation in Node, shown at the fastest
+of its work factor settings 1, 2 and 3 that finishes, because its default
+aborts on 18 of the RDFC-1.0 suite's own inputs; and rdflib 7.6.0's
+canonicalizer, which is what its ``isomorphic`` computes. rdflib was capped
+at 60 seconds per input, the others at 120. Each figure is one run, started
+once the 1-minute load average had stayed under 2 for three minutes; it
+stayed under 2 for the whole run. ``benchmarks/compare_implementations.py``
+produces this table, under ``benchmarks/when_quiet.py``; see
+``benchmarks/README.rst`` for fetching the schema.org data.
 
 .. list-table::
    :header-rows: 1
@@ -259,91 +259,111 @@ recorded, so the script tries several and reports the fastest that finishes.
      - 0.002 s
      - 0.003 s
      - 0.003 s
-     - 0.22 s
+     - 0.23 s
    * - schema.org SHACL shapes, 400 of 1017
      - 5025
      - 2119
-     - 0.016 s
-     - 0.026 s
+     - 0.025 s [1]
+     - 0.029 s
      - 0.015 s
-     - 35.7 s
+     - 39.5 s
    * - schema.org SHACL shapes, whole file
      - 24039
      - 11658
-     - 0.093 s
-     - 0.166 s
+     - 0.083 s
+     - 0.164 s
      - 0.074 s
      - timeout
    * - preferential attachment graph, 1000 blank people, no attributes
      - 3984
      - 1000
-     - 0.052 s
+     - 0.029 s
      - timeout
      - timeout
-     - 11.4 s
+     - 6.3 s
    * - preferential attachment graph, 5000 blank people
-     - 19956
+     - 19978
      - 5000
-     - 0.65 s
+     - 0.145 s
      - recursion error
      - timeout
      - timeout
    * - cycle, 80 nodes
      - 80
      - 80
-     - 0.64 s
-     - 0.15 s
-     - 0.047 s
-     - 1.3 s
+     - 0.149 s
+     - 0.128 s
+     - 0.038 s
+     - 1.0 s
    * - random 3-regular, 20 nodes
      - 60
      - 20
-     - 0.010 s
+     - 0.005 s
      - 1.0 s
-     - 0.25 s
-     - 0.039 s
+     - aborted [2]
+     - 0.046 s
    * - random 3-regular, 40 nodes
      - 120
      - 40
-     - 0.046 s
+     - 0.020 s
      - timeout
-     - timeout
+     - aborted [2]
      - 0.24 s
    * - 8x8 grid
      - 112
      - 64
-     - 0.004 s
-     - 0.51 s
-     - 0.13 s
-     - 0.36 s
+     - 0.002 s
+     - 0.59 s
+     - 0.114 s
+     - 0.34 s
    * - 12x12 grid
      - 264
      - 144
-     - 0.014 s
+     - 0.006 s
      - timeout
-     - timeout
+     - aborted [2]
      - 4.2 s
    * - hub with 40 identical children
      - 80
      - 41
-     - 0.004 s
+     - 0.002 s
      - 0.001 s
      - 0.001 s
-     - 1.8 s
+     - 1.9 s
    * - 10-node clique (RDFC-1.0 poison test)
      - 100
      - 10
-     - Undecidable, 0.04 s
+     - Undecidable [3]
      - timeout
-     - timeout
-     - n/a
+     - aborted [2]
+     - 0.027 s [4]
    * - the other 64 RDFC-1.0 suite inputs, summed
      -
      -
-     - 0.010 s
-     - 0.042 s
-     - 0.044 s
+     - 0.006 s
+     - 0.043 s
+     - 0.057 s
      - n/a
+
+[1] The one figure slower than the 2026-09-20 measurement (0.016 s); a
+single 16 ms run, not yet confirmed by repeated runs.
+
+[2] Aborted by rdf-canonize's own work limit at work factors 1, 2 and 3. A
+higher setting finished the 20-node random regular graph in 0.25 s in the
+earlier measurement; the four rows are being remeasured with work factors
+up to unlimited.
+
+[3] Raised in about 30 ms in a separate run on a busier machine; this run
+recorded the outcome without its time.
+
+[4] rdflib returns a hash for the clique; it has no work limit to report
+that the input is beyond it.
+
+Against the 2026-09-20 measurement of this module, before the refinement
+and serializer work later in this branch: symmetric and relationship
+graphs are two to four times faster (the 80-node cycle 0.64 s to 0.149 s,
+the 5000-person graph 0.65 s to 0.145 s), and real SHACL data is about the
+same.
 
 On real SHACL data the three fast implementations are within a factor of two
 of each other and rdflib cannot finish the file. On relationship graphs,
@@ -357,8 +377,8 @@ here resolves them. On globally symmetric rings this module is the slowest
 of the three fast ones, n top-level choices each followed by n/2 refinement
 rounds, bounded by the cubic budget; automorphism pruning would bring that
 family from n³ to n² without changing any output. The clique is the only
-input that is genuinely hard, and this module refuses it in 40 ms while the
-others run until stopped.
+input that is genuinely hard; this module refuses it in milliseconds, while
+pyld runs until stopped and rdf-canonize stops at its own work limit.
 
 Tests
 =====

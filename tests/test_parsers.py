@@ -1,4 +1,4 @@
-from io import StringIO
+from io import BytesIO, StringIO
 import pytest
 
 from pymantic.parsers import nquads_parser, ntriples_parser, turtle_parser
@@ -200,6 +200,34 @@ def test_parse_turtle_example_1():
     g = Graph()
     turtle_parser.parse(ttl, g)
     assert len(g) == 4
+
+
+@pytest.mark.parametrize(
+    "stream",
+    [
+        StringIO('<http://a.example/s> <http://a.example/p> "café" .'),
+        BytesIO('<http://a.example/s> <http://a.example/p> "café" .'.encode()),
+    ],
+)
+def test_parse_turtle_stream(stream):
+    g = turtle_parser.parse(stream)
+    assert set(g) == {
+        Triple(
+            NamedNode("http://a.example/s"),
+            NamedNode("http://a.example/p"),
+            Literal(
+                "café",
+                datatype=NamedNode("http://www.w3.org/2001/XMLSchema#string"),
+            ),
+        )
+    }
+
+
+def test_parse_turtle_bytes():
+    g = turtle_parser.parse(
+        b"<http://a.example/s> <http://a.example/p> <http://a.example/o> ."
+    )
+    assert len(g) == 1
 
 
 def test_parse_turtle_blank_node_property_list_in_object_list():

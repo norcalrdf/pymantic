@@ -4,7 +4,7 @@ import pytest
 import random
 import sys
 
-from pymantic import dict_index, offset_index, primitives
+from pymantic import primitives
 from pymantic.primitives import (
     XSD_STRING,
     BlankNode,
@@ -15,23 +15,15 @@ from pymantic.primitives import (
     Quad,
     Triple,
 )
+from tests.index_implementations import INDEXES, index_class_named
 
 
-@pytest.fixture(
-    autouse=True, params=["sorted", "offsets", "offsets-small-folds", "dict"]
-)
+@pytest.fixture(autouse=True, params=INDEXES)
 def index_class(request, monkeypatch):
-    """Run every test once per index implementation. The small-folds variant
-    lowers DELTA_MIN so these small graphs fold, leaving rows in main, dead
-    rows and delta rows all in play."""
-    if request.param == "sorted":
-        return request.param
-    if request.param == "offsets-small-folds":
-        monkeypatch.setattr(offset_index, "DELTA_MIN", 4)
-    if request.param == "dict":
-        monkeypatch.setattr(primitives, "TripleIndex", dict_index.NestedDictTripleIndex)
-        return request.param
-    monkeypatch.setattr(primitives, "TripleIndex", offset_index.OffsetTripleIndex)
+    """Run every test once per index implementation, with Graph and Dataset
+    building that index."""
+    index_class = index_class_named(request.param, monkeypatch)
+    monkeypatch.setattr(primitives, "TripleIndex", index_class)
     return request.param
 
 

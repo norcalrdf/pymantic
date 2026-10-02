@@ -1,10 +1,14 @@
+import gc
 import pytest
 import random
+import sys
 
-from pymantic import offset_index
+from pymantic import adjacency_index
+from pymantic.adjacency_index import AdjacencyTripleIndex
 from pymantic.dict_index import NestedDictTripleIndex
 from pymantic.offset_index import DELTA_MIN, FOLD_DIVISOR, OffsetTripleIndex
 from pymantic.triple_index import RESORT_DIVISOR, SMALL_MERGE, TripleIndex
+from tests.index_implementations import INDEXES, index_class_named
 
 IDS = range(16)
 
@@ -51,18 +55,10 @@ def check_against_reference(index, ref, rng):
     assert index.ids() == {i for t in ref for i in t}
 
 
-@pytest.fixture(params=["sorted", "offsets", "offsets-small-folds", "dict"])
+@pytest.fixture(params=INDEXES)
 def index_class(request, monkeypatch):
-    """Each index implementation. The small-folds variant lowers DELTA_MIN
-    so the small graphs in these tests fold, leaving rows in main, dead
-    rows and delta rows all in play."""
-    if request.param == "sorted":
-        return TripleIndex
-    if request.param == "dict":
-        return NestedDictTripleIndex
-    if request.param == "offsets-small-folds":
-        monkeypatch.setattr(offset_index, "DELTA_MIN", 4)
-    return OffsetTripleIndex
+    """Each index implementation."""
+    return index_class_named(request.param, monkeypatch)
 
 
 def random_triple(rng):
@@ -301,6 +297,8 @@ def pending_columns(index):
     if isinstance(index, NestedDictTripleIndex):
         # No columns: each ordering's first level and the keys.
         return [index._spo, index._pos, index._osp, index._keys]
+    if isinstance(index, AdjacencyTripleIndex):
+        return [index._pending]
     return index._delta_columns()
 
 
@@ -592,3 +590,231 @@ def test_dict_reads_do_not_create_entries():
     assert index._spo == {1: {2: {3}}}
     assert index._pos == {2: {3: {1}}}
     assert index._osp == {3: {1: {2}}}
+
+
+# AdjacencyTripleIndex
+
+
+def adjacency_rows(index):
+    """Every row value of the three orderings."""
+    return [row for rows in index._orders for row in rows.values()]
+
+
+@pytest.fixture
+def small_adjacency(monkeypatch):
+    """Constants small enough that the model tests fold pending adds, turn
+    rows into lists and filter rows in remove_many."""
+    monkeypatch.setattr(adjacency_index, "FOLD_MIN", 8)
+    monkeypatch.setattr(adjacency_index, "LIST_DEGREE", 4)
+    monkeypatch.setattr(adjacency_index, "_FILTER_MIN", 2)
+
+
+@pytest.mark.parametrize("seed", range(30, 40))
+def test_adjacency_model_with_small_constants(small_adjacency, seed):
+    run_model(AdjacencyTripleIndex, seed)
+    run_model(AdjacencyTripleIndex, seed, check_every=7)
+
+
+@pytest.mark.parametrize("mutate", [m for _, m in mutating_calls()])
+@pytest.mark.parametrize("read", [r for _, r in readers()])
+def test_adjacency_mutation_of_list_rows_raises(monkeypatch, read, mutate):
+    # Every row with more than one value is a list, mutated in place.
+    monkeypatch.setattr(adjacency_index, "LIST_DEGREE", 1)
+    test_mutation_during_iteration_raises(AdjacencyTripleIndex, read, mutate)
+
+
+def test_adjacency_small_pending_is_inserted_without_folding():
+    index = AdjacencyTripleIndex()
+    for i in range(adjacency_index.FOLD_MIN):
+        index.add(i % 7, 0, i)
+    assert sorted(index.match(3, None, None)) == [
+        (3, 0, i) for i in range(adjacency_index.FOLD_MIN) if i % 7 == 3
+    ]
+    assert index.folds == 0
+    assert index._pending == []
+
+
+def test_adjacency_large_pending_folds_once():
+    index = AdjacencyTripleIndex()
+    count = adjacency_index.FOLD_MIN + 1
+    for i in range(count):
+        index.add(i % 7, i % 3, i)
+    assert list(index.match(None, 2, None)) == sorted(
+        [(i % 7, 2, i) for i in range(count) if i % 3 == 2],
+        key=lambda t: (t[2], t[0]),
+    )
+    assert index.folds == 1
+    assert list(index.match(None, 1, None))
+    assert index.folds == 1
+
+
+def test_adjacency_fold_threshold_grows_with_index():
+    index = AdjacencyTripleIndex()
+    loaded = 2 * adjacency_index.FOLD_MIN * adjacency_index.FOLD_DIVISOR
+    for i in range(loaded):
+        index.add(i, 0, i)
+    list(index.match(0, None, None))
+    assert index.folds == 1
+
+    # More than FOLD_MIN pending adds, but at most 1/FOLD_DIVISOR of the
+    # index: inserted one by one.
+    batch = (loaded + adjacency_index.FOLD_MIN) // adjacency_index.FOLD_DIVISOR
+    assert adjacency_index.FOLD_MIN < batch
+    for i in range(batch):
+        index.add(i, 1, i)
+    assert list(index.match(None, 1, None)) == [(i, 1, i) for i in range(batch)]
+    assert index.folds == 1
+
+    # A batch above the relative bound folds, merging into existing rows.
+    # The bound counts the batch too.
+    batch = 2 * len(index) // adjacency_index.FOLD_DIVISOR
+    for i in range(batch):
+        index.add(i, 2, i)
+    assert list(index.match(None, 2, None)) == [(i, 2, i) for i in range(batch)]
+    assert list(index.match(5, None, None)) == [(5, 0, 5), (5, 1, 5), (5, 2, 5)]
+    assert index.folds == 2
+    assert list(index.subjects()) == list(range(loaded))
+
+
+def test_adjacency_results_within_a_key_are_sorted():
+    index = AdjacencyTripleIndex()
+    triples = [(1, p, o) for p in (5, 3, 9) for o in (8, 2, 6)]
+    for spo in triples:
+        index.add(*spo)
+    assert list(index.match(1, None, None)) == sorted(triples)
+    assert list(index.match(1, 3, None)) == [(1, 3, 2), (1, 3, 6), (1, 3, 8)]
+    assert list(index.match(1, None, 6)) == [(1, 3, 6), (1, 5, 6), (1, 9, 6)]
+
+
+@pytest.mark.parametrize("bulk", [False, True], ids=["inserted", "folded"])
+def test_adjacency_row_crossing_list_degree_becomes_a_list(monkeypatch, bulk):
+    degree = adjacency_index.LIST_DEGREE
+    # Low enough that the adds below fold when queried together.
+    monkeypatch.setattr(adjacency_index, "FOLD_MIN", degree)
+    index = AdjacencyTripleIndex()
+    # Odd objects first and even ones after, so later inserts land between
+    # existing values rather than only at the end.
+    order = list(range(1, 2 * degree, 2)) + list(range(0, 2 * degree + 2, 2))
+    for count, o in enumerate(order, 1):
+        index.add(7, 1, o)
+        if not bulk:
+            list(index.match(7, None, None))
+            row = index._orders[0][7]
+            assert type(row) is (tuple if count <= degree else list)
+    list(index.match(7, None, None))
+    assert index.folds == (1 if bulk else 0)
+    assert type(index._orders[0][7]) is list
+    assert type(index._orders[1][1]) is list
+    assert list(index.match(7, None, None)) == [(7, 1, o) for o in sorted(order)]
+    assert list(index.match(None, 1, None)) == [(7, 1, o) for o in sorted(order)]
+    assert list(index.match(7, 1, None)) == [(7, 1, o) for o in sorted(order)]
+    assert list(index.match(7, None, 4)) == [(7, 1, 4)]
+
+    # Removes keep it a list and stay correct, down to the last value.
+    for o in order[:-1]:
+        index.remove(7, 1, o)
+    assert type(index._orders[0][7]) is list
+    assert list(index.match(7, None, None)) == [(7, 1, order[-1])]
+    index.remove(7, 1, order[-1])
+    assert index._orders == ({}, {}, {})
+    assert list(index.subjects()) == []
+
+
+def test_adjacency_remove_many_of_a_list_row():
+    degree = adjacency_index.LIST_DEGREE
+    index = AdjacencyTripleIndex()
+    for o in range(3 * degree):
+        index.add(1, 2, o)
+    index.add(5, 2, 0)
+    list(index.match(1, None, None))
+    index.remove_many([(1, 2, o) for o in range(0, 3 * degree, 3)])
+    kept = [(1, 2, o) for o in range(3 * degree) if o % 3]
+    assert list(index.match(1, None, None)) == kept
+    assert list(index.match(None, 2, 0)) == [(5, 2, 0)]
+    assert sorted(index.match(None, 2, None)) == sorted(kept + [(5, 2, 0)])
+    index.remove_many(kept)
+    assert list(index.subjects()) == [5]
+    assert list(index.match(None, 2, None)) == [(5, 2, 0)]
+
+
+def test_adjacency_remove_many_with_pending_adds():
+    index = AdjacencyTripleIndex()
+    index.add(1, 2, 3)
+    list(index.match(1, None, None))
+    index.add(1, 2, 4)
+    index.add(1, 2, 5)
+    index.remove_many([(1, 2, 3), (1, 2, 4)])
+    assert list(index.match(1, None, None)) == [(1, 2, 5)]
+    assert list(index.match(None, None, 4)) == []
+    assert index.ids() == {1, 2, 5}
+    index.add(7, 8, 9)
+    assert index.ids() == {1, 2, 5, 7, 8, 9}
+
+
+def test_adjacency_one_add_then_match_never_folds():
+    rng = random.Random(11)
+    index = AdjacencyTripleIndex()
+    for i in range(100_000):
+        index.add(rng.randrange(20_000), rng.randrange(50), rng.randrange(20_000))
+    list(index.match(0, None, None))
+    assert index.folds == 1
+    for i in range(20_000):
+        s, p, o = rng.randrange(20_000), rng.randrange(50), rng.randrange(20_000)
+        index.add(s, p, o)
+        assert (s, p, o) in set(index.match(s, None, None))
+    assert index.folds == 1
+
+
+def corrupt_drop_row(index):
+    del index._orders[1][5]
+
+
+def corrupt_drop_value(index):
+    index._orders[1][5] = index._orders[1][5][1:]
+
+
+@pytest.mark.parametrize("corrupt", [corrupt_drop_row, corrupt_drop_value])
+@pytest.mark.parametrize(
+    "remove",
+    [
+        lambda index: index.remove(4, 5, 6),
+        # Many values from one row, so the row is filtered in one pass.
+        lambda index: index.remove_many([(4, 5, 6)] + [(s, 5, 7) for s in range(100)]),
+    ],
+    ids=["remove", "remove_many"],
+)
+def test_adjacency_remove_detects_orderings_out_of_step_with_keys(corrupt, remove):
+    index = AdjacencyTripleIndex()
+    index.add(1, 2, 3)
+    index.add(4, 5, 6)
+    for s in range(100):
+        index.add(s, 5, 7)
+    list(index.match(1, None, None))
+    # Corrupt one ordering so it no longer holds a triple the keys hold.
+    corrupt(index)
+    with pytest.raises(RuntimeError, match="disagree"):
+        remove(index)
+
+
+@pytest.mark.skipif(
+    sys.implementation.name != "cpython",
+    reason="checks tracking by CPython's cyclic garbage collector",
+)
+def test_adjacency_tuple_rows_are_untracked_after_a_collection():
+    rng = random.Random(3)
+    index = AdjacencyTripleIndex()
+    for i in range(50_000):
+        index.add(rng.randrange(5000), rng.randrange(20), rng.randrange(5000))
+    list(index.match(0, None, None))
+    # Single inserts as well as the fold.
+    for i in range(500):
+        index.add(rng.randrange(5000), rng.randrange(20), rng.randrange(5000))
+        list(index.match(0, None, None))
+    gc.collect()
+    rows = adjacency_rows(index)
+    tuples = [row for row in rows if type(row) is tuple]
+    lists = [row for row in rows if type(row) is list]
+    assert tuples and lists
+    assert not any(gc.is_tracked(row) for row in tuples)
+    # Only the rows past LIST_DEGREE are lists: here the 20 predicates.
+    assert len(lists) == 20

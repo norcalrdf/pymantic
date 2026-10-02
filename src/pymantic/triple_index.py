@@ -44,6 +44,7 @@ _STEP32 = 1 << 32
 
 _SPO, _POS, _OSP = 0, 1, 2
 
+_RANGE = "TripleIndex ids must be in range(2**32)"
 _CHANGED = "TripleIndex changed during iteration"
 _DETACHED = "TripleIndex has been detached"
 _DISAGREE = "TripleIndex orderings disagree with its keys"
@@ -52,6 +53,12 @@ _DISAGREE = "TripleIndex orderings disagree with its keys"
 def _changed(index):
     """The error for a generator whose index changed under it."""
     return RuntimeError(_DETACHED if index._detached else _CHANGED)
+
+
+def _check_range(s, p, o):
+    """Raise OverflowError unless s, p and o are all in range(2**32)."""
+    if not (0 <= s <= _MASK32 and 0 <= p <= _MASK32 and 0 <= o <= _MASK32):
+        raise OverflowError(_RANGE)
 
 
 def _rotated(keys):
@@ -169,6 +176,9 @@ class TripleIndex:
         if self._detached:
             raise RuntimeError(_DETACHED)
         s, p, o = spo
+        # An id out of range packs to some other triple's key.
+        if not (0 <= s <= _MASK32 and 0 <= p <= _MASK32 and 0 <= o <= _MASK32):
+            return False
         return (s << 64 | p << 32 | o) in self._keys
 
     def __iter__(self):
@@ -180,13 +190,14 @@ class TripleIndex:
         """Add a triple; return False if it was already present."""
         if self._detached:
             raise RuntimeError(_DETACHED)
+        # An id out of range would pack into some other triple's key, so
+        # check before the key is used to look anything up.
+        if not (0 <= s <= _MASK32 and 0 <= p <= _MASK32 and 0 <= o <= _MASK32):
+            raise OverflowError(_RANGE)
         key = s << 64 | p << 32 | o
         keys = self._keys
         if key in keys:
             return False
-        # An id out of range would pack into some other triple's key.
-        if not (0 <= s <= _MASK32 and 0 <= p <= _MASK32 and 0 <= o <= _MASK32):
-            raise OverflowError("TripleIndex ids must be in range(2**32)")
         self._pending.append(key)
         keys[key] = None
         self._version += 1
@@ -196,6 +207,7 @@ class TripleIndex:
         """Remove a triple; raise KeyError if it is absent."""
         if self._detached:
             raise RuntimeError(_DETACHED)
+        _check_range(s, p, o)
         key = s << 64 | p << 32 | o
         if key not in self._keys:
             raise KeyError((s, p, o))
@@ -219,6 +231,7 @@ class TripleIndex:
         keys = self._keys
         doomed = {}
         for s, p, o in spos:
+            _check_range(s, p, o)
             key = s << 64 | p << 32 | o
             if key not in keys:
                 raise KeyError((s, p, o))

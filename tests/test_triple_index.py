@@ -254,6 +254,59 @@ def test_out_of_range_id_leaves_index_unchanged():
     assert sorted(index.match(4, None, None)) == [(4, 5, 6)]
 
 
+# (0, 0, 2**32) packs to the key of (0, 1, 0), and the other bad ids alias
+# likewise, so a membership test on the packed key alone would find a
+# triple that is not there.
+ALIASING_IDS = [(0, 0, 2**32), (0, 2**32, 0), (2**32, 0, 0), (0, 1, -(2**32) + 1)]
+
+
+@pytest.mark.parametrize("bad", ALIASING_IDS)
+def test_add_rejects_an_id_that_packs_to_a_present_key(bad):
+    index = TripleIndex()
+    index.add(0, 1, 0)
+    index.add(1, 0, 0)
+    index.add(0, 0, 1)
+    with pytest.raises(OverflowError, match="TripleIndex ids"):
+        index.add(*bad)
+    assert sorted(index) == [(0, 0, 1), (0, 1, 0), (1, 0, 0)]
+
+
+@pytest.mark.parametrize("bad", ALIASING_IDS)
+def test_remove_rejects_an_id_that_packs_to_a_present_key(bad):
+    index = TripleIndex()
+    index.add(0, 1, 0)
+    index.add(1, 0, 0)
+    index.add(0, 0, 1)
+    list(index.match(0, None, None))
+    with pytest.raises(OverflowError, match="TripleIndex ids"):
+        index.remove(*bad)
+    assert sorted(index) == [(0, 0, 1), (0, 1, 0), (1, 0, 0)]
+    # The orderings still agree with the keys.
+    index.remove(0, 1, 0)
+    assert sorted(index.match(None, None, None)) == [(0, 0, 1), (1, 0, 0)]
+
+
+@pytest.mark.parametrize("bad", ALIASING_IDS)
+def test_remove_many_rejects_an_id_that_packs_to_a_present_key(bad):
+    index = TripleIndex()
+    index.add(0, 1, 0)
+    index.add(1, 0, 0)
+    with pytest.raises(OverflowError, match="TripleIndex ids"):
+        index.remove_many([(1, 0, 0), bad])
+    assert sorted(index) == [(0, 1, 0), (1, 0, 0)]
+    index.remove_many([(0, 1, 0), (1, 0, 0)])
+    assert list(index) == []
+
+
+@pytest.mark.parametrize("bad", ALIASING_IDS)
+def test_contains_is_false_for_an_id_out_of_range(bad):
+    index = TripleIndex()
+    index.add(0, 1, 0)
+    index.add(1, 0, 0)
+    assert bad not in index
+    assert (0, 1, 0) in index
+
+
 def test_subjects_drops_subject_after_last_triple_removed():
     index = TripleIndex()
     index.add(1, 2, 3)

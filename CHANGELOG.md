@@ -47,8 +47,9 @@ All notable changes to pymantic are recorded here. The format follows
 - The N-Triples and N-Quads parsers reject relative IRIs and `:` inside blank
   node labels, and require language subtags of at most eight characters.
   A literal typed `rdf:langString` without a language tag is rejected.
-- pymantic requires Python 3.10 or newer. Python 3.12, 3.13, and 3.14 are
-  tested in CI.
+- pymantic requires Python 3.10 or newer. Python 3.10 through 3.14 are
+  tested in CI. Python 3.10 reached end of life in October 2026, and a
+  future release will drop support for it.
 - `pymantic.parsers.jsonld`: documents that reference a remote context raise
   `RemoteContextsDisabledError` (a `pyld.jsonld.JsonLdError` subclass) unless
   a pyld document loader is supplied, either per parser instance with

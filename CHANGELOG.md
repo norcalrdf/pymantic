@@ -148,6 +148,11 @@ All notable changes to pymantic are recorded here. The format follows
   in `tests/w3c/expected_failures.txt`; at the time of writing all of them
   need RDF 1.2 syntax. `tests/w3c/sync_from_upstream.py` refreshes the copy.
   The 2013 Turtle suite under `tests/TurtleTests` is replaced by this.
+- pymantic runs on PyPy 3.12, GraalPy 3.12 and 3.13, Pyodide 3.12 and 3.14,
+  and Python 3.15 (tested on 3.15.0rc2). JSON-LD support is not available on
+  PyPy 3.12 or Pyodide. `tox` has an environment for each of these, plus
+  CPython 3.11 to 3.14, provisioned through `tox-uv`; CI does not run them
+  yet. `tox -e core`, which CI does run, tests without the `jsonld` extra.
 - `CHANGELOG.md` (this file).
 - Releases are published to PyPI with trusted publishing from a GitHub
   release. See `RELEASING.md`.

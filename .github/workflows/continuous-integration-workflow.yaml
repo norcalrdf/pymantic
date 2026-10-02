@@ -26,7 +26,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
       - run: pip install tox
-      - run: tox
+      - run: tox -e py
 
   core:
     name: Pymantic Tests (without JSON-LD)

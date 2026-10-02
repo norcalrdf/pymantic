@@ -1,3 +1,4 @@
+from collections import Counter
 import gc
 import pytest
 import random
@@ -19,6 +20,8 @@ PATTERNS = [
 
 def check_against_reference(index, ref, rng):
     """Compare every read operation of `index` with the ordered set `ref`."""
+    # First, while adds may still be pending.
+    assert index.object_counts() == Counter(t[2] for t in ref)
     assert len(index) == len(ref)
     assert list(index) == list(ref)
     for spo in rng.sample(list(ref), min(3, len(ref))):
@@ -396,6 +399,7 @@ def test_detach_makes_every_call_raise():
         lambda: index.predicates(),
         lambda: index.objects(),
         lambda: index.ids(),
+        lambda: index.object_counts(),
     ] + [lambda it=it: next(it) for it in started + unstarted]
     for call in calls:
         with pytest.raises(RuntimeError):

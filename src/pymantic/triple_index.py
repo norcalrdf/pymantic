@@ -298,6 +298,16 @@ class TripleIndex:
             raise RuntimeError(_DETACHED)
         return self._distinct(_OSP)
 
+    def object_counts(self):
+        """Return a dict from each object id to the number of triples it is
+        the object of: the lengths of the OSP rows, read without visiting
+        the triples."""
+        if self._detached:
+            raise RuntimeError(_DETACHED)
+        if self._pending:
+            self._merge()
+        return {o: len(row) for o, row in self._orders[_OSP].items()}
+
     def ids(self):
         """Return the set of every id in any position."""
         if self._detached:

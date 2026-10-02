@@ -411,6 +411,21 @@ class BlankNode:
         return str(self)
 
 
+class _MappedTerms(dict):
+    """A cache from term id to `fn` of that id's term, filled on first use,
+    so a whole-graph read calls `fn` once per distinct term."""
+
+    __slots__ = ("fn", "terms")
+
+    def __init__(self, fn, terms):
+        self.fn = fn
+        self.terms = terms
+
+    def __missing__(self, term_id):
+        mapped = self[term_id] = self.fn(self.terms[term_id])
+        return mapped
+
+
 def _pattern_ids(dictionary, subject, predicate, object):
     """The ids of a match pattern, keeping None as the wildcard, or None if a
     bound term is unknown and so nothing can match."""
@@ -588,6 +603,28 @@ class Graph:
     def toArray(self):
         """Return the set of :py:class:`Triple` within the :py:class:`Graph`"""
         return frozenset(self)
+
+    def mapped_triples(self, fn):
+        """Yields ``(fn(subject), fn(predicate), fn(object))`` for each
+        triple, in the order iterating the graph yields the triples, and
+        raises RuntimeError as that does if the graph changes meanwhile.
+
+        This builds no `Triple`, and calls `fn` once per distinct term
+        rather than once per position, so it is the fast path for reading a
+        whole graph through a function of its terms."""
+        mapped = _MappedTerms(fn, self._dictionary.terms)
+        for s, p, o in self._index:
+            yield mapped[s], mapped[p], mapped[o]
+
+    def object_counts(self):
+        """Returns a `collections.Counter` from each object to the number of
+        triples it is the object of, equal to counting the objects while
+        iterating the graph. The index already holds each object's triples
+        together, so this reads their number without visiting them."""
+        terms = self._dictionary.terms
+        return collections.Counter(
+            {terms[o]: n for o, n in self._index.object_counts().items()}
+        )
 
     def subjects(self, predicate=None, object=None):
         """With no arguments, returns a list of the distinct subjects in the
@@ -825,6 +862,25 @@ class Dataset:
 
     def toArray(self):
         return frozenset(self)
+
+    def mapped_quads(self, fn):
+        """Yields ``(fn(subject), fn(predicate), fn(object), fn(graph))``
+        for each quad, in the order iterating the dataset yields the quads,
+        and raises RuntimeError as that does if the dataset changes
+        meanwhile. The graph position is None for the default graph, for
+        which `fn` is not called.
+
+        This builds no `Quad`, and calls `fn` once per distinct term across
+        the whole dataset, graph names included, so it is the fast path for
+        reading a whole dataset through a function of its terms."""
+        mapped = _MappedTerms(fn, self._dictionary.terms)
+        for name_id, index in self._graphs.items():
+            # An empty graph yields nothing, so its name is not mapped.
+            if not len(index):
+                continue
+            name = None if name_id is None else mapped[name_id]
+            for s, p, o in index:
+                yield mapped[s], mapped[p], mapped[o], name
 
     def _index_for_add(self, name):
         """The index of the graph called `name`, created if it is new."""

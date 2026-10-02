@@ -1,3 +1,4 @@
+from collections import Counter
 import gc
 import pathlib
 import pytest
@@ -56,10 +57,38 @@ def matching(ref, s, p, o):
     }
 
 
+def mark(term):
+    """The term function the mapped-read tests expect to see applied."""
+    return ("mapped", term)
+
+
+class CountingMark:
+    """`mark`, counting the calls made with each term."""
+
+    def __init__(self):
+        self.calls = Counter()
+
+    def __call__(self, term):
+        self.calls[term] += 1
+        return mark(term)
+
+
+def check_mapped_triples(graph):
+    """mapped_triples gives what iterating and mapping each term gives,
+    calling the function once per distinct term."""
+    fn = CountingMark()
+    expected = [(mark(s), mark(p), mark(o)) for s, p, o in graph]
+    assert list(graph.mapped_triples(fn)) == expected
+    assert fn.calls == Counter({term: 1 for t in graph for term in t})
+
+
 def check_against_reference(graph, ref, rng):
     """Compare every read operation of `graph` with the ordered set `ref`."""
     assert len(graph) == len(ref)
     assert list(graph) == list(ref)
+    # Before any match, while a batch of adds may still be pending.
+    assert graph.object_counts() == Counter(t.object for t in ref)
+    check_mapped_triples(graph)
     for t in rng.sample(list(ref), min(3, len(ref))):
         assert t in graph
     for _ in range(3):
@@ -378,11 +407,28 @@ def named_graphs(ds):
     return {g.uri for g in ds.graphs if g.uri is not None}
 
 
+def check_mapped_quads(ds):
+    """mapped_quads gives what iterating and mapping each term gives, None
+    for the default graph, calling the function once per distinct term
+    across the dataset."""
+    fn = CountingMark()
+    expected = [
+        (mark(s), mark(p), mark(o), None if g is None else mark(g)) for s, p, o, g in ds
+    ]
+    assert list(ds.mapped_quads(fn)) == expected
+    assert fn.calls == Counter({term: 1 for q in ds for term in q if term is not None})
+
+
 def check_dataset_against_reference(ds, ref, names, rng):
     assert len(ds) == len(ref)
     quads = list(ds)
     assert len(quads) == len(ref)
     assert set(quads) == set(ref)
+    check_mapped_quads(ds)
+    for view in ds.graphs:
+        objects = Counter(q.object for q in ref if q.graph == view.uri)
+        assert view.object_counts() == objects
+        check_mapped_triples(view)
     for q in rng.sample(list(ref), min(3, len(ref))):
         assert (q in ds) is True
     for _ in range(3):
@@ -572,6 +618,10 @@ def test_a_view_of_a_removed_graph_raises():
         len(view)
     with pytest.raises(RuntimeError):
         list(view)
+    with pytest.raises(RuntimeError):
+        list(view.mapped_triples(mark))
+    with pytest.raises(RuntimeError):
+        view.object_counts()
     with pytest.raises(RuntimeError):
         list(pending)
     # The removal emptied the dataset, so compaction freed every term and
@@ -764,6 +814,7 @@ LOOKUPS = [
     lambda g: g.predicates(subject=S),
     lambda g: g.objects(subject=S),
     lambda g: g.predicate_objects(S),
+    lambda g: g.mapped_triples(mark),
 ]
 
 
@@ -805,3 +856,64 @@ def test_predicate_objects_needs_a_subject():
     g = Graph().add(Triple(S, P, Literal("a")))
     with pytest.raises(TypeError, match="predicate_objects needs a subject"):
         g.predicate_objects(None)
+
+
+def test_object_counts_count_triples_per_object():
+    g = Graph()
+    for s, o in [(S, "a"), (NamedNode("http://e/t"), "a"), (S, "b")]:
+        g.add(Triple(s, P, Literal(o)))
+    g.add(Triple(S, NamedNode("http://e/q"), Literal("a")))
+    assert g.object_counts() == Counter({Literal("a"): 3, Literal("b"): 1})
+    g.remove(Triple(S, P, Literal("b")))
+    assert g.object_counts() == Counter({Literal("a"): 3})
+    assert Graph().object_counts() == Counter()
+
+
+def test_view_object_counts_cover_only_its_graph():
+    name = NamedNode("http://e/g")
+    ds = Dataset()
+    ds.add(Quad(S, P, Literal("a"), None))
+    ds.add(Quad(S, P, Literal("a"), name))
+    ds.add(Quad(S, P, Literal("b"), name))
+    default, named = ds.graphs
+    assert default.object_counts() == Counter({Literal("a"): 1})
+    assert named.object_counts() == Counter({Literal("a"): 1, Literal("b"): 1})
+
+
+def test_mapped_triples_never_calls_the_function_for_an_empty_graph():
+    def fail(term):
+        raise AssertionError(term)
+
+    assert list(Graph().mapped_triples(fail)) == []
+    assert list(Dataset().mapped_quads(fail)) == []
+
+
+def test_mapped_quads_maps_a_shared_term_once_across_graphs():
+    blank = BlankNode()
+    name = NamedNode("http://e/g")
+    ds = Dataset()
+    ds.add(Quad(blank, P, Literal("a"), None))
+    ds.add(Quad(blank, P, Literal("a"), name))
+    ds.add(Quad(S, P, blank, blank))
+    fn = CountingMark()
+    assert list(ds.mapped_quads(fn)) == [
+        (mark(blank), mark(P), mark(Literal("a")), None),
+        (mark(blank), mark(P), mark(Literal("a")), mark(name)),
+        (mark(S), mark(P), mark(blank), mark(blank)),
+    ]
+    assert set(fn.calls.values()) == {1}
+
+
+@pytest.mark.parametrize("change", ["add", "remove"])
+def test_changing_the_dataset_during_mapped_quads_raises(change):
+    ds = Dataset()
+    for value in ("a", "b", "c"):
+        ds.add(Quad(S, P, Literal(value), None))
+    found = ds.mapped_quads(mark)
+    next(found)
+    if change == "add":
+        ds.add(Quad(S, P, Literal("d"), None))
+    else:
+        ds.remove(Quad(S, P, Literal("c"), None))
+    with pytest.raises(RuntimeError):
+        next(found)

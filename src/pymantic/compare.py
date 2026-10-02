@@ -164,8 +164,7 @@ def statements(graph_or_dataset):
             keys[term] = term_key(term)
             return keys[term]
 
-    # A Dataset yields quads, and so does a Graph filled by the N-Quads
-    # parser; a Graph of triples yields triples.
+    # A Dataset yields quads; a Graph of triples yields triples.
     items = []
     for item in graph_or_dataset:
         graph = "" if len(item) == 3 or item[3] is None else key(item[3])

@@ -22,7 +22,7 @@ from pymantic.parsers.jsonld import (  # noqa: E402
     RemoteContextsDisabledError,
     UnsafePyLDLoader,
 )
-from pymantic.primitives import Graph, Literal, NamedNode, Quad  # noqa: E402
+from pymantic.primitives import Dataset, Literal, NamedNode, Quad  # noqa: E402
 
 NAME_IRI = "http://ex/name"
 XSD_STRING = NamedNode("http://www.w3.org/2001/XMLSchema#string")
@@ -135,7 +135,7 @@ def test_jsonld_basic():
   "http://example.com/term5": [50, 51]
 }]
 """
-    g = Graph()
+    g = Dataset()
     jsonld_parser.parse_json(json.loads(jsonld), g)
     assert len(g) == 7
 

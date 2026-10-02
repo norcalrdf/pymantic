@@ -416,7 +416,7 @@ class Graph:
     set/sequence API for `in`, `for`, and `len`"""
 
     def __init__(self, graph_uri=None):
-        if not isinstance(graph_uri, NamedNode):
+        if graph_uri is not None and not isinstance(graph_uri, NamedNode):
             graph_uri = NamedNode(graph_uri)
         self._uri = graph_uri
         # A dict used as an insertion-ordered set, so iteration and
@@ -439,6 +439,8 @@ class Graph:
     def add(self, triple):
         """Adds the specified Triple to the graph. This method returns the
         graph instance it was called on."""
+        if len(triple) != 3:
+            raise TypeError("a Graph holds triples; parse N-Quads into a Dataset")
         self._triples[triple] = None
         self._spo[triple.subject][triple.predicate][triple.object] = triple
         self._pos[triple.predicate][triple.object][triple.subject] = triple

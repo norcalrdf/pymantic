@@ -561,3 +561,13 @@ def test_graph_holds_one_triple_for_the_two_string_forms():
     assert len(g) == 1
     assert Triple(s, p, Literal("v")) in g
     assert Triple(s, p, Literal("v", datatype=XSD_STRING)) in g
+
+
+def test_graph_without_a_name_has_no_uri():
+    assert Graph().uri is None
+
+
+def test_graph_rejects_a_quad():
+    q = next(generate_quads(1))
+    with pytest.raises(TypeError):
+        Graph().add(q)

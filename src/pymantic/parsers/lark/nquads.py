@@ -3,8 +3,8 @@
 Usage::
 
   from pymantic.parsers.lark import nquads_parser
-  graph = nquads_parser.parse(io.open('a_file.nq', mode='rt'))
-  graph2 = nquads_parser.parse("<http://a.example/s> <http://a.example/p> <http://a.example/o> <http://a.example/g> .")
+  dataset = nquads_parser.parse(io.open('a_file.nq', mode='rt'))
+  dataset2 = nquads_parser.parse("<http://a.example/s> <http://a.example/p> <http://a.example/o> <http://a.example/g> .")
 
 If ``.parse()`` is called with a file-like object implementing ``readline``,
 it will efficiently parse line by line rather than parsing the entire file.
@@ -32,6 +32,9 @@ class NQuadsTransformer(NTriplesTransformer):
         for child in children:
             if isinstance(child, Quad):
                 yield child
+
+    def _make_graph(self):
+        return self.env.createDataset()
 
 
 nq_lark = Lark(

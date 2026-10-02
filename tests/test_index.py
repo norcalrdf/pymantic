@@ -6,9 +6,11 @@ import sys
 from pymantic.primitives import (
     XSD_STRING,
     BlankNode,
+    Dataset,
     Graph,
     Literal,
     NamedNode,
+    Quad,
     Triple,
 )
 
@@ -214,3 +216,44 @@ def test_graph_adds_almost_no_tracked_objects():
     delta = tracked_objects() - before
     assert len(g) == 10_000
     assert delta < distinct_terms + 50
+
+
+def test_removing_the_match_of_a_fully_bound_pattern():
+    t = Triple(S, P, Literal("a"))
+    g = Graph().add(t).add(Triple(S, P, Literal("b")))
+    for found in g.match(S, P, Literal("a")):
+        g.remove(found)
+    assert t not in g
+    assert len(g) == 1
+
+
+@pytest.mark.parametrize("graph", [None, NamedNode("http://e/g")])
+def test_dataset_remove_matches_with_a_fully_bound_pattern(graph):
+    quad = Quad(S, P, Literal("a"), graph)
+    kept = Quad(S, P, Literal("b"), graph)
+    ds = Dataset()
+    ds.add(quad)
+    ds.add(kept)
+    ds.removeMatches(S, P, Literal("a"), graph)
+    assert quad not in ds
+    assert kept in ds
+
+
+def test_distinct_terms_support_len_membership_and_reiteration():
+    other = NamedNode("http://e/other")
+    g = Graph().add(Triple(S, P, Literal("a"))).add(Triple(other, P, S))
+    for terms, expected in (
+        (g.subjects(), [S, other]),
+        (g.predicates(), [P]),
+        (g.objects(), [S, Literal("a")]),
+    ):
+        assert len(terms) == len(expected)
+        assert list(terms) == expected
+        assert list(terms) == expected
+        assert expected[0] in terms
+
+
+def test_remove_of_a_quad_raises_type_error():
+    g = Graph().add(Triple(S, P, Literal("a")))
+    with pytest.raises(TypeError, match="parse N-Quads into a Dataset"):
+        g.remove(Quad(S, P, Literal("a"), NamedNode("http://e/g")))

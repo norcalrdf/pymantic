@@ -467,6 +467,8 @@ class Graph:
     def remove(self, triple):
         """Removes the specified Triple from the graph. This method returns the
         graph instance it was called on."""
+        if len(triple) != 3:
+            raise TypeError("a Graph holds triples; parse N-Quads into a Dataset")
         ids = self._ids(triple)
         if ids is None or ids not in self._index:
             raise KeyError(triple)
@@ -500,6 +502,14 @@ class Graph:
         if pattern is None:
             return
         terms = self._dictionary.terms
+        if None not in pattern:
+            # A membership test rather than the index's version-checked
+            # generator, so the caller may remove the one match while
+            # this generator is still open.
+            if pattern in self._index:
+                s, p, o = pattern
+                yield _new_triple(Triple, (terms[s], terms[p], terms[o]))
+            return
         for s, p, o in self._index.match(*pattern):
             yield _new_triple(Triple, (terms[s], terms[p], terms[o]))
 
@@ -551,19 +561,22 @@ class Graph:
         return frozenset(self)
 
     def subjects(self):
-        """Returns an iterator over subjects in the graph."""
+        """Returns a list of the distinct subjects in the graph, in term-id
+        order."""
         terms = self._dictionary.terms
-        return (terms[i] for i in self._index.subjects())
+        return [terms[i] for i in self._index.subjects()]
 
     def predicates(self):
-        """Returns an iterator over predicates in the graph."""
+        """Returns a list of the distinct predicates in the graph, in term-id
+        order."""
         terms = self._dictionary.terms
-        return (terms[i] for i in self._index.predicates())
+        return [terms[i] for i in self._index.predicates()]
 
     def objects(self):
-        """Returns an iterator over objects in the graph."""
+        """Returns a list of the distinct objects in the graph, in term-id
+        order."""
         terms = self._dictionary.terms
-        return (terms[i] for i in self._index.objects())
+        return [terms[i] for i in self._index.objects()]
 
     def _ids(self, triple):
         """The id triple of `triple`, or None if a term is unknown."""

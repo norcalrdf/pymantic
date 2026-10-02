@@ -117,8 +117,10 @@ def coding_rows(node, statements):
 
 
 def term_code(key):
-    """Deterministic 64-bit code of an IRI or literal key."""
-    digest = hashlib.blake2b(key.encode("utf-8"), digest_size=8).digest()
+    """Deterministic 64-bit code of an IRI or literal key: the first 8 bytes
+    of its SHA-256. SHA-256 because every Python implementation provides it;
+    GraalPy's BLAKE2 cannot produce short digests."""
+    digest = hashlib.sha256(key.encode("utf-8")).digest()[:8]
     return int.from_bytes(digest, "big")
 
 
@@ -424,7 +426,8 @@ def canonical_form(molecule, work_limit=None):
 
 def form_digest(form):
     lines = "\n".join(" ".join(statement) for statement in form)
-    return hashlib.blake2b(lines.encode("utf-8"), digest_size=6).hexdigest()
+    # The first 6 bytes of SHA-256, as twelve hex digits; see term_code.
+    return hashlib.sha256(lines.encode("utf-8")).hexdigest()[:12]
 
 
 def bail_stage(a, b, work_limit=None):

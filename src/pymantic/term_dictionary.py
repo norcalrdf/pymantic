@@ -4,7 +4,7 @@ The graph index stores only ids in int arrays, so the terms themselves are the
 only Python objects it keeps alive.
 """
 
-# Ids must fit an array('I') column and a 32-bit field of a packed key.
+# Ids must fit a 32-bit field of the triple index's packed keys.
 MAX_TERMS = 2**32
 
 

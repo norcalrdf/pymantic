@@ -58,7 +58,7 @@ def random_triple(rng):
     return (rng.choice(IDS), rng.choice(IDS), rng.choice(IDS))
 
 
-def run_model(seed, operations=2000, max_size=250, check_every=1, after_check=None):
+def run_model(seed, operations=2000, max_size=250, check_every=1):
     rng = random.Random(seed)
     index = TripleIndex()
     # A dict used as an ordered set: re-adding after a remove moves to the end.
@@ -254,57 +254,66 @@ def test_out_of_range_id_leaves_index_unchanged():
     assert sorted(index.match(4, None, None)) == [(4, 5, 6)]
 
 
-# (0, 0, 2**32) packs to the key of (0, 1, 0), and the other bad ids alias
-# likewise, so a membership test on the packed key alone would find a
-# triple that is not there.
-ALIASING_IDS = [(0, 0, 2**32), (0, 2**32, 0), (2**32, 0, 0), (0, 1, -(2**32) + 1)]
+# Each id triple packs to the key of the triple beside it, so a lookup on the
+# packed key alone would find a triple that is not there.
+ALIASES = {
+    (0, 0, 2**32): (0, 1, 0),
+    (0, 1, 2**32): (0, 2, 0),
+    (0, 2**32, 1): (1, 0, 1),
+    (0, 2**32, 0): (1, 0, 0),
+}
+ALIASED = sorted(ALIASES.values())
 
 
-@pytest.mark.parametrize("bad", ALIASING_IDS)
-def test_add_rejects_an_id_that_packs_to_a_present_key(bad):
+def index_of_aliased_triples():
     index = TripleIndex()
-    index.add(0, 1, 0)
-    index.add(1, 0, 0)
-    index.add(0, 0, 1)
+    for spo in ALIASED:
+        index.add(*spo)
+    return index
+
+
+@pytest.mark.parametrize("bad", ALIASES)
+def test_add_rejects_an_id_that_packs_to_a_present_key(bad):
+    index = index_of_aliased_triples()
     with pytest.raises(OverflowError, match="TripleIndex ids"):
         index.add(*bad)
-    assert sorted(index) == [(0, 0, 1), (0, 1, 0), (1, 0, 0)]
+    assert sorted(index) == ALIASED
 
 
-@pytest.mark.parametrize("bad", ALIASING_IDS)
+@pytest.mark.parametrize("bad", ALIASES)
 def test_remove_rejects_an_id_that_packs_to_a_present_key(bad):
-    index = TripleIndex()
-    index.add(0, 1, 0)
-    index.add(1, 0, 0)
-    index.add(0, 0, 1)
+    index = index_of_aliased_triples()
     list(index.match(0, None, None))
     with pytest.raises(OverflowError, match="TripleIndex ids"):
         index.remove(*bad)
-    assert sorted(index) == [(0, 0, 1), (0, 1, 0), (1, 0, 0)]
+    assert sorted(index) == ALIASED
     # The orderings still agree with the keys.
     index.remove(0, 1, 0)
-    assert sorted(index.match(None, None, None)) == [(0, 0, 1), (1, 0, 0)]
+    assert sorted(index.match(None, None, None)) == ALIASED[1:]
 
 
-@pytest.mark.parametrize("bad", ALIASING_IDS)
+@pytest.mark.parametrize("bad", ALIASES)
 def test_remove_many_rejects_an_id_that_packs_to_a_present_key(bad):
-    index = TripleIndex()
-    index.add(0, 1, 0)
-    index.add(1, 0, 0)
+    index = index_of_aliased_triples()
     with pytest.raises(OverflowError, match="TripleIndex ids"):
         index.remove_many([(1, 0, 0), bad])
-    assert sorted(index) == [(0, 1, 0), (1, 0, 0)]
-    index.remove_many([(0, 1, 0), (1, 0, 0)])
+    assert sorted(index) == ALIASED
+    index.remove_many(ALIASED)
     assert list(index) == []
 
 
-@pytest.mark.parametrize("bad", ALIASING_IDS)
+@pytest.mark.parametrize("bad", ALIASES)
 def test_contains_is_false_for_an_id_out_of_range(bad):
-    index = TripleIndex()
-    index.add(0, 1, 0)
-    index.add(1, 0, 0)
+    index = index_of_aliased_triples()
     assert bad not in index
     assert (0, 1, 0) in index
+
+
+@pytest.mark.parametrize("bad", ALIASES)
+def test_fully_bound_match_is_empty_for_an_id_out_of_range(bad):
+    index = index_of_aliased_triples()
+    assert list(index.match(*bad)) == []
+    assert list(index.match(0, 1, 0)) == [(0, 1, 0)]
 
 
 def test_subjects_drops_subject_after_last_triple_removed():

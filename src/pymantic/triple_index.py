@@ -55,9 +55,15 @@ def _changed(index):
     return RuntimeError(_DETACHED if index._detached else _CHANGED)
 
 
+def _in_range(s, p, o):
+    """Whether s, p and o are all in range(2**32). An id out of range packs
+    to some other triple's key, so check before using a packed key."""
+    return 0 <= s <= _MASK32 and 0 <= p <= _MASK32 and 0 <= o <= _MASK32
+
+
 def _check_range(s, p, o):
     """Raise OverflowError unless s, p and o are all in range(2**32)."""
-    if not (0 <= s <= _MASK32 and 0 <= p <= _MASK32 and 0 <= o <= _MASK32):
+    if not _in_range(s, p, o):
         raise OverflowError(_RANGE)
 
 
@@ -176,10 +182,7 @@ class TripleIndex:
         if self._detached:
             raise RuntimeError(_DETACHED)
         s, p, o = spo
-        # An id out of range packs to some other triple's key.
-        if not (0 <= s <= _MASK32 and 0 <= p <= _MASK32 and 0 <= o <= _MASK32):
-            return False
-        return (s << 64 | p << 32 | o) in self._keys
+        return _in_range(s, p, o) and (s << 64 | p << 32 | o) in self._keys
 
     def __iter__(self):
         if self._detached:
@@ -342,7 +345,7 @@ class TripleIndex:
         if self._detached:
             raise RuntimeError(_DETACHED)
         version = self._version
-        if (s << 64 | p << 32 | o) in self._keys:
+        if _in_range(s, p, o) and (s << 64 | p << 32 | o) in self._keys:
             yield (s, p, o)
             if self._version != version:
                 raise _changed(self)

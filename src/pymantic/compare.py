@@ -27,6 +27,7 @@ from pymantic.primitives import (
     XSD_STRING,
     BlankNode,
     Dataset,
+    Graph,
     Literal,
     NamedNode,
 )
@@ -164,11 +165,21 @@ def statements(graph_or_dataset):
             keys[term] = term_key(term)
             return keys[term]
 
-    # A Dataset yields quads; a Graph of triples yields triples.
-    items = []
-    for item in graph_or_dataset:
-        graph = "" if len(item) == 3 or item[3] is None else key(item[3])
-        items.append((key(item[0]), key(item[1]), key(item[2]), graph))
+    # A Dataset or Graph is read through mapped_quads or mapped_triples,
+    # which build no Quad or Triple per statement; any other iterable of
+    # triples or quads is read item by item.
+    if isinstance(graph_or_dataset, Dataset):
+        items = [
+            (s, p, o, "" if g is None else g)
+            for s, p, o, g in graph_or_dataset.mapped_quads(key)
+        ]
+    elif isinstance(graph_or_dataset, Graph):
+        items = [(s, p, o, "") for s, p, o in graph_or_dataset.mapped_triples(key)]
+    else:
+        items = []
+        for item in graph_or_dataset:
+            graph = "" if len(item) == 3 or item[3] is None else key(item[3])
+            items.append((key(item[0]), key(item[1]), key(item[2]), graph))
     if isinstance(graph_or_dataset, Dataset):
         # The default graph is always there and needs no record; a named
         # graph exists only because it was added, so its name must count.

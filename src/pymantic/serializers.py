@@ -1,4 +1,4 @@
-from collections import Counter, OrderedDict
+from collections import OrderedDict
 from io import StringIO
 import re
 
@@ -46,6 +46,7 @@ def stable_lines(graph_or_dataset):
     same content always gives the same lines whatever the labels and order
     it was built with. See docs/graph-comparison.rst."""
     from pymantic.compare import canonical_labels
+    from pymantic.primitives import Dataset, Graph
 
     labels = canonical_labels(graph_or_dataset)
 
@@ -54,11 +55,23 @@ def stable_lines(graph_or_dataset):
             return "_:" + labels[node]
         return node.toNT()
 
-    lines = []
-    for item in graph_or_dataset:
-        # A quad in the default graph is written as a triple.
-        graph = "" if len(item) == 3 or item[3] is None else " " + term(item[3])
-        lines.append(f"{term(item[0])} {term(item[1])} {term(item[2])}{graph} .\n")
+    # A quad in the default graph is written as a triple. A Dataset or Graph
+    # is read through mapped_quads or mapped_triples, which build no Quad or
+    # Triple per line; any other iterable is read item by item.
+    if isinstance(graph_or_dataset, Dataset):
+        lines = [
+            f"{s} {p} {o} .\n" if g is None else f"{s} {p} {o} {g} .\n"
+            for s, p, o, g in graph_or_dataset.mapped_quads(term)
+        ]
+    elif isinstance(graph_or_dataset, Graph):
+        lines = [
+            f"{s} {p} {o} .\n" for s, p, o in graph_or_dataset.mapped_triples(term)
+        ]
+    else:
+        lines = []
+        for item in graph_or_dataset:
+            graph = "" if len(item) == 3 or item[3] is None else " " + term(item[3])
+            lines.append(f"{term(item[0])} {term(item[1])} {term(item[2])}{graph} .\n")
     return sorted(lines)
 
 
@@ -555,7 +568,7 @@ class _TurtleWriter:
             self.name_map.update((node, "_:" + label) for node, label in labels.items())
         # How many triples have each node as their object, which both
         # planners need; counted once here.
-        references = Counter(triple.object for triple in graph)
+        references = graph.object_counts()
         self.inline, self.as_subject, self.consumed = plan_collections(
             graph, references
         )

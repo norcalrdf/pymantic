@@ -917,3 +917,88 @@ def test_changing_the_dataset_during_mapped_quads_raises(change):
         ds.remove(Quad(S, P, Literal("c"), None))
     with pytest.raises(RuntimeError):
         next(found)
+
+
+GA, GB, GC = (NamedNode("http://e/" + name) for name in ("A", "B", "C"))
+
+
+def view_of(ds, name):
+    (view,) = [g for g in ds.graphs if g.uri == name]
+    return view
+
+
+# Each changes graph GB, or adds graph GC, never the graph a reader is in.
+OTHER_GRAPH_CHANGES = {
+    "add": lambda ds: ds.add(Quad(S, P, Literal("new"), GB)),
+    "add to a new graph": lambda ds: ds.add(Quad(S, P, Literal("new"), GC)),
+    "remove": lambda ds: ds.remove(Quad(S, P, Literal("b1"), GB)),
+    "removeMatches": lambda ds: ds.removeMatches(graph=GB),
+    "add_graph": lambda ds: ds.add_graph(
+        Graph().add(Triple(S, P, Literal("new"))), named=GB
+    ),
+    "add_graph new": lambda ds: ds.add_graph(Graph(), named=GC),
+    "remove_graph": lambda ds: ds.remove_graph(GB),
+    "view add": lambda ds: view_of(ds, GB).add(Triple(S, P, Literal("new"))),
+    "view remove": lambda ds: view_of(ds, GB).remove(Triple(S, P, Literal("b1"))),
+    "view removeMatches": lambda ds: view_of(ds, GB).removeMatches(),
+}
+
+DATASET_READERS = {
+    "iter": iter,
+    "match": lambda ds: ds.match(),
+    "match predicate": lambda ds: ds.match(predicate=P),
+    "mapped_quads": lambda ds: ds.mapped_quads(mark),
+}
+
+
+def three_graph_dataset():
+    """Two quads in each of the default graph, GB and GA, walked in that
+    order."""
+    ds = Dataset()
+    for name, prefix in ((None, "d"), (GB, "b"), (GA, "a")):
+        for n in (1, 2):
+            ds.add(Quad(S, P, Literal(prefix + str(n)), name))
+    return ds
+
+
+@pytest.mark.parametrize("change", OTHER_GRAPH_CHANGES)
+@pytest.mark.parametrize("read", DATASET_READERS)
+@pytest.mark.parametrize("walked", [1, 5], ids=["before GB", "past GB"])
+def test_changing_another_graph_during_dataset_iteration_raises(read, change, walked):
+    ds = three_graph_dataset()
+    it = DATASET_READERS[read](ds)
+    for _ in range(walked):
+        next(it)
+    OTHER_GRAPH_CHANGES[change](ds)
+    with pytest.raises(RuntimeError, match="Dataset changed during iteration"):
+        next(it)
+
+
+@pytest.mark.parametrize("read", DATASET_READERS)
+def test_re_adding_a_present_quad_during_dataset_iteration_is_no_change(read):
+    ds = three_graph_dataset()
+    it = DATASET_READERS[read](ds)
+    next(it)
+    ds.add(Quad(S, P, Literal("b1"), GB))
+    view_of(ds, GB).add(Triple(S, P, Literal("b2")))
+    assert len(list(it)) == 5
+
+
+@pytest.mark.parametrize("read", ["iter", "mapped_quads"])
+def test_a_term_freed_and_reused_during_dataset_iteration_is_never_read(read):
+    # Emptying GA, already walked, compacts the dictionary; the next add
+    # reuses a freed id, which a reader in GB must not go on to read.
+    ds = Dataset()
+    for i in range(10):
+        ds.add(Quad(NamedNode(f"http://e/a{i}"), P, Literal(f"a{i}"), GA))
+    ds.add(Quad(S, P, Literal("b1"), GB))
+    ds.add(Quad(S, P, Literal("b2"), GB))
+    ds.add(Quad(S, P, Literal("c"), GC))
+    it = DATASET_READERS[read](ds)
+    for _ in range(11):
+        next(it)
+    ds.removeMatches(graph=GA)
+    assert ds._dictionary._free
+    ds.add(Quad(S, P, Literal("new"), GC))
+    with pytest.raises(RuntimeError, match="Dataset changed during iteration"):
+        next(it)

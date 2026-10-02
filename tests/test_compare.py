@@ -249,8 +249,9 @@ def test_stable_nquads_cannot_write_an_empty_named_graph():
 
 def mixed_dataset():
     """Quads in the default graph, an IRI-named graph and a blank-named
-    graph, sharing terms, plus one empty named graph."""
-    a, b = BlankNode(), BlankNode()
+    graph, sharing terms, plus an empty graph with an IRI name and one with
+    a blank name. Returns the dataset and the blank empty graph's name."""
+    a, b, empty = BlankNode(), BlankNode(), BlankNode()
     p, x = NamedNode(EX + "p"), NamedNode(EX + "x")
     dataset = Dataset()
     dataset.add(Quad(a, p, x, None))
@@ -258,7 +259,8 @@ def mixed_dataset():
     dataset.add(Quad(x, p, b, b))
     dataset.add(Quad(b, p, a, NamedNode(EX + "g")))
     dataset.add_graph(Graph(), named=NamedNode(EX + "empty"))
-    return dataset
+    dataset.add_graph(Graph(), named=empty)
+    return dataset, empty
 
 
 def test_statements_of_a_graph_match_reading_its_triples():
@@ -267,9 +269,12 @@ def test_statements_of_a_graph_match_reading_its_triples():
 
 
 def test_statements_of_a_dataset_match_reading_its_quads():
-    dataset = mixed_dataset()
-    empty = (EMPTY_GRAPH, EMPTY_GRAPH, EMPTY_GRAPH, term_key(NamedNode(EX + "empty")))
-    assert statements(dataset) == statements(list(dataset)) + [empty]
+    dataset, blank_empty = mixed_dataset()
+    no_statements = (EMPTY_GRAPH, EMPTY_GRAPH, EMPTY_GRAPH)
+    assert statements(dataset) == statements(list(dataset)) + [
+        (*no_statements, term_key(NamedNode(EX + "empty"))),
+        (*no_statements, blank_empty),
+    ]
 
 
 def test_stable_lines_of_a_graph_or_dataset_match_reading_its_items():
@@ -277,8 +282,9 @@ def test_stable_lines_of_a_graph_or_dataset_match_reading_its_items():
 
     g = graph('_:a :p :x . :s :p _:a . :s :q "v" . _:a :q :x .')
     assert stable_lines(g) == stable_lines(list(g))
-    dataset = mixed_dataset()
+    dataset, blank_empty = mixed_dataset()
     dataset.remove_graph(NamedNode(EX + "empty"))
+    dataset.remove_graph(blank_empty)
     assert stable_lines(dataset) == stable_lines(list(dataset))
 
 

@@ -33,6 +33,8 @@ import pymantic.uri_schemes as uri_schemes
 # Builds a Triple without the Python-level __new__, for the hot read paths.
 _new_triple = tuple.__new__
 
+_DATASET_CHANGED = "Dataset changed during iteration"
+
 
 def is_language(lang):
     """Is something a valid XML language?"""
@@ -495,7 +497,8 @@ class Graph:
             self._check_index()
         intern = self._dictionary.intern
         s, p, o = triple
-        self._index.add(intern(s), intern(p), intern(o))
+        if self._index.add(intern(s), intern(p), intern(o)):
+            self._changed()
         return self
 
     def remove(self, triple):
@@ -510,6 +513,7 @@ class Graph:
         if ids not in self._index:
             raise KeyError(triple)
         self._index.remove(*ids)
+        self._changed()
         self._compact()
         return self
 
@@ -563,6 +567,7 @@ class Graph:
         doomed = list(self._index.match(*pattern))
         if doomed:
             self._index.remove_many(doomed)
+            self._changed()
             self._compact()
         return self
 
@@ -710,6 +715,12 @@ class Graph:
         the index, so it calls this to fail as every other read does."""
         len(self._index)
 
+    def _changed(self):
+        """Tell the owning dataset, if any, that this graph changed, so its
+        dataset-wide generators stop."""
+        if self._owner is not None:
+            self._owner._version += 1
+
     def _compact(self):
         """Let the dictionary's owner compact it after a remove."""
         owner = self._owner
@@ -739,12 +750,18 @@ class Dataset:
     def __init__(self):
         self._dictionary = TermDictionary()
         self._graphs = {None: TripleIndex()}
+        # Bumped on every change to any graph, through the dataset or a
+        # view. An index only notices changes to itself, so a generator
+        # walking every graph checks this too: a change to another graph
+        # can compact the dictionary and hand a freed id to a new term.
+        self._version = 0
 
     def add(self, quad):
         s, p, o, graph = quad
         intern = self._dictionary.intern
         index = self._index_for_add(graph)
-        index.add(intern(s), intern(p), intern(o))
+        if index.add(intern(s), intern(p), intern(o)):
+            self._version += 1
 
     def remove(self, quad):
         found = self._quad_ids(quad)
@@ -752,6 +769,7 @@ class Dataset:
             raise KeyError(quad)
         index, ids = found
         index.remove(*ids)
+        self._version += 1
         self._maybe_compact()
 
     def add_graph(self, graph, named=None):
@@ -764,7 +782,8 @@ class Dataset:
         intern = self._dictionary.intern
         index = self._index_for_add(name)
         for s, p, o in graph:
-            index.add(intern(s), intern(p), intern(o))
+            if index.add(intern(s), intern(p), intern(o)):
+                self._version += 1
 
     def remove_graph(self, graph_or_uri):
         """Remove a named graph, given it or its name. Views of it from
@@ -776,6 +795,7 @@ class Dataset:
         if name_id is None or name_id not in self._graphs:
             raise KeyError(name)
         self._graphs.pop(name_id).detach()
+        self._version += 1
         self._maybe_compact()
 
     @property
@@ -796,7 +816,9 @@ class Dataset:
     def match(self, subject=None, predicate=None, object=None, graph=None):
         """Yield the quads matching a pattern, None being a wildcard. A
         `graph` of None matches every graph, the default graph first; the
-        default graph's quads have `graph` None."""
+        default graph's quads have `graph` None. Matching every graph with
+        a term unbound raises RuntimeError, as iterating the dataset does,
+        if any graph changes while the generator is open."""
         pattern = _pattern_ids(self._dictionary, subject, predicate, object)
         if pattern is None:
             return
@@ -812,9 +834,12 @@ class Dataset:
             for name in names:
                 yield _new_triple(Quad, (*triple, name))
             return
+        version = self._version
         for name, index in self._indexes(graph):
             for s, p, o in index.match(*pattern):
                 yield _new_triple(Quad, (terms[s], terms[p], terms[o], name))
+                if graph is None and self._version != version:
+                    raise RuntimeError(_DATASET_CHANGED)
 
     def removeMatches(self, subject=None, predicate=None, object=None, graph=None):
         """This method removes those triples in the current graph which match
@@ -829,6 +854,7 @@ class Dataset:
                     index.remove_many(doomed)
                     removed = True
             if removed:
+                self._version += 1
                 self._maybe_compact()
         return self
 
@@ -856,9 +882,12 @@ class Dataset:
 
     def __iter__(self):
         terms = self._dictionary.terms
+        version = self._version
         for name, index in self._indexes(None):
             for s, p, o in index:
                 yield _new_triple(Quad, (terms[s], terms[p], terms[o], name))
+                if self._version != version:
+                    raise RuntimeError(_DATASET_CHANGED)
 
     def toArray(self):
         return frozenset(self)
@@ -874,6 +903,7 @@ class Dataset:
         the whole dataset, graph names included, so it is the fast path for
         reading a whole dataset through a function of its terms."""
         mapped = _MappedTerms(fn, self._dictionary.terms)
+        version = self._version
         for name_id, index in self._graphs.items():
             # An empty graph yields nothing, so its name is not mapped.
             if not len(index):
@@ -881,6 +911,8 @@ class Dataset:
             name = None if name_id is None else mapped[name_id]
             for s, p, o in index:
                 yield mapped[s], mapped[p], mapped[o], name
+                if self._version != version:
+                    raise RuntimeError(_DATASET_CHANGED)
 
     def _index_for_add(self, name):
         """The index of the graph called `name`, created if it is new."""
@@ -890,6 +922,7 @@ class Dataset:
         index = self._graphs.get(name_id)
         if index is None:
             index = self._graphs[name_id] = TripleIndex()
+            self._version += 1
         return index
 
     def _indexes(self, graph):
@@ -932,6 +965,7 @@ class Dataset:
             for index in self._graphs.values():
                 live.update(index.ids())
             dictionary.compact(live)
+            self._version += 1
 
 
 # RDF Enviroment Interfaces

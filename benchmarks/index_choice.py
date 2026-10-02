@@ -16,6 +16,7 @@ INDEXES = {
     "offsets": ("pymantic.offset_index", "OffsetTripleIndex"),
     "dict": ("pymantic.dict_index", "NestedDictTripleIndex"),
     "adjacency": ("pymantic.adjacency_index", "AdjacencyTripleIndex"),
+    "btree": ("pymantic.btree_index", "BTreeTripleIndex"),
 }
 
 

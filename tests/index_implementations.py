@@ -2,6 +2,7 @@
 
 from pymantic import offset_index
 from pymantic.adjacency_index import AdjacencyTripleIndex
+from pymantic.btree_index import BTreeTripleIndex
 from pymantic.dict_index import NestedDictTripleIndex
 from pymantic.offset_index import OffsetTripleIndex
 from pymantic.triple_index import TripleIndex
@@ -15,6 +16,7 @@ INDEXES = [
     "offsets-small-folds",
     "dict",
     "adjacency",
+    "btree",
 ]
 
 
@@ -25,6 +27,8 @@ def index_class_named(name, monkeypatch):
         return TripleIndex
     if name == "dict":
         return NestedDictTripleIndex
+    if name == "btree":
+        return BTreeTripleIndex
     if name == "adjacency":
         return AdjacencyTripleIndex
     if name == "offsets-small-folds":

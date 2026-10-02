@@ -3,8 +3,9 @@ import pytest
 import random
 import sys
 
-from pymantic import adjacency_index
+from pymantic import adjacency_index, btree_index
 from pymantic.adjacency_index import AdjacencyTripleIndex
+from pymantic.btree_index import BTreeTripleIndex
 from pymantic.dict_index import NestedDictTripleIndex
 from pymantic.offset_index import DELTA_MIN, FOLD_DIVISOR, OffsetTripleIndex
 from pymantic.triple_index import RESORT_DIVISOR, SMALL_MERGE, TripleIndex
@@ -65,7 +66,9 @@ def random_triple(rng):
     return (rng.choice(IDS), rng.choice(IDS), rng.choice(IDS))
 
 
-def run_model(index_class, seed, operations=2000, max_size=250, check_every=1):
+def run_model(
+    index_class, seed, operations=2000, max_size=250, check_every=1, after_check=None
+):
     rng = random.Random(seed)
     index = index_class()
     # A dict used as an ordered set: re-adding after a remove moves to the end.
@@ -96,7 +99,10 @@ def run_model(index_class, seed, operations=2000, max_size=250, check_every=1):
             ref[spo] = None
         if step % check_every == 0:
             check_against_reference(index, ref, rng)
+            if after_check is not None:
+                after_check(index)
     check_against_reference(index, ref, rng)
+    return index
 
 
 @pytest.mark.parametrize("seed", range(20))
@@ -299,6 +305,9 @@ def pending_columns(index):
         return [index._spo, index._pos, index._osp, index._keys]
     if isinstance(index, AdjacencyTripleIndex):
         return [index._pending]
+    if isinstance(index, BTreeTripleIndex):
+        # Pending adds are only a count; the keys are what an add appends to.
+        return [index._keys]
     return index._delta_columns()
 
 
@@ -818,3 +827,126 @@ def test_adjacency_tuple_rows_are_untracked_after_a_collection():
     assert not any(gc.is_tracked(row) for row in tuples)
     # Only the rows past LIST_DEGREE are lists: here the 20 predicates.
     assert len(lists) == 20
+
+
+# BTreeTripleIndex: leaves, splits and rebuilds.
+
+
+def btree_leaf_counts(index):
+    """Check the shape of every BTreeTripleIndex ordering and return its leaf
+    counts: leaves are non-empty, hold at most 2 * LOAD rows, are sorted
+    within and across leaves, and `_firsts` holds each leaf's first row."""
+    counts = []
+    for firsts, col0s, col1s, col2s in index._orders:
+        assert len(firsts) == len(col0s) == len(col1s) == len(col2s)
+        rows = []
+        for first, c0, c1, c2 in zip(firsts, col0s, col1s, col2s):
+            assert 0 < len(c0) <= 2 * btree_index.LOAD
+            assert len(c0) == len(c1) == len(c2)
+            assert all(c.typecode == "I" for c in (c0, c1, c2))
+            assert first == c0[0] << 64 | c1[0] << 32 | c2[0]
+            rows.extend(a << 64 | b << 32 | c for a, b, c in zip(c0, c1, c2))
+        assert rows == sorted(set(rows))
+        assert len(rows) == len(index)
+        counts.append(len(firsts))
+    return counts
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_btree_model_with_small_leaves(monkeypatch, seed):
+    # Small leaves give many of them, so inserts split leaves and removes
+    # empty them.
+    monkeypatch.setattr(btree_index, "LOAD", 4)
+    history = []
+
+    def record(index):
+        history.append((index.rebuilds, btree_leaf_counts(index)))
+
+    run_model(BTreeTripleIndex, seed, check_every=1, after_check=record)
+    steps = list(zip(history, history[1:]))
+    # Between two checks without a rebuild, the leaf count changes only by
+    # splits and drops; see both happen.
+    unbuilt = [(a, b) for (ra, a), (rb, b) in steps if ra == rb]
+    assert any(after[0] > before[0] for before, after in unbuilt)
+    assert any(after[0] < before[0] for before, after in unbuilt)
+    assert max(counts[0] for _, counts in history) > 20
+
+
+def test_btree_single_adds_merge_without_rebuilding():
+    rng = random.Random(6)
+    index = BTreeTripleIndex()
+    for i in range(20000):
+        s, p, o = rng.randrange(5000), rng.randrange(50), rng.randrange(5000)
+        index.add(s, p, o)
+        assert (s, p, o) in set(index.match(s, None, None))
+    assert index.rebuilds == 0
+    assert len(index) == len(set(index))
+    btree_leaf_counts(index)
+
+
+def test_btree_bulk_adds_rebuild_into_full_leaves(monkeypatch):
+    monkeypatch.setattr(btree_index, "LOAD", 8)
+    index = BTreeTripleIndex()
+    count = btree_index.BULK_MIN + 50
+    for i in range(count):
+        index.add(i, i % 3, i)
+    assert sorted(index.match(None, 1, None)) == [(i, 1, i) for i in range(1, count, 3)]
+    assert index.rebuilds == 1
+    # Cut into leaves of LOAD rows, the last one holding the rest.
+    sizes = [8] * (count // 8) + ([count % 8] if count % 8 else [])
+    for _, col0s, _, _ in index._orders:
+        assert [len(c) for c in col0s] == sizes
+
+
+def test_btree_rebuild_threshold_grows_with_index():
+    index = BTreeTripleIndex()
+    loaded = 2 * (btree_index.BULK_MIN + 1) * btree_index.BULK_DIVISOR
+    for i in range(loaded):
+        index.add(i, 0, i)
+    list(index.match(0, None, None))
+    assert index.rebuilds == 1
+
+    # More than BULK_MIN rows, but at most 1/BULK_DIVISOR of the index:
+    # inserted leaf by leaf.
+    batch = len(index) // btree_index.BULK_DIVISOR
+    assert btree_index.BULK_MIN < batch
+    for i in range(batch):
+        index.add(i, 1, i)
+    assert sorted(index.match(None, 1, None)) == [(i, 1, i) for i in range(batch)]
+    assert index.rebuilds == 1
+
+    # A batch above the relative bound rebuilds.
+    batch = 2 * len(index) // btree_index.BULK_DIVISOR
+    for i in range(batch):
+        index.add(i, 2, i)
+    assert sorted(index.match(None, 2, None)) == [(i, 2, i) for i in range(batch)]
+    assert index.rebuilds == 2
+    assert list(index.subjects()) == list(range(loaded))
+    btree_leaf_counts(index)
+
+
+def test_btree_remove_many_rebuilds_only_for_large_batches():
+    index = BTreeTripleIndex()
+    loaded = 2 * (btree_index.BULK_MIN + 1) * btree_index.BULK_DIVISOR
+    for i in range(loaded):
+        index.add(i, 0, i)
+    list(index.match(0, None, None))
+    assert index.rebuilds == 1
+    index.remove_many([(i, 0, i) for i in range(btree_index.BULK_MIN)])
+    assert index.rebuilds == 1
+    index.remove_many([(i, 0, i) for i in range(btree_index.BULK_MIN, loaded // 2)])
+    assert index.rebuilds == 2
+    assert list(index.subjects()) == list(range(loaded // 2, loaded))
+    btree_leaf_counts(index)
+
+
+def test_btree_remove_detects_orderings_out_of_step_with_keys():
+    index = BTreeTripleIndex()
+    index.add(1, 2, 3)
+    index.add(4, 5, 6)
+    list(index.match(1, None, None))
+    # Corrupt the POS ordering so it no longer holds a triple the keys hold.
+    for column in index._orders[1][1:]:
+        column[0].pop()
+    with pytest.raises(RuntimeError, match="disagree"):
+        index.remove(4, 5, 6)

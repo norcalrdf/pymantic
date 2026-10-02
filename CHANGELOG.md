@@ -127,6 +127,12 @@ All notable changes to pymantic are recorded here. The format follows
   segments (`http://ab//de//ghi` + `xyz`) and `..` across them. The
   `urllib.parse.urljoin` based `smart_urljoin` remains as an alias of the new
   `pymantic.util.resolve_iri`.
+- The Turtle parser reads from text and binary streams, as its documentation
+  shows; previously it raised `AttributeError`.
+- The Turtle serializer writes an IRI relative to `base` only when the
+  relative reference resolves back to it. Previously it stripped the base as
+  a string prefix, so `<http://x/ab>` against base `<http://x/a>` was written
+  as `<b>` and read back as `<http://x/b>`.
 
 ### Removed
 

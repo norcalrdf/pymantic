@@ -8,8 +8,6 @@ on the old and the new index.
     python benchmarks/graph_index.py obi --repeat 5
     PYTHONPATH=<other tree>/src python benchmarks/graph_index.py
     python benchmarks/graph_index.py --dataset-per-file
-    python benchmarks/graph_index.py obi --small-merge 128 --resort-divisor 32
-    python benchmarks/graph_index.py obi --index adjacency
 
 Inputs are names from benchmarks/inputs.py, or the kinds real, synthetic and
 rdfc10 (default: fhir-r5-examples obi doid schemaorg-shapes). Every timing is
@@ -44,9 +42,6 @@ the best of --repeat runs, with every run shown. Per input:
             the graph; milliseconds for all 1000
 
 The batch and interleave cases add to the loaded graph, so they run last.
---small-merge and --resort-divisor set pymantic.triple_index's merge
-constants for the run, to tune them; a tree without that module rejects them.
---index picks the triple index implementation (see index_choice.py).
 
 --dataset-per-file loads fhir-r5-examples as a Dataset with one named graph
 per .ttl file (the graph's name is the file's file:// IRI) and reports load
@@ -59,7 +54,6 @@ import argparse
 from collections import Counter
 import gc
 import glob
-import index_choice
 import inputs
 import os
 import pathlib
@@ -338,27 +332,6 @@ def report_dataset(repeat):
     )
 
 
-def set_merge_constants(small_merge, resort_divisor):
-    """Override pymantic.triple_index's merge constants for this run."""
-    if small_merge is None and resort_divisor is None:
-        return
-    try:
-        from pymantic import triple_index
-    except ImportError:
-        raise SystemExit(
-            "--small-merge and --resort-divisor need pymantic.triple_index, "
-            "which this tree does not have"
-        ) from None
-    if small_merge is not None:
-        triple_index.SMALL_MERGE = small_merge
-    if resort_divisor is not None:
-        triple_index.RESORT_DIVISOR = resort_divisor
-    print(
-        f"merge constants: SMALL_MERGE={triple_index.SMALL_MERGE} "
-        f"RESORT_DIVISOR={triple_index.RESORT_DIVISOR}"
-    )
-
-
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__.splitlines()[0],
@@ -381,15 +354,8 @@ def main():
         action="store_true",
         help="also measure a parsed-and-kept graph, terms included (slow)",
     )
-    index_choice.add_argument(ap)
-    ap.add_argument("--small-merge", type=int, help="set triple_index.SMALL_MERGE")
-    ap.add_argument(
-        "--resort-divisor", type=int, help="set triple_index.RESORT_DIVISOR"
-    )
     args = ap.parse_args()
     print(f"pymantic from {pymantic.__file__}")
-    index_choice.use(args.index)
-    set_merge_constants(args.small_merge, args.resort_divisor)
     for name in inputs.select(args.inputs or DEFAULT_INPUTS):
         try:
             parse_times, graph = best_of(lambda: inputs.load(name), args.repeat)

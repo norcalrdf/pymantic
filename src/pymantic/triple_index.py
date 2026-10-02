@@ -1,43 +1,52 @@
-"""A set of triples of integer term ids, indexed for pattern matching.
+"""A set of triples of integer term ids, indexed as adjacency rows.
+
+Each triple is one packed int key in a dict, which gives membership and
+insertion order, plus one value in each of three orderings (SPO, POS and
+OSP). An ordering is a dict from a first-column id to a row: the sorted
+packed ``second << 32 | third`` values of the triples with that first id. A
+pattern with its first position bound is one dict lookup, and with its
+second bound too a bisect within the row.
 
 The index is built to add almost no objects for the cyclic garbage collector
-to walk. Each triple is one packed int key in a dict, which gives
-membership and insertion order, plus one row in each of three orderings
-(SPO, POS and OSP). An ordering is three parallel `array('I')` columns
-sorted together lexicographically, so a pattern with its leading positions
-bound is a bisect range.
+to walk. A row is a tuple, and CPython's collector untracks a tuple holding
+only ints, so an ordering costs the collector one dict however many rows it
+holds. Adding a value rebuilds the tuple, which costs its length, so a row
+longer than `LIST_DEGREE` (rdf:type in POS, say) is a list instead and takes
+inserts in place; only those few rows are tracked.
 
-Adds go to a pending buffer and are merged into the orderings by the next
-query that needs them. A small buffer is inserted row by row with bisect; a
-larger one (a bulk load) re-sorts every ordering from the keys.
+Adds go to a pending list of packed keys, moved into the orderings by the
+next query that needs them. A small pending list is inserted value by value.
+A larger one (a bulk load, or a big batch) is folded: sorted per ordering
+and grouped by first id, so each row it touches is rebuilt once.
 
 Ids must be in ``range(2**32)``. ``None`` is a wildcard in `match`.
 """
 
-from array import array
-from bisect import bisect_left, bisect_right
+from bisect import bisect_left, insort
 
-__all__ = ["RESORT_DIVISOR", "SMALL_MERGE", "TripleIndex"]
+__all__ = ["FOLD_DIVISOR", "FOLD_MIN", "LIST_DEGREE", "TripleIndex"]
 
-# A pending buffer is inserted row by row with bisect unless it holds more
-# than SMALL_MERGE rows and more than 1/RESORT_DIVISOR of the index, in
-# which case every ordering is re-sorted. Inserting shifts the columns, so
-# its cost grows with the index; the relative bound keeps a modest batch on
-# a large index from paying for a full re-sort. Tuned in Task 9.
-SMALL_MERGE = 32
-RESORT_DIVISOR = 64
+# A row holding more than LIST_DEGREE values is a list rather than a tuple.
+LIST_DEGREE = 256
+
+# Pending adds are folded, rather than inserted one by one, when there are
+# more than FOLD_MIN of them and more than 1/FOLD_DIVISOR of the index.
+FOLD_MIN = 1024
+FOLD_DIVISOR = 16
+
+# remove_many filters a row in one pass when it removes more than this many
+# of its values; fewer are deleted one by one with bisect.
+_FILTER_MIN = 32
 
 _MASK32 = 0xFFFFFFFF
 _MASK64 = 0xFFFFFFFFFFFFFFFF
+_STEP32 = 1 << 32
 
 _SPO, _POS, _OSP = 0, 1, 2
 
-# For each ordering, the positions of its s, p and o columns. The orderings
-# are rotations of SPO: POS holds (p, o, s) and OSP holds (o, s, p).
-_ROLES = ((0, 1, 2), (2, 0, 1), (1, 2, 0))
-
 _CHANGED = "TripleIndex changed during iteration"
 _DETACHED = "TripleIndex has been detached"
+_DISAGREE = "TripleIndex orderings disagree with its keys"
 
 
 def _changed(index):
@@ -45,73 +54,111 @@ def _changed(index):
     return RuntimeError(_DETACHED if index._detached else _CHANGED)
 
 
-def _empty_columns():
-    return (array("I"), array("I"), array("I"))
+def _rotated(keys):
+    """The packed SPO keys as packed keys of each ordering, one at a time.
+
+    POS and OSP keys are the SPO key rotated by one and two places.
+    """
+    yield keys
+    yield [(k & _MASK64) << 32 | k >> 64 for k in keys]
+    yield [(k & _MASK32) << 64 | k >> 32 for k in keys]
 
 
-def _unpack(keys):
-    """Split sorted packed keys into three fresh columns."""
-    return (
-        array("I", [k >> 64 for k in keys]),
-        array("I", [(k >> 32) & _MASK32 for k in keys]),
-        array("I", [k & _MASK32 for k in keys]),
-    )
+def _row(values):
+    """A row for a fresh sorted list of values."""
+    return tuple(values) if len(values) <= LIST_DEGREE else values
 
 
-def _locate(columns, a, b, c):
-    """Return the row where (a, b, c) is or would be inserted."""
-    c0, c1, c2 = columns
-    lo = bisect_left(c0, a)
-    hi = bisect_right(c0, a, lo)
-    lo = bisect_left(c1, b, lo, hi)
-    hi = bisect_right(c1, b, lo, hi)
-    return bisect_left(c2, c, lo, hi)
+def _insert(rows, a, v):
+    """Insert value `v` into the row of `a`."""
+    row = rows.get(a)
+    if row is None:
+        rows[a] = (v,)
+    elif type(row) is tuple:
+        i = bisect_left(row, v)
+        if len(row) < LIST_DEGREE:
+            rows[a] = row[:i] + (v,) + row[i:]
+        else:
+            row = list(row)
+            row.insert(i, v)
+            rows[a] = row
+    else:
+        insort(row, v)
 
 
-def _insert(columns, a, b, c):
-    i = _locate(columns, a, b, c)
-    c0, c1, c2 = columns
-    c0.insert(i, a)
-    c1.insert(i, b)
-    c2.insert(i, c)
-
-
-def _delete(columns, a, b, c):
-    i = _locate(columns, a, b, c)
-    c0, c1, c2 = columns
-    # The keys dict says the row is present, so a miss here means the
+def _delete(rows, a, v):
+    """Delete value `v` from the row of `a`, dropping the row if empty."""
+    row = rows.get(a)
+    # The keys dict says the value is present, so a miss here means the
     # orderings and the keys disagree.
-    if i == len(c0) or c0[i] != a or c1[i] != b or c2[i] != c:
-        raise RuntimeError("TripleIndex orderings disagree with its keys")
-    del c0[i]
-    del c1[i]
-    del c2[i]
+    if row is None:
+        raise RuntimeError(_DISAGREE)
+    i = bisect_left(row, v)
+    if i == len(row) or row[i] != v:
+        raise RuntimeError(_DISAGREE)
+    if len(row) == 1:
+        del rows[a]
+    elif type(row) is tuple:
+        rows[a] = row[:i] + row[i + 1 :]
+    else:
+        del row[i]
+
+
+def _merge_sorted(rows, packed):
+    """Merge sorted packed keys of one ordering into its rows."""
+    i = 0
+    n = len(packed)
+    while i < n:
+        a = packed[i] >> 64
+        j = bisect_left(packed, (a + 1) << 64, i)
+        old = rows.get(a)
+        if j == i + 1 and old is None:
+            rows[a] = (packed[i] & _MASK64,)
+        else:
+            values = [k & _MASK64 for k in packed[i:j]]
+            if old is not None:
+                # Two sorted runs, which list.sort merges in linear time.
+                values += old
+                values.sort()
+            rows[a] = _row(values)
+        i = j
+
+
+def _remove_values(rows, a, gone):
+    """Remove the set of values `gone` from the row of `a`."""
+    if len(gone) <= _FILTER_MIN:
+        for v in gone:
+            _delete(rows, a, v)
+        return
+    row = rows.get(a)
+    if row is None:
+        raise RuntimeError(_DISAGREE)
+    kept = [v for v in row if v not in gone]
+    if len(kept) != len(row) - len(gone):
+        raise RuntimeError(_DISAGREE)
+    if kept:
+        rows[a] = _row(kept)
+    else:
+        del rows[a]
 
 
 class TripleIndex:
-    """Triples of int ids with SPO, POS and OSP orderings."""
+    """Triples of int ids with SPO, POS and OSP adjacency rows."""
 
-    __slots__ = (
-        "_keys",
-        "_orders",
-        "_buffer",
-        "_version",
-        "_detached",
-        "resorts",
-    )
+    __slots__ = ("_keys", "_orders", "_pending", "_version", "_detached", "folds")
 
     def __init__(self):
         # Packed key ``s << 64 | p << 32 | o`` to None, in insertion order.
         self._keys = {}
-        # SPO, POS and OSP, each a tuple of three columns in ordering order.
-        self._orders = tuple(_empty_columns() for _ in range(3))
-        # s, p and o columns of adds not yet merged into the orderings.
-        self._buffer = _empty_columns()
+        # SPO, POS and OSP, each a dict from first-column id to its row.
+        self._orders = ({}, {}, {})
+        # Packed keys of adds not yet in the orderings, in add order.
+        self._pending = []
         # Bumped on every change; live generators compare against it.
         self._version = 0
         self._detached = False
-        # How many times every ordering was rebuilt from the keys.
-        self.resorts = 0
+        # How many times pending adds were folded into the orderings.
+        self.folds = 0
 
     def __len__(self):
         if self._detached:
@@ -137,15 +184,10 @@ class TripleIndex:
         keys = self._keys
         if key in keys:
             return False
-        # Check the range here rather than relying on array.append to
-        # reject it: GraalPy grows the column with a 0 before raising
-        # OverflowError, which would leave the buffer columns misaligned.
+        # An id out of range would pack into some other triple's key.
         if not (0 <= s <= _MASK32 and 0 <= p <= _MASK32 and 0 <= o <= _MASK32):
             raise OverflowError("TripleIndex ids must be in range(2**32)")
-        bs, bp, bo = self._buffer
-        bs.append(s)
-        bp.append(p)
-        bo.append(o)
+        self._pending.append(key)
         keys[key] = None
         self._version += 1
         return True
@@ -157,42 +199,54 @@ class TripleIndex:
         key = s << 64 | p << 32 | o
         if key not in self._keys:
             raise KeyError((s, p, o))
-        # Merge first so the triple is in the orderings, not the buffer.
-        self._merge()
+        # Merge first so the triple is in the orderings, not pending.
+        if self._pending:
+            self._merge()
         del self._keys[key]
         spo, pos, osp = self._orders
-        _delete(spo, s, p, o)
-        _delete(pos, p, o, s)
-        _delete(osp, o, s, p)
+        _delete(spo, s, p << 32 | o)
+        _delete(pos, p, o << 32 | s)
+        _delete(osp, o, s << 32 | p)
         self._version += 1
 
     def remove_many(self, spos):
-        """Remove several triples with one re-sort.
+        """Remove several triples, rebuilding each row they touch once.
 
         Raises KeyError, changing nothing, if any triple is absent.
         """
         if self._detached:
             raise RuntimeError(_DETACHED)
         keys = self._keys
-        doomed = []
+        doomed = {}
         for s, p, o in spos:
             key = s << 64 | p << 32 | o
             if key not in keys:
                 raise KeyError((s, p, o))
-            doomed.append(key)
+            doomed[key] = None
         if not doomed:
             return
+        if self._pending:
+            self._merge()
         for key in doomed:
-            keys.pop(key, None)
-        self._resort()
+            del keys[key]
+        for rows, packed in zip(self._orders, _rotated(list(doomed))):
+            gone = {}
+            for k in packed:
+                a = k >> 64
+                values = gone.get(a)
+                if values is None:
+                    gone[a] = values = set()
+                values.add(k & _MASK64)
+            for a, values in gone.items():
+                _remove_values(rows, a, values)
         self._version += 1
 
     def match(self, s, p, o):
         """Yield the (s, p, o) triples matching a pattern; None is a wildcard.
 
         Fully bound and fully unbound patterns use the keys; unbound yields
-        in insertion order. The others take a bisect range in the ordering
-        whose leading columns are bound and yield in id order.
+        in insertion order. The others read the row of the ordering whose
+        first column is bound, in (second, third) id order.
         """
         if self._detached:
             raise RuntimeError(_DETACHED)
@@ -232,10 +286,12 @@ class TripleIndex:
         """Return the set of every id in any position."""
         if self._detached:
             raise RuntimeError(_DETACHED)
-        self._merge()
-        found = set()
-        for column in self._orders[_SPO]:
-            found.update(column)
+        if self._pending:
+            self._merge()
+        spo, pos, osp = self._orders
+        found = set(spo)
+        found.update(pos)
+        found.update(osp)
         return found
 
     def detach(self):
@@ -243,41 +299,26 @@ class TripleIndex:
         self._detached = True
         self._version += 1
         self._keys = {}
-        self._orders = tuple(_empty_columns() for _ in range(3))
-        self._buffer = _empty_columns()
-
-    def _columns(self):
-        """The twelve arrays: SPO, POS and OSP columns, then the buffer."""
-        return [c for columns in self._orders for c in columns] + list(self._buffer)
+        self._orders = ({}, {}, {})
+        self._pending = []
 
     def _merge(self):
-        """Move the pending buffer into the orderings."""
-        bs, bp, bo = self._buffer
-        if not bs:
-            return
-        if len(bs) > max(SMALL_MERGE, len(self._keys) // RESORT_DIVISOR):
-            self._resort()
+        """Move the pending adds into the orderings."""
+        pending = self._pending
+        self._pending = []
+        if len(pending) > max(FOLD_MIN, len(self._keys) // FOLD_DIVISOR):
+            for rows, packed in zip(self._orders, _rotated(pending)):
+                packed.sort()
+                _merge_sorted(rows, packed)
+            self.folds += 1
             return
         spo, pos, osp = self._orders
-        for s, p, o in zip(bs, bp, bo):
-            _insert(spo, s, p, o)
-            _insert(pos, p, o, s)
-            _insert(osp, o, s, p)
-        del bs[:]
-        del bp[:]
-        del bo[:]
-
-    def _resort(self):
-        """Rebuild every ordering from the keys and empty the buffer."""
-        keys = self._keys
-        # POS and OSP keys are the SPO key rotated by one and two places.
-        self._orders = (
-            _unpack(sorted(keys)),
-            _unpack(sorted([(k & _MASK64) << 32 | k >> 64 for k in keys])),
-            _unpack(sorted([(k & _MASK32) << 64 | k >> 32 for k in keys])),
-        )
-        self._buffer = _empty_columns()
-        self.resorts += 1
+        for k in pending:
+            s = k >> 64
+            o = k & _MASK32
+            _insert(spo, s, k & _MASK64)
+            _insert(pos, (k >> 32) & _MASK32, o << 32 | s)
+            _insert(osp, o, k >> 32)
 
     # Each generator checks for detach on its first next(), since it may
     # have been created before the detach. After every yield it checks the
@@ -303,38 +344,44 @@ class TripleIndex:
                 raise _changed(self)
 
     def _scan(self, order, a, b):
-        """Yield the rows of `order` whose first column is `a` and, unless
-        `b` is None, whose second column is `b`."""
+        """Yield the triples in the row of `a` in `order` whose second
+        column is `b`, or all of them if `b` is None."""
         if self._detached:
             raise RuntimeError(_DETACHED)
-        self._merge()
+        if self._pending:
+            self._merge()
         version = self._version
-        columns = self._orders[order]
-        c0, c1, _ = columns
-        lo = bisect_left(c0, a)
-        hi = bisect_right(c0, a, lo)
+        row = self._orders[order].get(a)
+        if row is None:
+            return
         if b is not None:
-            lo = bisect_left(c1, b, lo, hi)
-            hi = bisect_right(c1, b, lo, hi)
-        i_s, i_p, i_o = _ROLES[order]
-        cs, cp, co = columns[i_s], columns[i_p], columns[i_o]
-        for i in range(lo, hi):
-            yield (cs[i], cp[i], co[i])
-            # A change may have shortened the columns; stop before reading.
-            if self._version != version:
-                raise _changed(self)
+            lo = b << 32
+            row = row[bisect_left(row, lo) : bisect_left(row, lo + _STEP32)]
+        # A list row may change in place under a live generator; the version
+        # check after each yield stops before reading it again.
+        if order == _SPO:
+            for v in row:
+                yield (a, v >> 32, v & _MASK32)
+                if self._version != version:
+                    raise _changed(self)
+        elif order == _POS:
+            for v in row:
+                yield (v & _MASK32, a, v >> 32)
+                if self._version != version:
+                    raise _changed(self)
+        else:
+            for v in row:
+                yield (v >> 32, v & _MASK32, a)
+                if self._version != version:
+                    raise _changed(self)
 
     def _distinct(self, order):
         if self._detached:
             raise RuntimeError(_DETACHED)
-        self._merge()
+        if self._pending:
+            self._merge()
         version = self._version
-        column = self._orders[order][0]
-        i = 0
-        n = len(column)
-        while i < n:
-            value = column[i]
-            yield value
+        for a in sorted(self._orders[order]):
+            yield a
             if self._version != version:
                 raise _changed(self)
-            i = bisect_right(column, value, i)

@@ -3,15 +3,13 @@ import pytest
 import random
 import sys
 
-from pymantic import adjacency_index, btree_index
-from pymantic.adjacency_index import AdjacencyTripleIndex
-from pymantic.btree_index import BTreeTripleIndex
-from pymantic.dict_index import NestedDictTripleIndex
-from pymantic.offset_index import DELTA_MIN, FOLD_DIVISOR, OffsetTripleIndex
-from pymantic.triple_index import RESORT_DIVISOR, SMALL_MERGE, TripleIndex
-from tests.index_implementations import INDEXES, index_class_named
+from pymantic import triple_index
+from pymantic.triple_index import TripleIndex
 
 IDS = range(16)
+
+# The fewest adds in a batch the model makes between queries.
+BATCH_MIN = 33
 
 # Every combination of bound (True) and wildcard (False) positions.
 PATTERNS = [
@@ -56,21 +54,13 @@ def check_against_reference(index, ref, rng):
     assert index.ids() == {i for t in ref for i in t}
 
 
-@pytest.fixture(params=INDEXES)
-def index_class(request, monkeypatch):
-    """Each index implementation."""
-    return index_class_named(request.param, monkeypatch)
-
-
 def random_triple(rng):
     return (rng.choice(IDS), rng.choice(IDS), rng.choice(IDS))
 
 
-def run_model(
-    index_class, seed, operations=2000, max_size=250, check_every=1, after_check=None
-):
+def run_model(seed, operations=2000, max_size=250, check_every=1, after_check=None):
     rng = random.Random(seed)
-    index = index_class()
+    index = TripleIndex()
     # A dict used as an ordered set: re-adding after a remove moves to the end.
     ref = {}
     for step in range(operations):
@@ -88,8 +78,9 @@ def run_model(
             for spo in subset:
                 del ref[spo]
         elif roll < 0.35:
-            # More than SMALL_MERGE adds before the next query.
-            for _ in range(rng.randint(SMALL_MERGE + 1, 3 * SMALL_MERGE)):
+            # A batch of adds before the next query. The small-constants
+            # model makes it large enough to fold.
+            for _ in range(rng.randint(BATCH_MIN, 3 * BATCH_MIN)):
                 spo = random_triple(rng)
                 assert index.add(*spo) == (spo not in ref)
                 ref[spo] = None
@@ -99,26 +90,25 @@ def run_model(
             ref[spo] = None
         if step % check_every == 0:
             check_against_reference(index, ref, rng)
-            if after_check is not None:
-                after_check(index)
     check_against_reference(index, ref, rng)
     return index
 
 
 @pytest.mark.parametrize("seed", range(20))
-def test_model(index_class, seed):
-    run_model(index_class, seed)
+def test_model(seed):
+    run_model(seed)
 
 
 @pytest.mark.parametrize("seed", range(20, 30))
-def test_model_with_pending_adds(index_class, seed):
+def test_model_with_pending_adds(seed):
     # Querying only every 7th operation leaves adds pending when removes run,
-    # both single adds (merged by bisect) and batches (merged by re-sort).
-    run_model(index_class, seed, check_every=7)
+    # both single adds (inserted value by value) and batches (folded, in the
+    # small-constants model below).
+    run_model(seed, check_every=7)
 
 
-def test_readd_moves_to_end(index_class):
-    index = index_class()
+def test_readd_moves_to_end():
+    index = TripleIndex()
     index.add(1, 2, 3)
     index.add(4, 5, 6)
     assert not index.add(1, 2, 3)
@@ -128,16 +118,16 @@ def test_readd_moves_to_end(index_class):
     assert list(index) == [(4, 5, 6), (1, 2, 3)]
 
 
-def test_remove_absent_raises_key_error(index_class):
-    index = index_class()
+def test_remove_absent_raises_key_error():
+    index = TripleIndex()
     index.add(1, 2, 3)
     with pytest.raises(KeyError):
         index.remove(1, 2, 4)
     assert list(index) == [(1, 2, 3)]
 
 
-def test_remove_many_with_absent_triple_changes_nothing(index_class):
-    index = index_class()
+def test_remove_many_with_absent_triple_changes_nothing():
+    index = TripleIndex()
     for i in range(5):
         index.add(i, i, i)
     with pytest.raises(KeyError):
@@ -147,8 +137,8 @@ def test_remove_many_with_absent_triple_changes_nothing(index_class):
     assert list(index.subjects()) == [0, 1, 2, 3, 4]
 
 
-def test_remove_many_tolerates_repeated_triples(index_class):
-    index = index_class()
+def test_remove_many_tolerates_repeated_triples():
+    index = TripleIndex()
     index.add(1, 2, 3)
     index.add(4, 5, 6)
     index.remove_many([(1, 2, 3), (1, 2, 3)])
@@ -156,8 +146,8 @@ def test_remove_many_tolerates_repeated_triples(index_class):
     assert list(index.match(1, None, None)) == []
 
 
-def test_zero_ids_are_bound_values(index_class):
-    index = index_class()
+def test_zero_ids_are_bound_values():
+    index = TripleIndex()
     index.add(0, 0, 0)
     index.add(1, 1, 1)
     assert list(index.match(0, None, None)) == [(0, 0, 0)]
@@ -166,9 +156,9 @@ def test_zero_ids_are_bound_values(index_class):
     assert list(index.match(0, 0, 0)) == [(0, 0, 0)]
 
 
-def test_largest_id(index_class):
+def test_largest_id():
     top = 2**32 - 1
-    index = index_class()
+    index = TripleIndex()
     index.add(top, top, top)
     index.add(top, 0, top)
     assert (top, top, top) in index
@@ -202,8 +192,8 @@ def readers():
 
 @pytest.mark.parametrize("mutate", [m for _, m in mutating_calls()])
 @pytest.mark.parametrize("read", [r for _, r in readers()])
-def test_mutation_during_iteration_raises(index_class, read, mutate):
-    index = index_class()
+def test_mutation_during_iteration_raises(read, mutate):
+    index = TripleIndex()
     # Every reader has at least two results, so the second next() would
     # yield if the mutation went unnoticed.
     triples = [(0, 0, 0), (0, 0, 1), (0, 1, 0), (1, 0, 0), (1, 1, 1), (2, 0, 0)]
@@ -240,8 +230,8 @@ def one_result_readers():
     [r for _, r in one_result_readers()],
     ids=[name for name, _ in one_result_readers()],
 )
-def test_mutation_after_last_result_raises(index_class, read, mutate):
-    index = index_class()
+def test_mutation_after_last_result_raises(read, mutate):
+    index = TripleIndex()
     index.add(1, 2, 3)
     it = read(index)
     assert next(it) in [(1, 2, 3), 1]
@@ -250,82 +240,22 @@ def test_mutation_after_last_result_raises(index_class, read, mutate):
         next(it)
 
 
-def test_query_merges_single_adds_without_resorting():
-    rng = random.Random(6)
+def test_out_of_range_id_leaves_index_unchanged():
     index = TripleIndex()
-    for i in range(20000):
-        s, p, o = rng.randrange(5000), rng.randrange(50), rng.randrange(5000)
-        index.add(s, p, o)
-        assert (s, p, o) in set(index.match(s, None, None))
-    assert index.resorts == 0
-    assert len(index) == len(set(index))
-
-
-def test_large_batch_of_adds_resorts():
-    index = TripleIndex()
-    for i in range(SMALL_MERGE + 1):
-        index.add(i, i, i)
-    assert index.resorts == 0
-    assert list(index.match(None, 3, None)) == [(3, 3, 3)]
-    assert index.resorts == 1
-
-
-def test_resort_threshold_grows_with_index():
-    index = TripleIndex()
-    loaded = 64 * RESORT_DIVISOR
-    for i in range(loaded):
-        index.add(i, 0, i)
-    list(index.match(0, None, None))
-    assert index.resorts == 1
-
-    # More than SMALL_MERGE rows, but at most 1/RESORT_DIVISOR of the index:
-    # merged by bisect.
-    batch = (loaded + 64) // RESORT_DIVISOR
-    assert SMALL_MERGE < batch
-    for i in range(batch):
-        index.add(i, 1, i)
-    assert sorted(index.match(None, 1, None)) == [(i, 1, i) for i in range(batch)]
-    assert index.resorts == 1
-
-    # A batch above the relative bound re-sorts.
-    batch = len(index) // RESORT_DIVISOR + 10
-    for i in range(batch):
-        index.add(i, 2, i)
-    assert sorted(index.match(None, 2, None)) == [(i, 2, i) for i in range(batch)]
-    assert index.resorts == 2
-    assert list(index.subjects()) == list(range(loaded))
-
-
-def pending_columns(index):
-    """The columns an add appends to before any query."""
-    if isinstance(index, TripleIndex):
-        return index._columns()[9:]
-    if isinstance(index, NestedDictTripleIndex):
-        # No columns: each ordering's first level and the keys.
-        return [index._spo, index._pos, index._osp, index._keys]
-    if isinstance(index, AdjacencyTripleIndex):
-        return [index._pending]
-    if isinstance(index, BTreeTripleIndex):
-        # Pending adds are only a count; the keys are what an add appends to.
-        return [index._keys]
-    return index._delta_columns()
-
-
-def test_out_of_range_id_leaves_index_unchanged(index_class):
-    index = index_class()
     index.add(1, 2, 3)
     for bad in [(2**32, 0, 0), (0, 2**32, 0), (0, 0, 2**32), (0, 0, -1)]:
         with pytest.raises(OverflowError):
             index.add(*bad)
     assert list(index) == [(1, 2, 3)]
-    assert all(len(c) == 1 for c in pending_columns(index))
+    assert len(index) == 1
+    assert index._pending == [1 << 64 | 2 << 32 | 3]
     index.add(4, 5, 6)
     assert sorted(index.match(None, None, None)) == [(1, 2, 3), (4, 5, 6)]
     assert sorted(index.match(4, None, None)) == [(4, 5, 6)]
 
 
-def test_subjects_drops_subject_after_last_triple_removed(index_class):
-    index = index_class()
+def test_subjects_drops_subject_after_last_triple_removed():
+    index = TripleIndex()
     index.add(1, 2, 3)
     index.add(1, 2, 4)
     index.add(5, 2, 3)
@@ -337,8 +267,8 @@ def test_subjects_drops_subject_after_last_triple_removed(index_class):
     assert index.ids() == {2, 3, 5}
 
 
-def test_detach_makes_every_call_raise(index_class):
-    index = index_class()
+def test_detach_makes_every_call_raise():
+    index = TripleIndex()
     index.add(1, 2, 3)
     index.add(1, 2, 4)
     # Two results each, so a second next() would yield if detach went
@@ -372,280 +302,48 @@ def test_detach_makes_every_call_raise(index_class):
             call()
 
 
-def test_columns_are_unsigned_int_arrays():
-    index = TripleIndex()
-    for i in range(SMALL_MERGE + 5):
-        index.add(i, i + 1, i + 2)
-    list(index.match(1, None, None))
-    index.add(100, 100, 100)
-    columns = index._columns()
-    assert len(columns) == 12
-    assert len({id(c) for c in columns}) == 12
-    assert all(c.typecode == "I" for c in columns)
-
-
-def test_remove_detects_orderings_out_of_step_with_keys():
-    index = TripleIndex()
-    index.add(1, 2, 3)
-    index.add(4, 5, 6)
-    list(index.match(1, None, None))
-    # Corrupt one ordering so it no longer holds a triple the keys hold.
-    for column in index._columns()[3:6]:
-        column.pop()
-    with pytest.raises(RuntimeError, match="disagree"):
-        index.remove(4, 5, 6)
-
-
-# OffsetTripleIndex: the delta, dead rows and folds.
-
-
-def folded_offset_index(count):
-    """An OffsetTripleIndex of (i, 0, i) for i in range(count), folded."""
-    index = OffsetTripleIndex()
-    for i in range(count):
-        index.add(i, 0, i)
-    list(index.match(0, None, None))
-    return index
-
-
-def test_offsets_small_fresh_index_is_queried_without_a_fold():
-    index = OffsetTripleIndex()
-    for i in range(DELTA_MIN):
-        index.add(i, 0, i)
-    assert list(index.match(5, None, None)) == [(5, 0, 5)]
-    assert list(index.subjects()) == list(range(DELTA_MIN))
-    assert index.folds == 0
-
-
-def test_offsets_delta_below_threshold_is_queried_without_a_fold():
-    index = folded_offset_index(DELTA_MIN + 1)
-    assert index.folds == 1
-    for i in range(DELTA_MIN):
-        index.add(i, 1, i)
-    assert sorted(index.match(None, 1, None)) == [(i, 1, i) for i in range(DELTA_MIN)]
-    assert list(index.match(3, None, None)) == [(3, 0, 3), (3, 1, 3)]
-    assert index.folds == 1
-
-    # One more row crosses the threshold: the next query folds, once.
-    index.add(0, 2, 0)
-    assert list(index.match(None, 2, None)) == [(0, 2, 0)]
-    assert list(index.match(None, 1, None))[:2] == [(0, 1, 0), (1, 1, 1)]
-    assert index.folds == 2
-    assert all(len(c) == 0 for c in index._delta_columns())
-
-
-def test_offsets_removed_main_row_is_skipped_and_revived_by_readd():
-    index = folded_offset_index(DELTA_MIN + 1)
-    index.add(3, 1, 4)
-    index.remove(3, 0, 3)
-    assert (3, 0, 3) not in index
-    assert list(index.match(3, None, None)) == [(3, 1, 4)]
-    assert list(index.match(None, None, 3)) == []
-    assert (3, 0, 3) not in set(index.match(None, 0, None))
-    assert list(index.objects())[:5] == [0, 1, 2, 4, 5]
-
-    # Removing the delta row as well leaves subject 3 with no live rows.
-    index.remove(3, 1, 4)
-    assert 3 not in list(index.subjects())
-    assert all(len(c) == 0 for c in index._delta_columns())
-
-    assert index.add(3, 0, 3)
-    assert all(len(c) == 0 for c in index._delta_columns())
-    assert list(index.match(3, None, None)) == [(3, 0, 3)]
-    assert list(index)[-1] == (3, 0, 3)
-    assert 3 in list(index.subjects())
-    assert index.folds == 1
-
-
-def test_offsets_dead_rows_past_threshold_fold():
-    index = folded_offset_index(2 * DELTA_MIN)
-    for i in range(DELTA_MIN):
-        index.remove(i, 0, i)
-    assert list(index.match(None, 0, None))[0] == (DELTA_MIN, 0, DELTA_MIN)
-    assert index.folds == 1
-
-    index.remove(DELTA_MIN, 0, DELTA_MIN)
-    assert list(index.subjects())[0] == DELTA_MIN + 1
-    assert index.folds == 2
-    assert list(index.match(DELTA_MIN + 1, None, None)) == [
-        (DELTA_MIN + 1, 0, DELTA_MIN + 1)
-    ]
-    assert len(index) == DELTA_MIN - 1
-
-
-def test_offsets_ids_beyond_the_offsets_are_found_in_the_delta():
-    count = DELTA_MIN + 1
-    index = folded_offset_index(count)
-    late = [(count + 5, 0, count + 6), (0, count + 7, 1), (2, 0, count + 8)]
-    for spo in late:
-        index.add(*spo)
-    assert list(index.match(count + 5, None, None)) == [late[0]]
-    assert list(index.match(None, None, count + 6)) == [late[0]]
-    assert list(index.match(None, count + 7, None)) == [late[1]]
-    assert list(index.match(0, count + 7, None)) == [late[1]]
-    assert list(index.match(2, None, count + 8)) == [late[2]]
-    assert list(index.subjects()) == list(range(count)) + [count + 5]
-    assert list(index.predicates()) == [0, count + 7]
-    assert index.folds == 1
-
-
-def test_offsets_sparse_high_ids_need_no_offset_per_id():
-    # A small graph in a large dataset has ids spread up to the dataset's
-    # term count; its offsets arrays must stay proportional to its rows.
-    top = 2**32 - 1
-    count = DELTA_MIN + 1
-    index = OffsetTripleIndex()
-    triples = [(top - i, i % 3, top - 2 * i) for i in range(count)]
-    triples.append((1, 1, 1))
-    for spo in triples:
-        index.add(*spo)
-    assert list(index.match(top - 7, None, None)) == [triples[7]]
-    assert index.folds == 1
-    assert sum(len(c) for c in index._columns()) < 30 * len(triples)
-    assert list(index.match(1, None, None)) == [(1, 1, 1)]
-    assert list(index.match(top - 9, 0, None)) == [triples[9]]
-    assert list(index.match(None, None, top - 8)) == [triples[4]]
-    assert list(index.subjects()) == sorted({s for s, _, _ in triples})
-    assert list(index.predicates()) == [0, 1, 2]
-    index.remove(*triples[7])
-    assert list(index.match(top - 7, None, None)) == []
-    assert list(index.match(top - 6, None, None)) == [triples[6]]
-
-
-def test_offsets_one_add_then_match_folds_rarely():
-    rng = random.Random(10)
-    index = OffsetTripleIndex()
-    n = 100_000
-    while len(index) < n:
-        index.add(rng.randrange(20000), rng.randrange(50), rng.randrange(20000))
-    list(index.match(0, None, None))
-    folds = index.folds
-    rounds = 20_000
-    for _ in range(rounds):
-        s, p, o = rng.randrange(25000), rng.randrange(50), rng.randrange(25000)
-        index.add(s, p, o)
-        assert (s, p, o) in set(index.match(s, None, None))
-    assert index.folds - folds <= rounds // max(DELTA_MIN, n // FOLD_DIVISOR) + 1
-    assert len(index) == len(set(index))
-
-
-def test_offsets_columns_are_unsigned_int_arrays():
-    index = folded_offset_index(DELTA_MIN + 5)
-    index.add(100, 100, 100)
-    columns = index._columns()
-    # Three orderings of three columns and offsets in main, and three
-    # columns each in the delta.
-    assert len(columns) == 21
-    assert len({id(c) for c in columns}) == 21
-    assert all(c.typecode == "I" for c in columns)
-
-
-def test_offsets_remove_detects_delta_out_of_step_with_keys():
-    index = OffsetTripleIndex()
-    index.add(1, 2, 3)
-    index.add(4, 5, 6)
-    for column in index._delta_columns()[:3]:
-        column.pop()
-    with pytest.raises(RuntimeError, match="disagree"):
-        index.remove(4, 5, 6)
-
-
-@pytest.mark.parametrize(
-    "read",
-    [
-        lambda index: index.match(1, None, None),
-        lambda index: index.match(1, 0, None),
-        lambda index: index.match(None, None, 1),
-    ],
-    ids=["s", "s p", "o"],
-)
-def test_offsets_change_between_main_and_delta_raises(read):
-    index = folded_offset_index(DELTA_MIN + 1)
-    # A dead row in main, so the dead-row path runs too.
-    index.remove(DELTA_MIN, 0, DELTA_MIN)
-    index.add(1, 0, 0)
-    index.add(0, 0, 1)
-    it = read(index)
-    # The one main match; the delta match is next.
-    assert next(it) == (1, 0, 1)
-    index.remove(1, 0, 0)
-    with pytest.raises(RuntimeError):
-        next(it)
-
-
-# NestedDictTripleIndex: pruning and reads that must not create entries.
-
-
-def test_dict_remove_prunes_emptied_levels():
-    index = NestedDictTripleIndex()
-    index.add(1, 2, 3)
-    index.add(1, 2, 4)
-    index.add(1, 5, 3)
-    index.remove(1, 2, 3)
-    assert index._spo == {1: {2: {4}, 5: {3}}}
-    assert index._pos == {2: {4: {1}}, 5: {3: {1}}}
-    assert index._osp == {4: {1: {2}}, 3: {1: {5}}}
-    index.remove_many([(1, 2, 4), (1, 5, 3)])
-    assert index._spo == index._pos == index._osp == {}
-    assert len(index) == 0
-
-
-def test_dict_reads_do_not_create_entries():
-    index = NestedDictTripleIndex()
-    index.add(1, 2, 3)
-    for s, p, o in [(9, None, None), (1, 9, None), (None, 9, 9), (9, None, 3)]:
-        assert list(index.match(s, p, o)) == []
-    assert (9, 9, 9) not in index
-    assert index._spo == {1: {2: {3}}}
-    assert index._pos == {2: {3: {1}}}
-    assert index._osp == {3: {1: {2}}}
-
-
-# AdjacencyTripleIndex
-
-
-def adjacency_rows(index):
+def index_rows(index):
     """Every row value of the three orderings."""
     return [row for rows in index._orders for row in rows.values()]
 
 
 @pytest.fixture
-def small_adjacency(monkeypatch):
+def small_constants(monkeypatch):
     """Constants small enough that the model tests fold pending adds, turn
     rows into lists and filter rows in remove_many."""
-    monkeypatch.setattr(adjacency_index, "FOLD_MIN", 8)
-    monkeypatch.setattr(adjacency_index, "LIST_DEGREE", 4)
-    monkeypatch.setattr(adjacency_index, "_FILTER_MIN", 2)
+    monkeypatch.setattr(triple_index, "FOLD_MIN", 8)
+    monkeypatch.setattr(triple_index, "LIST_DEGREE", 4)
+    monkeypatch.setattr(triple_index, "_FILTER_MIN", 2)
 
 
 @pytest.mark.parametrize("seed", range(30, 40))
-def test_adjacency_model_with_small_constants(small_adjacency, seed):
-    run_model(AdjacencyTripleIndex, seed)
-    run_model(AdjacencyTripleIndex, seed, check_every=7)
+def test_model_with_small_constants(small_constants, seed):
+    run_model(seed)
+    run_model(seed, check_every=7)
 
 
 @pytest.mark.parametrize("mutate", [m for _, m in mutating_calls()])
 @pytest.mark.parametrize("read", [r for _, r in readers()])
-def test_adjacency_mutation_of_list_rows_raises(monkeypatch, read, mutate):
+def test_mutation_of_list_rows_raises(monkeypatch, read, mutate):
     # Every row with more than one value is a list, mutated in place.
-    monkeypatch.setattr(adjacency_index, "LIST_DEGREE", 1)
-    test_mutation_during_iteration_raises(AdjacencyTripleIndex, read, mutate)
+    monkeypatch.setattr(triple_index, "LIST_DEGREE", 1)
+    test_mutation_during_iteration_raises(read, mutate)
 
 
-def test_adjacency_small_pending_is_inserted_without_folding():
-    index = AdjacencyTripleIndex()
-    for i in range(adjacency_index.FOLD_MIN):
+def test_small_pending_is_inserted_without_folding():
+    index = TripleIndex()
+    for i in range(triple_index.FOLD_MIN):
         index.add(i % 7, 0, i)
     assert sorted(index.match(3, None, None)) == [
-        (3, 0, i) for i in range(adjacency_index.FOLD_MIN) if i % 7 == 3
+        (3, 0, i) for i in range(triple_index.FOLD_MIN) if i % 7 == 3
     ]
     assert index.folds == 0
     assert index._pending == []
 
 
-def test_adjacency_large_pending_folds_once():
-    index = AdjacencyTripleIndex()
-    count = adjacency_index.FOLD_MIN + 1
+def test_large_pending_folds_once():
+    index = TripleIndex()
+    count = triple_index.FOLD_MIN + 1
     for i in range(count):
         index.add(i % 7, i % 3, i)
     assert list(index.match(None, 2, None)) == sorted(
@@ -657,9 +355,9 @@ def test_adjacency_large_pending_folds_once():
     assert index.folds == 1
 
 
-def test_adjacency_fold_threshold_grows_with_index():
-    index = AdjacencyTripleIndex()
-    loaded = 2 * adjacency_index.FOLD_MIN * adjacency_index.FOLD_DIVISOR
+def test_fold_threshold_grows_with_index():
+    index = TripleIndex()
+    loaded = 2 * triple_index.FOLD_MIN * triple_index.FOLD_DIVISOR
     for i in range(loaded):
         index.add(i, 0, i)
     list(index.match(0, None, None))
@@ -667,8 +365,8 @@ def test_adjacency_fold_threshold_grows_with_index():
 
     # More than FOLD_MIN pending adds, but at most 1/FOLD_DIVISOR of the
     # index: inserted one by one.
-    batch = (loaded + adjacency_index.FOLD_MIN) // adjacency_index.FOLD_DIVISOR
-    assert adjacency_index.FOLD_MIN < batch
+    batch = (loaded + triple_index.FOLD_MIN) // triple_index.FOLD_DIVISOR
+    assert triple_index.FOLD_MIN < batch
     for i in range(batch):
         index.add(i, 1, i)
     assert list(index.match(None, 1, None)) == [(i, 1, i) for i in range(batch)]
@@ -676,7 +374,7 @@ def test_adjacency_fold_threshold_grows_with_index():
 
     # A batch above the relative bound folds, merging into existing rows.
     # The bound counts the batch too.
-    batch = 2 * len(index) // adjacency_index.FOLD_DIVISOR
+    batch = 2 * len(index) // triple_index.FOLD_DIVISOR
     for i in range(batch):
         index.add(i, 2, i)
     assert list(index.match(None, 2, None)) == [(i, 2, i) for i in range(batch)]
@@ -685,8 +383,8 @@ def test_adjacency_fold_threshold_grows_with_index():
     assert list(index.subjects()) == list(range(loaded))
 
 
-def test_adjacency_results_within_a_key_are_sorted():
-    index = AdjacencyTripleIndex()
+def test_results_within_a_key_are_sorted():
+    index = TripleIndex()
     triples = [(1, p, o) for p in (5, 3, 9) for o in (8, 2, 6)]
     for spo in triples:
         index.add(*spo)
@@ -696,11 +394,11 @@ def test_adjacency_results_within_a_key_are_sorted():
 
 
 @pytest.mark.parametrize("bulk", [False, True], ids=["inserted", "folded"])
-def test_adjacency_row_crossing_list_degree_becomes_a_list(monkeypatch, bulk):
-    degree = adjacency_index.LIST_DEGREE
+def test_row_crossing_list_degree_becomes_a_list(monkeypatch, bulk):
+    degree = triple_index.LIST_DEGREE
     # Low enough that the adds below fold when queried together.
-    monkeypatch.setattr(adjacency_index, "FOLD_MIN", degree)
-    index = AdjacencyTripleIndex()
+    monkeypatch.setattr(triple_index, "FOLD_MIN", degree)
+    index = TripleIndex()
     # Odd objects first and even ones after, so later inserts land between
     # existing values rather than only at the end.
     order = list(range(1, 2 * degree, 2)) + list(range(0, 2 * degree + 2, 2))
@@ -729,9 +427,9 @@ def test_adjacency_row_crossing_list_degree_becomes_a_list(monkeypatch, bulk):
     assert list(index.subjects()) == []
 
 
-def test_adjacency_remove_many_of_a_list_row():
-    degree = adjacency_index.LIST_DEGREE
-    index = AdjacencyTripleIndex()
+def test_remove_many_of_a_list_row():
+    degree = triple_index.LIST_DEGREE
+    index = TripleIndex()
     for o in range(3 * degree):
         index.add(1, 2, o)
     index.add(5, 2, 0)
@@ -746,8 +444,8 @@ def test_adjacency_remove_many_of_a_list_row():
     assert list(index.match(None, 2, None)) == [(5, 2, 0)]
 
 
-def test_adjacency_remove_many_with_pending_adds():
-    index = AdjacencyTripleIndex()
+def test_remove_many_with_pending_adds():
+    index = TripleIndex()
     index.add(1, 2, 3)
     list(index.match(1, None, None))
     index.add(1, 2, 4)
@@ -760,9 +458,9 @@ def test_adjacency_remove_many_with_pending_adds():
     assert index.ids() == {1, 2, 5, 7, 8, 9}
 
 
-def test_adjacency_one_add_then_match_never_folds():
+def test_one_add_then_match_never_folds():
     rng = random.Random(11)
-    index = AdjacencyTripleIndex()
+    index = TripleIndex()
     for i in range(100_000):
         index.add(rng.randrange(20_000), rng.randrange(50), rng.randrange(20_000))
     list(index.match(0, None, None))
@@ -792,8 +490,8 @@ def corrupt_drop_value(index):
     ],
     ids=["remove", "remove_many"],
 )
-def test_adjacency_remove_detects_orderings_out_of_step_with_keys(corrupt, remove):
-    index = AdjacencyTripleIndex()
+def test_remove_detects_orderings_out_of_step_with_keys(corrupt, remove):
+    index = TripleIndex()
     index.add(1, 2, 3)
     index.add(4, 5, 6)
     for s in range(100):
@@ -809,9 +507,9 @@ def test_adjacency_remove_detects_orderings_out_of_step_with_keys(corrupt, remov
     sys.implementation.name != "cpython",
     reason="checks tracking by CPython's cyclic garbage collector",
 )
-def test_adjacency_tuple_rows_are_untracked_after_a_collection():
+def test_tuple_rows_are_untracked_after_a_collection():
     rng = random.Random(3)
-    index = AdjacencyTripleIndex()
+    index = TripleIndex()
     for i in range(50_000):
         index.add(rng.randrange(5000), rng.randrange(20), rng.randrange(5000))
     list(index.match(0, None, None))
@@ -820,133 +518,10 @@ def test_adjacency_tuple_rows_are_untracked_after_a_collection():
         index.add(rng.randrange(5000), rng.randrange(20), rng.randrange(5000))
         list(index.match(0, None, None))
     gc.collect()
-    rows = adjacency_rows(index)
+    rows = index_rows(index)
     tuples = [row for row in rows if type(row) is tuple]
     lists = [row for row in rows if type(row) is list]
     assert tuples and lists
     assert not any(gc.is_tracked(row) for row in tuples)
     # Only the rows past LIST_DEGREE are lists: here the 20 predicates.
     assert len(lists) == 20
-
-
-# BTreeTripleIndex: leaves, splits and rebuilds.
-
-
-def btree_leaf_counts(index):
-    """Check the shape of every BTreeTripleIndex ordering and return its leaf
-    counts: leaves are non-empty, hold at most 2 * LOAD rows, are sorted
-    within and across leaves, and `_firsts` holds each leaf's first row."""
-    counts = []
-    for firsts, col0s, col1s, col2s in index._orders:
-        assert len(firsts) == len(col0s) == len(col1s) == len(col2s)
-        rows = []
-        for first, c0, c1, c2 in zip(firsts, col0s, col1s, col2s):
-            assert 0 < len(c0) <= 2 * btree_index.LOAD
-            assert len(c0) == len(c1) == len(c2)
-            assert all(c.typecode == "I" for c in (c0, c1, c2))
-            assert first == c0[0] << 64 | c1[0] << 32 | c2[0]
-            rows.extend(a << 64 | b << 32 | c for a, b, c in zip(c0, c1, c2))
-        assert rows == sorted(set(rows))
-        assert len(rows) == len(index)
-        counts.append(len(firsts))
-    return counts
-
-
-@pytest.mark.parametrize("seed", range(10))
-def test_btree_model_with_small_leaves(monkeypatch, seed):
-    # Small leaves give many of them, so inserts split leaves and removes
-    # empty them.
-    monkeypatch.setattr(btree_index, "LOAD", 4)
-    history = []
-
-    def record(index):
-        history.append((index.rebuilds, btree_leaf_counts(index)))
-
-    run_model(BTreeTripleIndex, seed, check_every=1, after_check=record)
-    steps = list(zip(history, history[1:]))
-    # Between two checks without a rebuild, the leaf count changes only by
-    # splits and drops; see both happen.
-    unbuilt = [(a, b) for (ra, a), (rb, b) in steps if ra == rb]
-    assert any(after[0] > before[0] for before, after in unbuilt)
-    assert any(after[0] < before[0] for before, after in unbuilt)
-    assert max(counts[0] for _, counts in history) > 20
-
-
-def test_btree_single_adds_merge_without_rebuilding():
-    rng = random.Random(6)
-    index = BTreeTripleIndex()
-    for i in range(20000):
-        s, p, o = rng.randrange(5000), rng.randrange(50), rng.randrange(5000)
-        index.add(s, p, o)
-        assert (s, p, o) in set(index.match(s, None, None))
-    assert index.rebuilds == 0
-    assert len(index) == len(set(index))
-    btree_leaf_counts(index)
-
-
-def test_btree_bulk_adds_rebuild_into_full_leaves(monkeypatch):
-    monkeypatch.setattr(btree_index, "LOAD", 8)
-    index = BTreeTripleIndex()
-    count = btree_index.BULK_MIN + 50
-    for i in range(count):
-        index.add(i, i % 3, i)
-    assert sorted(index.match(None, 1, None)) == [(i, 1, i) for i in range(1, count, 3)]
-    assert index.rebuilds == 1
-    # Cut into leaves of LOAD rows, the last one holding the rest.
-    sizes = [8] * (count // 8) + ([count % 8] if count % 8 else [])
-    for _, col0s, _, _ in index._orders:
-        assert [len(c) for c in col0s] == sizes
-
-
-def test_btree_rebuild_threshold_grows_with_index():
-    index = BTreeTripleIndex()
-    loaded = 2 * (btree_index.BULK_MIN + 1) * btree_index.BULK_DIVISOR
-    for i in range(loaded):
-        index.add(i, 0, i)
-    list(index.match(0, None, None))
-    assert index.rebuilds == 1
-
-    # More than BULK_MIN rows, but at most 1/BULK_DIVISOR of the index:
-    # inserted leaf by leaf.
-    batch = len(index) // btree_index.BULK_DIVISOR
-    assert btree_index.BULK_MIN < batch
-    for i in range(batch):
-        index.add(i, 1, i)
-    assert sorted(index.match(None, 1, None)) == [(i, 1, i) for i in range(batch)]
-    assert index.rebuilds == 1
-
-    # A batch above the relative bound rebuilds.
-    batch = 2 * len(index) // btree_index.BULK_DIVISOR
-    for i in range(batch):
-        index.add(i, 2, i)
-    assert sorted(index.match(None, 2, None)) == [(i, 2, i) for i in range(batch)]
-    assert index.rebuilds == 2
-    assert list(index.subjects()) == list(range(loaded))
-    btree_leaf_counts(index)
-
-
-def test_btree_remove_many_rebuilds_only_for_large_batches():
-    index = BTreeTripleIndex()
-    loaded = 2 * (btree_index.BULK_MIN + 1) * btree_index.BULK_DIVISOR
-    for i in range(loaded):
-        index.add(i, 0, i)
-    list(index.match(0, None, None))
-    assert index.rebuilds == 1
-    index.remove_many([(i, 0, i) for i in range(btree_index.BULK_MIN)])
-    assert index.rebuilds == 1
-    index.remove_many([(i, 0, i) for i in range(btree_index.BULK_MIN, loaded // 2)])
-    assert index.rebuilds == 2
-    assert list(index.subjects()) == list(range(loaded // 2, loaded))
-    btree_leaf_counts(index)
-
-
-def test_btree_remove_detects_orderings_out_of_step_with_keys():
-    index = BTreeTripleIndex()
-    index.add(1, 2, 3)
-    index.add(4, 5, 6)
-    list(index.match(1, None, None))
-    # Corrupt the POS ordering so it no longer holds a triple the keys hold.
-    for column in index._orders[1][1:]:
-        column[0].pop()
-    with pytest.raises(RuntimeError, match="disagree"):
-        index.remove(4, 5, 6)

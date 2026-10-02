@@ -7,7 +7,6 @@ import random
 from pymantic.parsers import ntriples_parser
 from pymantic.primitives import Graph, NamedNode, Triple
 from pymantic.serializers import serialize_ntriples
-from tests.index_implementations import INDEXES, index_class_named
 
 
 def test_parse_ntriples_named_nodes():
@@ -2396,15 +2395,7 @@ def written_turtle(graph, stable):
     return out.getvalue()
 
 
-@pytest.mark.parametrize("index", INDEXES)
-def test_turtle_written_through_lookups_equals_written_through_match(
-    index, monkeypatch
-):
-    from pymantic import primitives
-
-    monkeypatch.setattr(
-        primitives, "TripleIndex", index_class_named(index, monkeypatch)
-    )
+def test_turtle_written_through_lookups_equals_written_through_match():
     inputs = dict(turtle_fixture_triples())
     assert len(inputs) > 100
     inputs.update(

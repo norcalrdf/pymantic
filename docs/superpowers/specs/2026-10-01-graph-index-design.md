@@ -284,7 +284,10 @@ Use the tools on the base branch, with data fetched by
 `benchmarks/fetch_data.py` from pinned checksums. Inputs:
 `fhir-r5-examples`, `obi`, `doid`, `schemaorg-shapes`. Timing on 3.12, 3.13
 and 3.14, best-of-N, every run printed, differences under 5% treated as
-noise; pypy312 and pyodide314 for correctness and memory.
+noise; pypy312 and pyodide314 for correctness and memory. The index trial
+followed this plan (its tables say which interpreters each figure is
+from); the Task 17 tuning below was timed on 3.14 only, with the chosen
+constants checked on pypy312.
 
 - `timing.py`: the `canonical_labels` and stable Turtle digests must be
   identical before and after.
@@ -330,6 +333,17 @@ Acceptance:
 - Not met: Turtle writing on 3.14 is slower than with the old index, 14% by
   default (1.64 s against 1.44 s) and 4% with `stable=True` (7.73 s against
   7.42 s). Gavin chose the adjacency index with those numbers (2026-10-02).
+- Not met: the full suite does not pass on every tox env. On graalpy312 and
+  graalpy313, 171 tests each fail (tox on a local merge with
+  tox-interpreters, Task 17): `pymantic.compare.term_code` calls
+  `hashlib.blake2b(..., digest_size=8)`, which GraalPy does not support
+  (3.12 has only the default 64-byte blake2b, 3.13 no blake2b at all).
+  Every failing test reaches `canonical_labels`; the index tests pass. The
+  code predates this branch (it came with the compare branch), and the fix
+  needs Gavin's decision on a hash every interpreter has. All other envs
+  pass. pyodide312 prints one `PytestCacheWarning` under tox (pytest cannot
+  write its cache in `$TOX_ENV_DIR` there); a checkout of tox-interpreters
+  alone prints it too.
 
 ## Index trial
 
@@ -445,7 +459,8 @@ Adjacency. The other candidates are deleted.
 
 ### Tuning (Task 17)
 
-The constants were measured on 3.14 with `benchmarks/graph_index.py`
+The constants were measured on 3.14 only (pypy312 checked the chosen
+values) with `benchmarks/graph_index.py`
 (load, batches of 1, 32, 33 and 1000 adds, interleaved adds, the match
 patterns) and `benchmarks/timing.py --what turtle`, on `fhir-r5-examples`
 and `obi`, best of 5, one constant changed at a time from LIST_DEGREE 256,
@@ -471,7 +486,13 @@ LIST_DEGREE 1024 loses on adds, as longer tuple rows cost more to rebuild;
 A direct measurement of the fold threshold
 (`benchmarks/out/scripts/fold_crossover.py`, not committed: one batch of k
 new triples into a loaded graph, folded against inserted one by one, best
-of 3) shows the threshold is not where the constants put it:
+of 3; timed on 3.14 for all four inputs and pypy312 for fhir-r5-examples
+and schemaorg-shapes) shows the threshold is not where the constants put
+it. To regenerate: load the input with `inputs.load`, `addAll` it into a
+`Graph` and query once; add k triples made by `graph_index.new_triples`,
+then query once; time that with `triple_index.FOLD_MIN, FOLD_DIVISOR` set
+to `0, 1 << 62` (always fold) and to `1 << 62, 1` (never fold), for k in
+256, 1024, 4096 and n/64 to n/4.
 
 | input (triples) | fold faster from | fold/insert at n/32 | at n/16 (today) |
 |---|---|---|---|

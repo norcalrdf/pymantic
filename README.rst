@@ -29,6 +29,8 @@ Requirements
 ``lark`` is used for the Turtle and NTriples parser.
 The ``requests`` library is used for HTTP requests and the SPARQL client.
 ``rdflib`` is required by the SPARQL client as well.
+``pyld`` provides the JSON-LD parser and is installed with the ``jsonld``
+extra.
 
 
 Install
@@ -38,16 +40,23 @@ Install
 
     $ pip install pymantic
 
-This will install ``pymantic`` and all its dependencies.
+This will install ``pymantic`` and all its dependencies. For JSON-LD support,
+install the ``jsonld`` extra:
+
+::
+
+    $ pip install 'pymantic[jsonld]'
 
 
 Documentation
 =============
 
-Generating a local copy of the documentation requires Sphinx:
+Generating a local copy of the documentation requires Sphinx, and pymantic
+installed from the checkout with the ``jsonld`` extra so the JSON-LD parser's
+API can be documented:
 
 ::
 
-    $ pip install Sphinx
+    $ pip install Sphinx -e '.[jsonld]'
 
 

@@ -35,6 +35,12 @@ All notable changes to pymantic are recorded here. The format follows
 
 ### Changed
 
+- JSON-LD support is an optional extra. Install it with
+  `pip install 'pymantic[jsonld]'`; a plain `pip install pymantic` no longer
+  pulls in pyld or its lxml dependency, which cannot be installed on PyPy
+  3.12 or Pyodide. Without the extra, the rest of pymantic works, and
+  importing `pymantic.parsers.jsonld`, or importing `jsonld_parser` from
+  `pymantic.parsers`, raises an `ImportError` naming the extra.
 - Numeric escapes that produce surrogate code points (`\uD800` to `\uDFFF`)
   or values above U+10FFFF are rejected in all parsers, as the Turtle and
   N-Triples grammars require.

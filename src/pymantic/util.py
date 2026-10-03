@@ -107,6 +107,11 @@ IRI_REFERENCE_RE = re.compile(
 )
 
 
+# An absolute IRI starts with a scheme followed by a colon
+# (RFC 3987: ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":").
+ABSOLUTE_IRI = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*:")
+
+
 def split_iri_reference(reference):
     """Split an IRI reference into its (scheme, authority, path, query,
     fragment) components. A component whose delimiter is absent is None,

@@ -11,22 +11,24 @@ __all__ = [
     "Dataset",
     "PrefixMap",
     "TermMap",
-    "parse_curie",
     "is_language",
     "lang_match",
-    "to_curie",
     "Profile",
+    "UnknownSchemeWarning",
 ]
 
 import collections
 from collections import defaultdict
 import datetime
+import inspect
 import itertools
 from operator import itemgetter
+import os
+import warnings
 
 from pymantic.serializers import nt_escape, validate_language
-import pymantic.uri_schemes as uri_schemes
-from pymantic.util import quote_normalized_iri
+from pymantic.uri_schemes import schemes as registered_schemes
+from pymantic.util import ABSOLUTE_IRI, quote_normalized_iri
 
 
 def is_language(lang):
@@ -49,70 +51,6 @@ def lang_match(lang1, lang2):
     return lang1[0] == lang2[0] and (
         lang1[2] == "" or lang2[2] == "" or lang1[2] == lang2[2]
     )
-
-
-def parse_curie(curie, prefixes):
-    """
-    Parses a CURIE within the context of the given namespaces. Will also accept
-    explicit URIs and wrap them in an rdflib URIRef.
-
-    Specifically:
-
-    1) If the CURIE is not of the form [stuff] and the prefix is in the list of
-       standard URIs, it is wrapped in a URIRef and returned unchanged.
-    2) Otherwise, the CURIE is parsed by the rules of CURIE Syntax 1.0:
-       http://www.w3.org/TR/2007/WD-curie-20070307/ The default namespace is
-       the namespace keyed by the empty string in the namespaces dictionary.
-    3) If the CURIE's namespace cannot be resolved, a ValueError is raised.
-    """
-    definitely_curie = False
-    if curie[0] == "[" and curie[-1] == "]":
-        curie = curie[1:-1]
-        definitely_curie = True
-    prefix, sep, reference = curie.partition(":")
-    if not definitely_curie:
-        if prefix in uri_schemes.schemes:
-            return NamedNode(curie)
-    if not reference and "" in prefixes:
-        reference = prefix
-        return Prefix(prefixes[""])(reference)
-    if prefix in prefixes:
-        return Prefix(prefixes[prefix])(reference)
-    else:
-        raise ValueError(
-            f"Could not parse CURIE prefix {prefix} from prefixes {prefixes}"
-        )
-
-
-def parse_curies(curies, namespaces):
-    """Parse multiple CURIEs at once."""
-    for curie in curies:
-        yield parse_curie(curie, namespaces)
-
-
-def to_curie(uri, namespaces, seperator=":", explicit=False):
-    """Converts a URI to a CURIE using the prefixes defined in namespaces. If
-    there is no matching prefix, return the URI unchanged.
-
-    namespaces - a dictionary of prefix -> namespace mappings.
-
-    separator - the character to use as the separator between the prefix and
-                the local name.
-
-    explicit - if True and the URI can be abbreviated, wrap the abbreviated
-               form in []s to indicate that it is definitely a CURIE."""
-    matches = []
-    for prefix, namespace in namespaces.items():
-        if uri.startswith(namespace):
-            matches.append((prefix, namespace))
-    if len(matches) > 0:
-        prefix, namespace = sorted(matches, key=lambda pair: -len(pair[1]))[0]
-        curie = prefix + seperator + uri[len(namespace) :]
-        if explicit:
-            return f"[{curie}]"
-        else:
-            return curie
-    return uri
 
 
 class Triple(tuple):
@@ -602,6 +540,31 @@ class Dataset:
 # RDF Enviroment Interfaces
 
 
+class UnknownSchemeWarning(UserWarning):
+    """A prefixed name was resolved as an absolute IRI although its prefix is
+    neither declared nor a registered URI scheme, which usually means the
+    prefix is mistyped."""
+
+
+_PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__)) + os.sep
+
+
+def _stacklevel_outside_package():
+    """Return the warnings.warn stacklevel, from the caller's point of view,
+    of the first frame outside pymantic. Prefixed names usually reach
+    PrefixMap.resolve through Profile, Resource or MetaResource, so a fixed
+    stacklevel would blame pymantic instead of the user's typo."""
+    frame = inspect.currentframe()
+    if frame is None:  # Interpreters without frame support.
+        return 2
+    frame = frame.f_back.f_back  # Skip this function and its caller.
+    level = 2
+    while frame is not None and frame.f_code.co_filename.startswith(_PACKAGE_DIR):
+        frame = frame.f_back
+        level += 1
+    return level
+
+
 class PrefixMap(collections.OrderedDict):
     """A map of prefixes to IRIs, and provides methods to
     turn one in to the other.
@@ -614,40 +577,86 @@ class PrefixMap(collections.OrderedDict):
 
     >>> prefixes['rdfs'] = "http://www.w3.org/2000/01/rdf-schema#"
 
-    Resolve a known CURIE
+    Resolve a prefixed name
 
     >>> prefixes.resolve("rdfs:label")
-    u"http://www.w3.org/2000/01/rdf-schema#label"
+    NamedNode(<http://www.w3.org/2000/01/rdf-schema#label>)
 
-    Shrink an IRI for a known CURIE in to a CURIE
+    Shrink an IRI to a prefixed name
 
     >>> prefixes.shrink("http://www.w3.org/2000/01/rdf-schema#label")
-    u"rdfs:label"
+    'rdfs:label'
 
-    Attempt to resolve a CURIE with an empty prefix
+    A value whose prefix isn't declared is taken as an absolute IRI
 
-    >>> prefixes.resolve(":me")
-    ":me"
+    >>> prefixes.resolve("urn:isbn:0451450523")
+    NamedNode(<urn:isbn:0451450523>)
 
-    Set the default prefix and attempt to resolve a CURIE with an empty prefix
+    Set the default prefix and resolve a name with an empty prefix
 
     >>> prefixes.setDefault("http://example.org/bob#")
     >>> prefixes.resolve(":me")
-    u"http://example.org/bob#me"
+    NamedNode(<http://example.org/bob#me>)
     """
 
-    def resolve(self, curie):
-        """Given a valid CURIE for which a prefix is known (for example
-        "rdfs:label"), this method will return the resulting IRI (for example
-        "http://www.w3.org/2000/01/rdf-schema#label")"""
-        return parse_curie(curie, self)
+    def expand(self, value):
+        """Expand a value using only the prefixes this map declares, returning
+        None if it declares none that apply.
+
+        A prefixed name (for example "rdfs:label") whose prefix is declared
+        expands to an IRI (for example
+        "http://www.w3.org/2000/01/rdf-schema#label"), unless the part after
+        the colon starts with "//", which marks an absolute IRI. A value with
+        no colon uses the default prefix, or failing that is a declared prefix
+        name and expands to its namespace. A NamedNode is already resolved
+        and is returned unchanged."""
+        if isinstance(value, NamedNode):
+            return value
+        prefix, colon, suffix = value.partition(":")
+        if not colon:
+            if "" in self:
+                return Prefix(self[""])(value)
+            if value in self:
+                return Prefix(self[value])("")
+        elif not suffix.startswith("//") and prefix in self:
+            return Prefix(self[prefix])(suffix)
+        return None
+
+    def resolve(self, value):
+        """Resolve a prefixed name to an IRI by JSON-LD's compact IRI rule:
+        expand it with this map's prefixes, otherwise take a value that is
+        syntactically an absolute IRI as one, with an UnknownSchemeWarning if
+        its scheme isn't registered with IANA. Anything else raises
+        ValueError."""
+        expanded = self.expand(value)
+        if expanded is not None:
+            return expanded
+        prefix, colon, _ = value.partition(":")
+        if colon and ABSOLUTE_IRI.match(value):
+            if prefix.lower() not in registered_schemes:
+                warnings.warn(
+                    f"{prefix!r} in {value!r} is neither a declared prefix nor a"
+                    " registered URI scheme; resolving it as an absolute IRI",
+                    UnknownSchemeWarning,
+                    stacklevel=_stacklevel_outside_package(),
+                )
+            return NamedNode(value)
+        raise ValueError(f"Could not resolve {value!r} with prefixes {dict(self)}")
 
     def shrink(self, iri):
         """Given an IRI for which a prefix is known (for example
         "http://www.w3.org/2000/01/rdf-schema#label") this method returns a
-        CURIE (for example "rdfs:label"), if no prefix is known the original
-        IRI is returned."""
-        return to_curie(iri, self)
+        prefixed name (for example "rdfs:label"). The longest matching
+        namespace wins. If no prefix is known the original IRI is returned."""
+        matches = [
+            (prefix, namespace)
+            for prefix, namespace in self.items()
+            if iri.startswith(namespace)
+        ]
+        if not matches:
+            return iri
+        prefix, namespace = max(matches, key=lambda match: len(match[1]))
+        return prefix + ":" + iri[len(namespace) :]
 
     def addAll(self, other, override=False):
         if override:
@@ -659,7 +668,7 @@ class PrefixMap(collections.OrderedDict):
         return self
 
     def setDefault(self, iri):
-        """Set the iri to be used when resolving CURIEs without a prefix, for
+        """Set the iri to be used when resolving names without a prefix, for
         example ":this"."""
         self[""] = iri
 
@@ -740,8 +749,8 @@ class TermMap(dict):
 
 
 class Profile:
-    """Profiles provide an easy to use context for negotiating between CURIEs,
-    Terms and IRIs."""
+    """Profiles provide an easy to use context for negotiating between
+    prefixed names, terms and IRIs."""
 
     def __init__(self, prefixes=None, terms=None):
         self.prefixes = prefixes or PrefixMap()
@@ -752,8 +761,8 @@ class Profile:
             self.prefixes["xsd"] = "http://www.w3.org/2001/XMLSchema#"
 
     def resolve(self, toresolve):
-        """Given an Term or CURIE this method will return an IRI, or null if it
-        cannot be resolved.
+        """Given a term or prefixed name this method will return an IRI, or
+        null if it cannot be resolved.
 
         If toresolve contains a : (colon) then this method returns the result
         of calling prefixes.resolve(toresolve)
@@ -772,7 +781,7 @@ class Profile:
         self.terms.setDefault(iri)
 
     def setDefaultPrefix(self, iri):
-        """This method sets the default prefix for use when resolving CURIEs
+        """This method sets the default prefix for use when resolving names
         without a prefix, for example ":me", it is identical to calling the
         setDefault method on prefixes."""
         self.prefixes.setDefault(iri)

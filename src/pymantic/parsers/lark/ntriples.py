@@ -11,11 +11,10 @@ it will efficiently parse line by line rather than parsing the entire file.
 """
 
 from lark import Lark, Transformer
-import re
 
 from pymantic.parsers.base import BaseParser
 from pymantic.primitives import NamedNode, Triple
-from pymantic.util import decode_literal
+from pymantic.util import ABSOLUTE_IRI, decode_literal
 
 from .base import LarkParser
 
@@ -66,10 +65,6 @@ COMMENT: /#[^\r\n]*/
 %ignore COMMENT
 """
 
-# N-Triples IRIs "may be written only as absolute IRIs", so they must start
-# with a scheme (RFC 3987: ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":").
-ABSOLUTE_IRI = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*:")
-
 # A literal with one of these datatypes must be written with a language tag
 # (RDF Concepts, "Literals"); ``"x"^^rdf:langString`` is ill-formed.
 LANGUAGE_TAGGED_DATATYPES = {
@@ -88,6 +83,7 @@ class NTriplesTransformer(BaseParser, Transformer):
     def iriref(self, children):
         (token,) = children
         iri = decode_literal(token[1:-1])  # Remove <>s
+        # N-Triples IRIs "may be written only as absolute IRIs".
         if not ABSOLUTE_IRI.match(iri):
             raise ValueError("N-Triples IRIs must be absolute: <%s>" % iri)
         return self.make_named_node(iri)

@@ -55,16 +55,12 @@ provide a simple API for working directly with Triples, and RDF Terms.
     .. autoclass:: Profile
         :members:
         
+    .. autoclass:: UnknownSchemeWarning
+        
     Helper Functions
     ================
     
     .. autofunction:: is_language
     
     .. autofunction:: lang_match
-    
-    .. autofunction:: parse_curie
-    
-    .. autofunction:: parse_curies
-    
-    .. autofunction:: to_curie
         

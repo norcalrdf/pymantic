@@ -4,6 +4,7 @@ Python objects."""
 import logging
 
 from pymantic.primitives import (
+    RDF_DIRLANGSTRING,
     RDF_LANGSTRING,
     XSD_STRING,
     BlankNode,
@@ -22,9 +23,9 @@ import pymantic.util as util
 log = logging.getLogger(__name__)
 
 # The datatypes a literal gets from the way it is written rather than from a
-# datatype of its own: a simple literal's xsd:string and a language-tagged
-# string's rdf:langString.
-IMPLIED_DATATYPES = frozenset((XSD_STRING, RDF_LANGSTRING))
+# datatype of its own: a simple literal's xsd:string, a language-tagged
+# string's rdf:langString and a directional string's rdf:dirLangString.
+IMPLIED_DATATYPES = frozenset((XSD_STRING, RDF_LANGSTRING, RDF_DIRLANGSTRING))
 
 
 class MetaResource(type):
@@ -195,23 +196,28 @@ class Resource(metaclass=MetaResource):
             and t.object.datatype == XSD_STRING
         ]
 
-    def objects_by_lang(self, predicate, lang=None):
+    def objects_by_lang(self, predicate, lang=None, direction=None):
         """Objects for a predicate that match a specified language or, if
-        language is None, have a language specified."""
-        if lang:
-            return [
-                t.object
-                for t in self.graph.match(self.subject, predicate, None)
-                if hasattr(t.object, "language") and lang_match(lang, t.object.language)
-            ]
-        elif lang == "":
+        language is None, have a language specified.
+
+        If direction ("ltr" or "rtl") is given, only language-tagged literals
+        with that base direction are returned; None matches any direction.
+        Direction does not apply when lang is "" (bare literals)."""
+        if lang == "":
             return self.bare_literals(predicate)
-        else:
-            return [
-                t.object
-                for t in self.graph.match(self.subject, predicate, None)
-                if hasattr(t.object, "language") and t.object.language is not None
-            ]
+        if direction is not None:
+            direction = direction.lower()
+        return [
+            t.object
+            for t in self.graph.match(self.subject, predicate, None)
+            if hasattr(t.object, "language")
+            and (
+                lang_match(lang, t.object.language)
+                if lang
+                else t.object.language is not None
+            )
+            and (direction is None or t.object.direction == direction)
+        ]
 
     def objects_by_datatype(self, predicate, datatype=None):
         """Objects for a predicate that match a specified datatype or, if
@@ -411,7 +417,7 @@ class Resource(metaclass=MetaResource):
         registered Resource classes."""
         if obj is None:
             return None
-        if isinstance(obj, Literal):
+        if isinstance(obj, (Literal, Triple)):
             return obj
         if any(graph.match(obj, cls.resolve("rdf:type"), None)):
             # retrieve_resource(graph, obj)
@@ -592,7 +598,7 @@ def literalize(graph, value, lang, datatype):
         isinstance(value, set)
         or isinstance(value, frozenset)
         or isinstance(value, list)
-        or (isinstance(value, tuple) and not isinstance(value, Literal))
+        or (isinstance(value, tuple) and not isinstance(value, (Literal, Triple)))
     ):
         return frozenset(objectify_value(graph, v, lang, datatype) for v in value)
     else:
@@ -600,10 +606,10 @@ def literalize(graph, value, lang, datatype):
 
 
 def objectify_value(graph, value, lang=None, datatype=None):
-    """Convert a single value into either a Literal or a Resource."""
+    """Convert a single value into a Literal, a Resource or a triple term."""
     if isinstance(value, BlankNode) or isinstance(value, NamedNode):
         return Resource.classify(graph, value)
-    elif isinstance(value, Literal) or isinstance(value, Resource):
+    elif isinstance(value, (Literal, Triple, Resource)):
         return value
     elif isinstance(value, str):
         return Literal(value, language=lang, datatype=datatype)
@@ -615,7 +621,7 @@ def check_objects(graph, value, lang, datatype, rdf_class):
     """Determine that value or the things in values are appropriate for the
     specified explicit object access key."""
     if isinstance(value, frozenset) or (
-        isinstance(value, tuple) and not isinstance(value, Literal)
+        isinstance(value, tuple) and not isinstance(value, (Literal, Triple))
     ):
         for v in value:
             if (

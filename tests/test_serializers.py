@@ -1116,7 +1116,8 @@ def test_turtle_malformed_list_round_trip(turtle_parser, serialize_turtle, turtl
 
 
 def shuffled_relabelled(graph, seed):
-    """A copy with fresh blank nodes and its triples added in another order."""
+    """A copy with fresh blank nodes, also inside triple terms, and its
+    triples added in another order."""
     import random
 
     from pymantic.primitives import BlankNode, Graph, Triple
@@ -1127,6 +1128,8 @@ def shuffled_relabelled(graph, seed):
     def term(node):
         if isinstance(node, BlankNode):
             return fresh.setdefault(node, BlankNode())
+        if isinstance(node, Triple):
+            return Triple(*map(term, node))
         return node
 
     triples = [Triple(term(s), term(p), term(o)) for s, p, o in graph]
@@ -2409,3 +2412,135 @@ def test_turtle_written_through_lookups_equals_written_through_match():
                 name,
                 stable,
             )
+
+
+def test_ntriples_and_nquads_write_triple_terms_and_directions(primitives):
+    from pymantic.parsers import nquads_parser
+    from pymantic.serializers import serialize_nquads
+
+    nt = '<http://x/s> <http://x/p> <<( <http://x/a> <http://x/b> "c"@en--rtl )>> .\n'
+    out = StringIO()
+    serialize_ntriples(ntriples_parser.parse(nt), out)
+    assert out.getvalue() == nt
+
+    nq = nt[: -len(" .\n")] + " <http://x/g> .\n"
+    out = StringIO()
+    serialize_nquads(nquads_parser.parse(nq), out)
+    assert out.getvalue() == nq
+
+
+# RDF 1.2 Turtle ------------------------------------------------------------
+
+
+def ex(local):
+    return NamedNode("http://x/" + local)
+
+
+def written_turtle_of(graph, stable):
+    from pymantic.serializers import serialize_turtle
+
+    out = StringIO()
+    serialize_turtle(graph, out, stable=stable)
+    return out.getvalue()
+
+
+@pytest.mark.parametrize("stable", [False, True])
+def test_turtle_writes_triple_terms_and_directions(turtle_parser, stable):
+    from pymantic.primitives import Literal
+    import tests.oracle
+
+    graph = Graph().addAll(
+        [
+            Triple(
+                ex("r"),
+                ex("reifies"),
+                Triple(ex("a"), ex("b"), Literal("c", "he", direction="rtl")),
+            ),
+            Triple(ex("r"), ex("label"), Literal("d", "en", direction="ltr")),
+        ]
+    )
+    text = written_turtle_of(graph, stable)
+    assert "<<( " in text
+    assert '"c"@he--rtl' in text
+    assert '"d"@en--ltr' in text
+    tests.oracle.require_oracle()
+    assert tests.oracle.isomorphic(turtle_parser.parse(text), graph)
+
+
+@pytest.mark.parametrize("stable", [False, True])
+def test_blank_node_only_inside_triple_term_keeps_its_label(turtle_parser, stable):
+    from pymantic.primitives import BlankNode, Literal
+    import tests.oracle
+
+    x = BlankNode()
+    graph = Graph().addAll(
+        [
+            Triple(ex("r"), ex("reifies"), Triple(x, ex("p"), ex("o"))),
+            Triple(x, ex("name"), Literal("only here")),
+        ]
+    )
+    text = written_turtle_of(graph, stable)
+    assert "[" not in text
+    tests.oracle.require_oracle()
+    assert tests.oracle.isomorphic(turtle_parser.parse(text), graph)
+
+
+@pytest.mark.parametrize("stable", [False, True])
+def test_blank_node_in_triple_term_and_once_an_object_is_not_inlined(
+    turtle_parser, stable
+):
+    # Referenced once as an object, the blank node would otherwise be
+    # written as [ ... ] there, unlabelled, and the triple term's label
+    # would name a different node.
+    from pymantic.primitives import BlankNode, Literal
+    import tests.oracle
+
+    x = BlankNode()
+    inner = BlankNode()
+    graph = Graph().addAll(
+        [
+            Triple(ex("s"), ex("q"), x),
+            Triple(x, ex("name"), Literal("n")),
+            Triple(
+                ex("r"),
+                ex("reifies"),
+                Triple(ex("a"), ex("b"), Triple(x, ex("p"), inner)),
+            ),
+            Triple(ex("t"), ex("q"), inner),
+        ]
+    )
+    text = written_turtle_of(graph, stable)
+    assert "[" not in text
+    tests.oracle.require_oracle()
+    assert tests.oracle.isomorphic(turtle_parser.parse(text), graph)
+
+
+@pytest.mark.parametrize("stable", [False, True])
+def test_list_head_in_triple_term_is_not_written_as_a_collection(turtle_parser, stable):
+    import tests.oracle
+
+    text = (
+        "@prefix : <http://x/> .\n"
+        "_:l <http://www.w3.org/1999/02/22-rdf-syntax-ns#first> 1 ;\n"
+        "    <http://www.w3.org/1999/02/22-rdf-syntax-ns#rest> () .\n"
+        ":s :q _:l .\n"
+        ":r :reifies <<( :a :b _:l )>> .\n"
+    )
+    graph = turtle_parser.parse(text)
+    written = written_turtle_of(graph, stable)
+    assert "(" not in written.replace("<<(", "")
+    tests.oracle.require_oracle()
+    assert tests.oracle.isomorphic(turtle_parser.parse(written), graph)
+
+
+def test_stable_turtle_with_triple_terms_is_stable(turtle_parser):
+    graph = turtle_parser.parse(
+        "@prefix : <http://x/> .\n"
+        ':r :reifies <<( _:a :b "c"@he--rtl )>> , <<( :a :b _:c )>> , :z , _:d .\n'
+        ":r :reifies <<( _:d :b <<( _:a :p _:c )>> )>> .\n"
+        '_:a :name "a" . _:c :name "c" . _:d :name "d" .\n'
+    )
+    first = written_turtle_of(graph, True)
+    for seed in (1, 2):
+        copy = shuffled_relabelled(graph, seed)
+        assert written_turtle_of(copy, True) == first

@@ -6,6 +6,7 @@ __all__ = [
     "Literal",
     "XSD_STRING",
     "RDF_LANGSTRING",
+    "RDF_DIRLANGSTRING",
     "NamedNode",
     "Prefix",
     "BlankNode",
@@ -165,6 +166,12 @@ class Triple(tuple):
     predicate = property(itemgetter(1))
     object = property(itemgetter(2))
 
+    interfaceName = "Triple"
+
+    def toNT(self):
+        """The N-Triples form of this triple as a triple term."""
+        return f"<<( {self.subject.toNT()} {self.predicate.toNT()} {self.object.toNT()} )>>"
+
     def __str__(self):
         return f"{self.subject.toNT()} {self.predicate.toNT()} {self.object.toNT()} .\n"
 
@@ -237,14 +244,15 @@ def t_as_q(graph_name, triple):
 
 
 class Literal(tuple):
-    """Literal(`value`, `language`, `datatype`)
+    """Literal(`value`, `language`, `datatype`, `direction`)
 
     Literals represent values such as numbers, dates and strings in RDF data. A
-    Literal is comprised of three attributes:
+    Literal is comprised of four attributes:
 
     * a lexical representation of the nominalValue
     * an optional language represented by a string token
     * a datatype specified by a NamedNode
+    * an optional base direction, ``"ltr"`` or ``"rtl"``
 
     Literals representing plain text in a natural language may have a language
     attribute specified by a text string token, as specified in [BCP47],
@@ -253,26 +261,45 @@ class Literal(tuple):
     Every literal has a datatype (RDF 1.1 Concepts 3.3), which is filled in on
     construction when the caller leaves it out: ``xsd:string`` for a simple
     literal and ``rdf:langString`` for a language-tagged string. Two literals
-    are the same term exactly when their lexical form, datatype and language
-    all compare equal, so ``Literal("v")`` and
+    are the same term exactly when their lexical form, datatype, language and
+    direction all compare equal, so ``Literal("v")`` and
     ``Literal("v", datatype=XSD_STRING)`` are one term.
 
-    Literals may not have both a datatype and a language."""
+    A language-tagged string may also carry a base direction (RDF 1.2
+    Concepts 3.3), normalized to lowercase. Its datatype is then
+    ``rdf:dirLangString``, and it is a different term from the same string
+    without a direction. A direction needs a language.
+
+    Literals may not have both a datatype and a language.
+
+    To build many literals in one language and direction, bind them with
+    :func:`functools.partial`::
+
+        he_rtl = partial(Literal, language="he", direction="rtl")
+        he_rtl("שלום")"""
 
     __slots__ = ()
 
-    _fields = ("value", "language", "datatype")
+    _fields = ("value", "language", "datatype", "direction")
 
     types = {
         int: lambda v: (str(v), XSD("integer")),
         datetime.datetime: lambda v: (v.isoformat(), XSD("dateTime")),
     }
 
-    def __new__(_cls, value, language=None, datatype=None):
+    def __new__(_cls, value, language=None, datatype=None, direction=None):
         if not isinstance(value, str):
             value, auto_datatype = _cls.types[type(value)](value)
             if not datatype:
                 datatype = auto_datatype
+        if direction is not None:
+            # RDF 1.2 Concepts: the base direction is "ltr" or "rtl", and
+            # like a language tag it is compared case-insensitively.
+            direction = direction.lower()
+            if direction not in ("ltr", "rtl"):
+                raise ValueError(
+                    "Literal direction must be 'ltr' or 'rtl', not %r" % direction
+                )
         if not language:
             # An empty tag is no tag: rdf:langString needs a non-empty one.
             language = None
@@ -283,42 +310,68 @@ class Literal(tuple):
             language = language.lower()
             # RDF 1.1 Concepts 3.3: a language-tagged string always has the
             # datatype rdf:langString, and no other datatype may join a
-            # language.
-            if datatype and datatype != RDF_LANGSTRING:
+            # language. RDF 1.2 gives one with a direction the datatype
+            # rdf:dirLangString instead.
+            implied = RDF_LANGSTRING if direction is None else RDF_DIRLANGSTRING
+            if datatype and datatype != implied:
                 raise ValueError("Literals may not have both a datatype and a language")
-            datatype = RDF_LANGSTRING
+            datatype = implied
+        elif direction is not None:
+            raise ValueError("Literals with a direction must have a language")
         elif not datatype:
             # A simple literal is syntactic sugar for one typed xsd:string.
             datatype = XSD_STRING
         elif datatype == RDF_LANGSTRING:
             raise ValueError("rdf:langString literals must have a language")
-        return tuple.__new__(_cls, (value, language, datatype))
+        elif datatype == RDF_DIRLANGSTRING:
+            raise ValueError(
+                "rdf:dirLangString literals must have a language and a direction"
+            )
+        return tuple.__new__(_cls, (value, language, datatype, direction))
 
     @classmethod
     def _make(cls, iterable, new=None, len=len):
         "Make a new Literal object from a sequence or iterable"
         fields = tuple(iterable)
-        if len(fields) != 3:
-            raise TypeError("Expected 3 arguments, got %d" % len(fields))
+        # Three fields is the RDF 1.1 shape, without a direction.
+        if len(fields) not in (3, 4):
+            raise TypeError("Expected 3 or 4 arguments, got %d" % len(fields))
         return cls(*fields)
 
     def __repr__(self):
-        return "Literal(value=%r, language=%r, datatype=%r)" % self
+        return "Literal(value=%r, language=%r, datatype=%r, direction=%r)" % self
 
     def _asdict(t):
         "Return a new dict which maps field names to their values"
-        return {"value": t[0], "language": t[1], "datatype": t[2]}
+        return {
+            "value": t[0],
+            "language": t[1],
+            "datatype": t[2],
+            "direction": t[3],
+        }
 
     def _replace(_self, **kwds):
         "Return a new Literal object replacing specified fields with new value"
+        implicit = (XSD_STRING, RDF_LANGSTRING, RDF_DIRLANGSTRING)
         if "language" in kwds and "datatype" not in kwds:
             # The datatypes of a simple literal and of a language-tagged
             # string are implied by the language, so changing the language
             # re-derives the datatype instead of carrying the old implicit
             # one forward into a literal that could not hold it.
-            if _self.datatype in (XSD_STRING, RDF_LANGSTRING):
+            if _self.datatype in implicit:
                 kwds["datatype"] = None
-        result = _self._make(map(kwds.pop, ("value", "language", "datatype"), _self))
+            # A direction cannot outlive the language it qualifies, so
+            # dropping the language drops the direction with it.
+            if not kwds["language"] and "direction" not in kwds:
+                kwds["direction"] = None
+        if "direction" in kwds and "datatype" not in kwds:
+            # The direction alone decides between rdf:langString and
+            # rdf:dirLangString, so the datatype is re-derived here too.
+            if _self.datatype in implicit:
+                kwds["datatype"] = None
+        result = _self._make(
+            map(kwds.pop, ("value", "language", "datatype", "direction"), _self)
+        )
         if kwds:
             raise ValueError("Got unexpected field names: %r" % kwds.keys())
         return result
@@ -329,6 +382,7 @@ class Literal(tuple):
     value = property(itemgetter(0))
     language = property(itemgetter(1))
     datatype = property(itemgetter(2))
+    direction = property(itemgetter(3))
 
     interfaceName = "Literal"
 
@@ -341,6 +395,8 @@ class Literal(tuple):
             # A language-tagged string is written with its tag alone; its
             # rdf:langString datatype is implicit.
             validate_language(self.language)
+            if self.direction:
+                return f"{quoted}@{self.language}--{self.direction}"
             return f"{quoted}@{self.language}"
         elif self.datatype != XSD_STRING:
             return f"{quoted}^^{self.datatype.toNT()}"
@@ -381,6 +437,7 @@ XSD = Prefix("http://www.w3.org/2001/XMLSchema#")
 XSD_STRING = XSD("string")
 RDF = Prefix("http://www.w3.org/1999/02/22-rdf-syntax-ns#")
 RDF_LANGSTRING = RDF("langString")
+RDF_DIRLANGSTRING = RDF("dirLangString")
 
 
 class BlankNode:
@@ -428,9 +485,24 @@ class _MappedTerms(dict):
         return mapped
 
 
+def _check_triple_term_bound(triple):
+    """A triple term can only be looked up whole, so None cannot stand for a
+    wildcard anywhere inside one. Only the object position can nest."""
+    for term in triple:
+        if term is None:
+            raise ValueError("a triple term in a pattern must be fully bound")
+    if isinstance(triple.object, Triple):
+        _check_triple_term_bound(triple.object)
+
+
 def _pattern_ids(dictionary, subject, predicate, object):
     """The ids of a match pattern, keeping None as the wildcard, or None if a
     bound term is unknown and so nothing can match."""
+    # Validated before any lookup so a bad pattern raises whatever the
+    # graph happens to contain.
+    for term in (subject, predicate, object):
+        if isinstance(term, Triple):
+            _check_triple_term_bound(term)
     lookup = dictionary.lookup
     pattern = []
     for term in (subject, predicate, object):
@@ -1180,11 +1252,11 @@ class RDFEnvironment(Profile):
         """Creates a new :py:class:`NamedNode`."""
         return NamedNode(value)
 
-    def createLiteral(self, value, language=None, datatype=None):
+    def createLiteral(self, value, language=None, datatype=None, direction=None):
         """Creates a :py:class:`Literal` given a value, an optional language
         and/or an
-        optional datatype."""
-        return Literal(value, language, datatype)
+        optional datatype, and an optional base direction."""
+        return Literal(value, language, datatype, direction)
 
     def createTriple(self, subject, predicate, object):
         """Creates a :py:class:`Triple` given a subject, predicate and

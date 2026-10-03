@@ -73,6 +73,12 @@ Grammar
 same whitespace and comment rules, so Line-TriG has every term N-Triples
 has, including triple terms and directional language-tagged strings.
 
+Line-TriG is the only format pymantic reads and writes that holds every
+RDF 1.2 dataset. N-Quads cannot write an empty named graph, and N-Triples
+and Turtle hold one graph. Turtle's missing reifiers and annotations are
+shorthand for triples that Line-TriG writes out, so they cost no
+expressiveness.
+
 Why it is valid TriG
 --------------------
 

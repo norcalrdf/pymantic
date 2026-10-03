@@ -208,6 +208,28 @@ settles them:
   as a record of its own carrying only the name; N-Quads has no syntax for
   such a graph, so ``serialize_nquads(dataset, f, stable=True)`` cannot
   write it.
+* **Base direction.** A literal with an RDF 1.2 base direction is keyed as
+  N-Triples writes it, ``"x"@he--rtl``. A language tag cannot contain
+  ``--``, so every literal without a direction keeps its key, its code and
+  every label derived from it.
+* **Triple terms.** A triple term with no blank node at any depth is a
+  ground term like an IRI, keyed ``<<( s p o )>>`` from its parts' keys. A
+  triple term holding a blank node is flattened before molecules are split:
+  each distinct such term is replaced by a helper blank node ``t``, and three
+  statements are added, ``(t, TT_SUBJECT, s)``, ``(t, TT_PREDICATE, p)`` and
+  ``(t, TT_OBJECT, o)``. A nested term is flattened first, so its helper is
+  the ``s`` or ``o`` of the outer one. The markers are reserved keys that
+  start with neither ``<`` nor a quote, so no real term key equals one. This
+  preserves isomorphism in both directions: a bijection on blank nodes
+  induces a bijection on triple terms, so one helper per distinct term
+  matches exactly when the graphs do. The stages, refinement, twins and the
+  budget then run unchanged. Helpers are nodes of their molecule and count
+  toward its budget, so a graph with many such terms reaches it sooner.
+  :func:`~pymantic.compare.canonical_labels` gives helpers no label and the
+  stable order no rank, though their positions still count in the
+  ``n<position>`` of the real nodes beside them. A graph with no triple
+  terms is not flattened at all, so its statements, labels and stable
+  output are unchanged.
 
 API
 ===

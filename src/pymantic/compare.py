@@ -30,6 +30,7 @@ from pymantic.primitives import (
     Graph,
     Literal,
     NamedNode,
+    Triple,
 )
 from pymantic.serializers import nt_escape
 
@@ -37,6 +38,13 @@ from pymantic.serializers import nt_escape
 # named graph with no statements. Every real term key starts with "<" or a
 # quote, so this can never be mistaken for one.
 EMPTY_GRAPH = "(empty graph)"
+
+# Stand in the predicate position of the three records that describe a
+# triple term holding a blank node; see statements(). Like EMPTY_GRAPH, they
+# start with "(", which no real term key does.
+TT_SUBJECT = "(triple term subject)"
+TT_PREDICATE = "(triple term predicate)"
+TT_OBJECT = "(triple term object)"
 
 # Work allowed for one molecule of n blank nodes, counted in node visits: a
 # refinement round over the molecule costs n, and so does opening a branch.
@@ -126,21 +134,45 @@ def term_code(key):
 
 
 def term_key(term):
-    """A string that identifies an IRI or literal as an RDF term: two terms
-    get the same key exactly when RDF says they are the same term. A
-    :class:`~pymantic.primitives.Literal` is already canonical -- it carries
-    a datatype whether or not one was written -- so its three fields decide
-    the key, written the way N-Triples writes them."""
+    """A string that identifies an IRI, literal or ground triple term as an
+    RDF term: two terms get the same key exactly when RDF says they are the
+    same term. A :class:`~pymantic.primitives.Literal` is already canonical
+    -- it carries a datatype whether or not one was written -- so its value,
+    language, datatype and direction decide the key, written the way
+    N-Triples writes them. A literal without a direction has the key it had
+    before RDF 1.2: no language tag contains "--", so the direction suffix
+    cannot collide with one. A triple term with no blank node at any depth
+    is keyed by its parts' keys; one holding a blank node raises TypeError,
+    since :func:`statements` flattens those."""
     if isinstance(term, NamedNode):
         return "<%s>" % term
     if isinstance(term, Literal):
         key = '"' + nt_escape(term.value) + '"'
         if term.language:
+            if term.direction:
+                return key + "@" + term.language + "--" + term.direction
             return key + "@" + term.language
         if term.datatype != XSD_STRING:
             return key + "^^<" + term.datatype + ">"
         return key
+    if isinstance(term, Triple):
+        return "<<( %s %s %s )>>" % tuple(map(term_key, term))
     raise TypeError("%r is not an RDF term" % (term,))
+
+
+class _TripleTermNode(BlankNode):
+    """The helper blank node that stands for one triple term holding a
+    blank node, so the comparison sees only plain statements. It is a
+    BlankNode so every blank node test in this module covers it."""
+
+
+def _has_blank_node(triple_term):
+    """Whether a blank node occurs at any depth inside triple_term."""
+    return any(
+        isinstance(part, BlankNode)
+        or (isinstance(part, Triple) and _has_blank_node(part))
+        for part in triple_term
+    )
 
 
 def statements(graph_or_dataset):
@@ -153,8 +185,18 @@ def statements(graph_or_dataset):
     dataset, so it gets a record of its own: :data:`EMPTY_GRAPH` in the
     first three positions and the graph name in the fourth. An IRI name
     makes that record ground; a blank name puts it in that node's
-    molecule."""
+    molecule.
+
+    A triple term holding a blank node at any depth cannot be keyed, so it
+    is flattened: one helper blank node stands for each distinct such term,
+    with three records giving its parts under :data:`TT_SUBJECT`,
+    :data:`TT_PREDICATE` and :data:`TT_OBJECT`. A nested term is flattened
+    first, so its helper is a part of the outer term's records. A bijection
+    between the blank nodes of two graphs induces one between their triple
+    terms, so the flattened graphs are isomorphic exactly when the originals
+    are. A graph with no such term gets no helpers and no extra records."""
     keys = {}
+    helper_items = []
 
     def key(term):
         if isinstance(term, BlankNode):
@@ -162,7 +204,14 @@ def statements(graph_or_dataset):
         try:
             return keys[term]
         except KeyError:
-            keys[term] = term_key(term)
+            if isinstance(term, Triple) and _has_blank_node(term):
+                s, p, o = key(term[0]), key(term[1]), key(term[2])
+                helper = keys[term] = _TripleTermNode()
+                helper_items.append((helper, TT_SUBJECT, s, ""))
+                helper_items.append((helper, TT_PREDICATE, p, ""))
+                helper_items.append((helper, TT_OBJECT, o, ""))
+            else:
+                keys[term] = term_key(term)
             return keys[term]
 
     # A Dataset or Graph is read through mapped_quads or mapped_triples,
@@ -186,6 +235,7 @@ def statements(graph_or_dataset):
         for graph in graph_or_dataset.graphs:
             if graph.uri is not None and not len(graph):
                 items.append((EMPTY_GRAPH, EMPTY_GRAPH, EMPTY_GRAPH, key(graph.uri)))
+    items.extend(helper_items)
     return list(dict.fromkeys(items))
 
 
@@ -494,7 +544,11 @@ def canonical_labels_and_order(graph_or_dataset, work_limit=None):
     (they are numbered in canonical form order, identical ones in encounter
     order) and ``n<position>`` when the molecule has several nodes. Deriving
     the label from a digest rather than a rank keeps the labels of every
-    other molecule unchanged when one molecule is edited."""
+    other molecule unchanged when one molecule is edited.
+
+    The helper nodes that :func:`statements` makes for triple terms get
+    neither a label nor a rank; their positions still count toward the
+    ``n<position>`` of the real nodes in their molecule."""
     placed = [
         (molecule, *canonical_form(molecule, work_limit))
         for molecule in molecules(statements(graph_or_dataset))
@@ -511,6 +565,8 @@ def canonical_labels_and_order(graph_or_dataset, work_limit=None):
             if len(indexes) > 1:
                 label += "m%d" % duplicate
             for node, position in positions.items():
+                if isinstance(node, _TripleTermNode):
+                    continue
                 if len(molecule.nodes) > 1:
                     labels[node] = label + "n%d" % position
                 else:
@@ -518,7 +574,8 @@ def canonical_labels_and_order(graph_or_dataset, work_limit=None):
     order = {}
     for _, _, positions in sorted(placed, key=lambda p: p[1]):
         for node in sorted(positions, key=positions.__getitem__):
-            order[node] = len(order)
+            if not isinstance(node, _TripleTermNode):
+                order[node] = len(order)
     return labels, order
 
 

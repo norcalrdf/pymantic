@@ -34,19 +34,20 @@ import pytest
 import random
 import rdflib
 from rdflib.collection import Collection
-from rdflib.compare import isomorphic
 from rdflib.namespace import RDF, Namespace
+import re
 import signal
 from urllib.parse import urljoin, urlparse
 from urllib.request import url2pathname
 
 from pymantic.parsers import nquads_parser, ntriples_parser, turtle_parser
-from pymantic.primitives import BlankNode, Graph, Literal, NamedNode, Triple
+from pymantic.primitives import BlankNode, Graph, Triple
 from pymantic.serializers import (
     serialize_nquads,
     serialize_ntriples,
     serialize_turtle,
 )
+from tests import oracle
 
 W3C_DIR = pathlib.Path(__file__).parent / "w3c"
 TOP_LEVEL_MANIFESTS = [
@@ -214,35 +215,45 @@ def parse_action(entry):
     raise ValueError("no parser for %s" % entry.kind)
 
 
-def to_rdflib(graph):
-    """Convert a pymantic graph to an rdflib graph for isomorphism checks.
-    rdflib represents a language-tagged string by its language alone, with no
-    explicit rdf:langString datatype, so those are converted by language."""
-    out = rdflib.Graph()
-
-    def term(node):
-        if isinstance(node, BlankNode):
-            return rdflib.BNode(node.value)
-        if isinstance(node, Literal):
-            if node.language:
-                return rdflib.Literal(node.value, lang=node.language)
-            return rdflib.Literal(
-                node.value, datatype=rdflib.URIRef(str(node.datatype))
-            )
-        if not isinstance(node, NamedNode):
-            raise TypeError("parser produced %r, which is not an RDF term" % (node,))
-        return rdflib.URIRef(str(node))
-
-    for triple in graph:
-        out.add((term(triple.subject), term(triple.predicate), term(triple.object)))
-    return out
-
-
 def assert_isomorphic(graph, entry):
     expected = ntriples_parser.parse_string(entry.result.read_bytes())
-    assert isomorphic(
-        to_rdflib(graph), to_rdflib(expected)
+    if oracle.has_rdf12_terms(graph) or oracle.has_rdf12_terms(expected):
+        oracle.require_oracle()
+    assert oracle.isomorphic(
+        graph, expected
     ), "graph parsed from %s differs from %s" % (entry.action.name, entry.result.name)
+
+
+# A quoted string, an IRI, or a blank node label (which may hold "." but not
+# end with one). Strings and IRIs are matched so a "_:" inside them is skipped.
+# An IRI holds no space or "<", which keeps "<<(" from starting one.
+NT_LABEL_OR_SKIPPED = re.compile(
+    r'"(?:[^"\\]|\\.)*"|<[^\s<>"]*>|(_:(?:[^\s<>"()]*[^\s<>"().]))'
+)
+
+
+def relabel_blank_nodes(text):
+    """Rename the blank node labels in N-Triples/N-Quads ``text`` to _:b0,
+    _:b1, ... in order of first appearance."""
+    labels = {}
+
+    def rename(match):
+        if match.group(1) is None:
+            return match.group(0)
+        return labels.setdefault(match.group(1), "_:b%d" % len(labels))
+
+    return NT_LABEL_OR_SKIPPED.sub(rename, text)
+
+
+def test_relabel_blank_nodes_leaves_strings_and_iris():
+    text = (
+        '_:x <http://e/_:y> "_:z \\" _:w" .\n'
+        "<http://e/s> <http://e/p> <<( _:a.b <http://e/q> _:x )>> .\n"
+    )
+    assert relabel_blank_nodes(text) == (
+        '_:b0 <http://e/_:y> "_:z \\" _:w" .\n'
+        "<http://e/s> <http://e/p> <<( _:b1 <http://e/q> _:b0 )>> .\n"
+    )
 
 
 def assert_canonical(graph, entry):
@@ -251,7 +262,12 @@ def assert_canonical(graph, entry):
         serialize_nquads(graph, out)
     else:
         serialize_ntriples(graph, out)
-    assert out.getvalue().encode("utf-8") == entry.result.read_bytes(), (
+    # Canonical N-Triples does not canonicalize blank node labels, and
+    # pymantic's parsers never keep a document's labels, so both sides are
+    # relabelled before the byte comparison.
+    actual = relabel_blank_nodes(out.getvalue())
+    expected = relabel_blank_nodes(entry.result.read_bytes().decode("utf-8"))
+    assert actual.encode("utf-8") == expected.encode("utf-8"), (
         "canonical output differs from %s" % entry.result.name
     )
 
@@ -291,11 +307,24 @@ def shuffled_relabelled(graph, seed):
     def term(node):
         if isinstance(node, BlankNode):
             return fresh.setdefault(node, BlankNode())
+        if isinstance(node, Triple):
+            return Triple(term(node.subject), term(node.predicate), term(node.object))
         return node
 
     triples = [Triple(term(s), term(p), term(o)) for s, p, o in graph]
     rng.shuffle(triples)
     return Graph().addAll(triples)
+
+
+def test_shuffled_relabelled_relabels_inside_triple_terms():
+    graph = turtle_parser.parse(
+        "@prefix : <http://ex/> . _:x :p <<( :a :q <<( _:x :r :o )>> )>> ."
+    )
+    (original,) = graph
+    (copy,) = shuffled_relabelled(graph, 1)
+    nested = copy.object.object.subject
+    assert copy.subject is not original.subject
+    assert nested is copy.subject
 
 
 @pytest.mark.parametrize(

@@ -1,16 +1,23 @@
+from functools import partial
+import pickle
 import pytest
 import random
 
 from pymantic.primitives import (
+    RDF_DIRLANGSTRING,
+    RDF_LANGSTRING,
+    XSD_STRING,
     BlankNode,
     Dataset,
     Graph,
     Literal,
     NamedNode,
     Quad,
+    RDFEnvironment,
     Triple,
     to_curie,
 )
+from pymantic.term_dictionary import TermDictionary
 
 
 def en(s):
@@ -576,3 +583,140 @@ def test_graph_rejects_a_quad():
         g.add(q)
     assert len(g) == 0
     assert list(g) == []
+
+
+def test_directional_literal():
+    lit = Literal("שלום", "he", direction="rtl")
+    assert lit.direction == "rtl"
+    assert lit.datatype == RDF_DIRLANGSTRING
+    assert lit.toNT() == '"שלום"@he--rtl'
+
+
+def test_direction_is_lowercased():
+    assert Literal("x", "EN", direction="LTR") == Literal("x", "en", direction="ltr")
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        dict(direction="up", language="en"),  # not ltr/rtl
+        dict(direction="ltr"),  # no language
+        dict(direction="ltr", language="en", datatype=RDF_LANGSTRING),
+        dict(direction="ltr", language="en", datatype=XSD_STRING),
+        dict(datatype=RDF_DIRLANGSTRING),  # dirLangString, no direction
+        dict(datatype=RDF_DIRLANGSTRING, language="en"),
+    ],
+)
+def test_rejected_direction_combinations(kwargs):
+    with pytest.raises(ValueError):
+        Literal("x", **kwargs)
+
+
+def test_direction_is_part_of_the_term():
+    assert Literal("x", "en") != Literal("x", "en", direction="ltr")
+    assert Literal("x", "en", direction="ltr") != Literal("x", "en", direction="rtl")
+
+
+def test_literal_never_equals_triple():
+    lit = Literal("x", "en")
+    t = Triple(NamedNode("x"), NamedNode("en"), lit.datatype)
+    assert lit != t
+    d = TermDictionary()
+    assert d.intern(lit) != d.intern(t)
+
+
+def test_make_takes_three_or_four_fields():
+    assert Literal._make(("x", "en", None)) == Literal("x", "en")
+    assert Literal._make(("x", "en", None, "rtl")).direction == "rtl"
+
+
+def test_replace_language_clears_direction_and_datatype():
+    lit = Literal("x", "he", direction="rtl")
+    assert lit._replace(language=None) == Literal("x")
+    assert lit._replace(direction=None) == Literal("x", "he")
+    assert Literal("x", "he")._replace(direction="rtl") == lit
+
+
+def test_repr_asdict_pickle_include_direction():
+    lit = Literal("x", "he", direction="rtl")
+    assert "direction='rtl'" in repr(lit)
+    assert lit._asdict()["direction"] == "rtl"
+    assert pickle.loads(pickle.dumps(lit)) == lit
+
+
+def test_partial_makes_a_language_helper():
+    he_rtl = partial(Literal, language="he", direction="rtl")
+    assert he_rtl("שלום") == Literal("שלום", "he", direction="rtl")
+
+
+def test_create_literal_direction():
+    assert RDFEnvironment().createLiteral("x", "he", direction="rtl").direction == "rtl"
+
+
+class ex:
+    s, p, o, a, c, r, r2 = (
+        NamedNode("http://example.com/" + n)
+        for n in ("s", "p", "o", "a", "c", "r", "r2")
+    )
+
+
+RDF_REIFIES = NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies")
+
+
+def test_triple_term_to_nt_nested():
+    inner = Triple(
+        NamedNode("http://a"),
+        NamedNode("http://b"),
+        Literal("c", "en", direction="ltr"),
+    )
+    outer = Triple(BlankNode(), NamedNode("http://p"), inner)
+    assert inner.toNT() == '<<( <http://a> <http://b> "c"@en--ltr )>>'
+    assert outer.toNT().endswith(
+        '<http://p> <<( <http://a> <http://b> "c"@en--ltr )>> )>>'
+    )
+    assert Triple.interfaceName == "Triple"
+
+
+def test_graph_holds_and_matches_triple_terms():
+    inner = Triple(ex.s, ex.p, ex.o)
+    g = Graph()
+    g.add(Triple(ex.r, RDF_REIFIES, inner))
+    g.add(Triple(ex.r2, RDF_REIFIES, Triple(ex.s, ex.p, inner)))
+    matches = list(g.match(None, RDF_REIFIES, Triple(ex.s, ex.p, ex.o)))
+    assert [t.subject for t in matches] == [ex.r]
+    assert len(list(g.match(None, None, Triple(ex.s, ex.p, inner)))) == 1
+    assert (
+        str(next(iter(g))) == f"{ex.r.toNT()} {RDF_REIFIES.toNT()} {inner.toNT()} .\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [Triple(None, ex.p, ex.o), Triple(ex.s, ex.p, Triple(ex.a, None, ex.c))],
+)
+def test_unbound_triple_term_pattern_raises(pattern):
+    g = Graph()
+    with pytest.raises(ValueError, match="fully bound"):
+        list(g.match(None, None, pattern))
+    with pytest.raises(ValueError, match="fully bound"):
+        g.removeMatches(None, None, pattern)
+    d = Dataset()
+    with pytest.raises(ValueError, match="fully bound"):
+        list(d.match(None, None, pattern))
+    with pytest.raises(ValueError, match="fully bound"):
+        d.removeMatches(None, None, pattern)
+
+
+@pytest.mark.parametrize(
+    "unbound", [Triple(ex.a, None, ex.c), Triple(ex.s, ex.p, Triple(None, ex.p, ex.o))]
+)
+@pytest.mark.parametrize("position", ["subject", "predicate"])
+def test_unbound_triple_term_raises_beside_unknown_term(position, unbound):
+    unknown = NamedNode("http://example.com/never-added")
+    args = {"subject": None, "predicate": None, "object": unbound}
+    args[position] = unknown
+    for container in (Graph(), Dataset()):
+        with pytest.raises(ValueError, match="fully bound"):
+            list(container.match(**args))
+        with pytest.raises(ValueError, match="fully bound"):
+            container.removeMatches(**args)

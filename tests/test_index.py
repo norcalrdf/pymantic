@@ -289,6 +289,16 @@ def test_removing_triples_compacts_the_dictionary():
     assert list(g) == [triples[99], fresh]
 
 
+def test_removing_last_use_frees_triple_term():
+    term = Triple(S, P, Triple(S, P, Literal("deep")))
+    g = Graph()
+    g.add(Triple(S, P, term))
+    assert g._dictionary.lookup(term) is not None
+    g.remove(Triple(S, P, term))
+    assert g._dictionary.lookup(term) is None
+    assert len(g._dictionary) == 0
+
+
 def tracked_objects():
     gc.collect()
     return len(gc.get_objects())

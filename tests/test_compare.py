@@ -3,20 +3,28 @@ docs/graph-comparison.rst. Each bail-out stage has a minimal pair, the
 molecule split and Carroll refinement are tested directly, and the work
 budget is tested with a blank clique."""
 
+from io import StringIO
 import pytest
 import random
+import re
 import time
 
 from pymantic.compare import (
     EMPTY_GRAPH,
+    TT_OBJECT,
+    TT_PREDICATE,
+    TT_SUBJECT,
     Undecidable,
     bail_stage,
     canonical_form,
     canonical_labels,
+    canonical_labels_and_order,
+    is_ground,
     isomorphic,
     molecules,
     refine,
     statements,
+    term_code,
     term_key,
 )
 from pymantic.parsers import turtle_parser
@@ -29,6 +37,7 @@ from pymantic.primitives import (
     Quad,
     Triple,
 )
+from pymantic.serializers import serialize_ntriples
 
 EX = "http://example.org/"
 PREFIX = "@prefix : <%s> .\n" % EX
@@ -49,6 +58,8 @@ def relabelled_and_shuffled(source, seed=0):
             if node not in fresh:
                 fresh[node] = BlankNode()
             return fresh[node]
+        if isinstance(node, Triple):
+            return Triple(*map(term, node))
         return node
 
     if isinstance(source, Dataset):
@@ -586,3 +597,168 @@ def test_undecidable_names_the_molecule():
     message = str(info.value)
     assert "10 blank nodes" in message
     assert "100 triples" in message
+
+
+# RDF 1.2 triple terms and base direction ------------------------------------
+
+P, Q, R = (NamedNode(EX + name) for name in "pqr")
+OBJ = NamedNode(EX + "o")
+
+
+def test_term_key_directional_literal():
+    assert term_key(Literal("x", "he", direction="rtl")) == '"x"@he--rtl'
+
+
+def test_term_key_of_a_literal_without_direction_is_unchanged():
+    assert term_key(Literal("x", "he")) == '"x"@he'
+
+
+def test_term_key_ground_triple_term():
+    t = Triple(NamedNode("http://a"), NamedNode("http://b"), Literal("c"))
+    assert term_key(t) == '<<( <http://a> <http://b> "c" )>>'
+
+
+def test_term_key_nested_ground_triple_term():
+    inner = Triple(NamedNode("http://a"), NamedNode("http://b"), Literal("c"))
+    outer = Triple(NamedNode("http://d"), NamedNode("http://e"), inner)
+    assert term_key(outer) == (
+        '<<( <http://d> <http://e> <<( <http://a> <http://b> "c" )>> )>>'
+    )
+
+
+def test_triple_term_keys_and_codes_differ_by_direction():
+    a, b = NamedNode("http://a"), NamedNode("http://b")
+    plain = Triple(a, b, Literal("x", "he"))
+    rtl = Triple(a, b, Literal("x", "he", direction="rtl"))
+    ltr = Triple(a, b, Literal("x", "he", direction="ltr"))
+    keys = {term_key(plain), term_key(rtl), term_key(ltr)}
+    assert len(keys) == 3
+    assert len({term_code(key) for key in keys}) == 3
+
+
+def test_term_key_rejects_a_triple_term_holding_a_blank_node():
+    with pytest.raises(TypeError):
+        term_key(Triple(BlankNode(), P, OBJ))
+
+
+def test_ground_triple_term_statement_is_ground():
+    g = Graph().addAll([Triple(NamedNode(EX + "s"), P, Triple(OBJ, Q, OBJ))])
+    (statement,) = statements(g)
+    assert is_ground(statement)
+
+
+def test_statements_flatten_a_triple_term_with_a_blank_node():
+    x, y = BlankNode(), BlankNode()
+    g = Graph().addAll([Triple(x, P, Triple(y, Q, OBJ))])
+    items = statements(g)
+    assert len(items) == 4
+    (asserted,) = [item for item in items if item[0] is x]
+    helper = asserted[2]
+    assert isinstance(helper, BlankNode) and helper not in (x, y)
+    assert set(items) - {asserted} == {
+        (helper, TT_SUBJECT, y, ""),
+        (helper, TT_PREDICATE, term_key(Q), ""),
+        (helper, TT_OBJECT, term_key(OBJ), ""),
+    }
+
+
+def test_statements_give_one_helper_per_distinct_triple_term():
+    y = BlankNode()
+    g = Graph().addAll(
+        [
+            Triple(NamedNode(EX + "a"), P, Triple(y, Q, OBJ)),
+            Triple(NamedNode(EX + "b"), P, Triple(y, Q, OBJ)),
+        ]
+    )
+    helpers = {item[2] for item in statements(g) if item[1] == term_key(P)}
+    assert len(helpers) == 1
+    assert len(statements(g)) == 5
+
+
+def test_statements_flatten_nested_triple_terms_inside_out():
+    y = BlankNode()
+    g = Graph().addAll(
+        [Triple(NamedNode(EX + "s"), P, Triple(OBJ, R, Triple(y, Q, OBJ)))]
+    )
+    items = statements(g)
+    (asserted,) = [item for item in items if item[1] == term_key(P)]
+    outer = asserted[2]
+    (outer_object,) = [
+        item[2] for item in items if item[0] is outer and item[1] == TT_OBJECT
+    ]
+    assert isinstance(outer_object, BlankNode)
+    assert (outer_object, TT_SUBJECT, y, "") in items
+    assert len(items) == 7
+
+
+def test_reserved_triple_term_keys_are_not_term_keys():
+    for marker in (EMPTY_GRAPH, TT_SUBJECT, TT_PREDICATE, TT_OBJECT):
+        assert marker[0] not in '<"'
+    assert len({EMPTY_GRAPH, TT_SUBJECT, TT_PREDICATE, TT_OBJECT}) == 4
+
+
+def blank_inside_triple_term_graph():
+    x, y = BlankNode(), BlankNode()
+    return x, y, Graph().addAll([Triple(x, P, Triple(y, Q, OBJ)), Triple(y, R, x)])
+
+
+def test_canonical_labels_omit_helper_nodes():
+    x, y, g = blank_inside_triple_term_graph()
+    assert set(canonical_labels(g)) == {x, y}
+
+
+def test_canonical_order_omits_helpers_and_has_no_gaps():
+    x, y = BlankNode(), BlankNode()
+    z = BlankNode()
+    g = Graph().addAll(
+        [
+            Triple(x, P, Triple(y, Q, OBJ)),
+            Triple(y, R, x),
+            Triple(z, P, Triple(OBJ, Q, z)),
+        ]
+    )
+    labels, order = canonical_labels_and_order(g)
+    assert set(labels) == set(order) == {x, y, z}
+    assert sorted(order.values()) == [0, 1, 2]
+
+
+def test_triple_terms_relabelled_and_shuffled_are_isomorphic():
+    _, _, g = blank_inside_triple_term_graph()
+    assert isomorphic(g, relabelled_and_shuffled(g, seed=1))
+
+
+def test_inner_blank_node_identity_matters():
+    # The same shape with the inner subject being the asserted node.
+    x, y = BlankNode(), BlankNode()
+    swapped = Graph().addAll([Triple(x, P, Triple(x, Q, OBJ)), Triple(y, R, x)])
+    _, _, g = blank_inside_triple_term_graph()
+    assert not isomorphic(g, swapped)
+
+
+def test_direction_inside_a_triple_term_matters():
+    x = BlankNode()
+    ltr = Graph().addAll(
+        [Triple(x, P, Triple(x, Q, Literal("a", "ar", direction="ltr")))]
+    )
+    x = BlankNode()
+    rtl = Graph().addAll(
+        [Triple(x, P, Triple(x, Q, Literal("a", "ar", direction="rtl")))]
+    )
+    assert not isomorphic(ltr, rtl)
+
+
+def test_stable_lines_label_blank_nodes_inside_triple_terms():
+    _, _, g = blank_inside_triple_term_graph()
+    outputs = []
+    for source in (g, relabelled_and_shuffled(g, 1), relabelled_and_shuffled(g, 2)):
+        out = StringIO()
+        serialize_ntriples(source, out, stable=True)
+        outputs.append(out.getvalue())
+    assert outputs[0] == outputs[1] == outputs[2]
+    text = outputs[0]
+    inner = re.findall(r"<<\((.*?)\)>>", text)
+    assert inner
+    inner_labels = set(re.findall(r"_:\w+", " ".join(inner)))
+    outside = re.sub(r"<<\(.*?\)>>", "", text)
+    assert inner_labels
+    assert inner_labels <= set(re.findall(r"_:\w+", outside))

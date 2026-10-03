@@ -44,6 +44,13 @@ All notable changes to pymantic are recorded here. The format follows
   and `Graph.predicate_objects(subject)` yields a subject's (predicate,
   object) pairs. None of them builds a `Triple`, so they are cheaper than
   reading the same positions from `match`.
+- RDF 1.2 triple terms and base direction. A `Triple` may be the object of a
+  triple, and `Literal` has a fourth field, `direction` (`"ltr"` or
+  `"rtl"`), for `rdf:dirLangString` literals. `createLiteral` and
+  `Resource.objects_by_lang` take `direction=`. N-Triples, N-Quads,
+  Line-TriG and Turtle read and write triple terms and base direction, and
+  `pymantic.compare` and `stable=True` handle graphs that hold them. Line-TriG
+  is the only format that holds every RDF 1.2 dataset.
 
 ### Security
 
@@ -186,6 +193,16 @@ All notable changes to pymantic are recorded here. The format follows
   raises `KeyError` for a quad in a graph the dataset does not have. An
   empty named graph is part of a dataset and is counted by
   `pymantic.compare`, so a query must not bring one into being.
+- `Literal` is a four-field tuple: code that unpacks a literal as
+  `(value, language, datatype)` breaks and must also take `direction`.
+- A base direction must be lowercase, `--ltr` or `--rtl`, in N-Triples,
+  N-Quads and Turtle; the W3C suites reject `--LTR`.
+- The W3C RDF 1.2 expected-failure list shrank by 49 tests: 24 N-Triples and
+  N-Quads, 15 Turtle parser, and 10 Turtle writer round-trip and stable
+  output.
+- `pyoxigraph` joined the `testing` extra, on CPython outside Pyodide, as the
+  oracle that compares graphs holding RDF 1.2 terms; rdflib cannot represent
+  them.
 
 ### Fixed
 

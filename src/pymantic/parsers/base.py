@@ -21,8 +21,14 @@ class BaseParser:
         return self.env.createLiteral(value=value, datatype=datatype)
 
     def make_language_literal(self, value, lang=None):
+        """A literal for ``value`` tagged ``lang``, which may end in an RDF
+        1.2 base direction (``en--ltr``)."""
         if lang:
-            return self.env.createLiteral(value=value, language=lang)
+            language, _, direction = lang.partition("--")
+            # A tag without "--" has no direction; Literal rejects "".
+            return self.env.createLiteral(
+                value=value, language=language, direction=direction or None
+            )
         else:
             return self.env.createLiteral(value=value)
 

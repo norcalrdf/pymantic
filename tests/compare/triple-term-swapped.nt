@@ -1,0 +1,2 @@
+_:x <http://example.org/p> <<( _:x <http://example.org/q> <http://example.org/o> )>> .
+_:y <http://example.org/r> _:x .

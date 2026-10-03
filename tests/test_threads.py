@@ -22,6 +22,10 @@ from pymantic.primitives import (
     Triple,
 )
 
+pytestmark = pytest.mark.skipif(
+    sys.platform == "emscripten", reason="Pyodide cannot start threads"
+)
+
 WRITERS = 4
 READERS = 2
 SECONDS = 1.0

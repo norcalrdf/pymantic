@@ -1011,6 +1011,11 @@ def test_a_dataset_and_its_views_share_one_lock():
     assert Graph()._lock is not Graph()._lock
 
 
+needs_threads = pytest.mark.skipif(
+    sys.platform == "emscripten", reason="Pyodide cannot start threads"
+)
+
+
 def finishes(call):
     """Run call in a thread and say whether it finished: a call that waits
     on a lock it already holds never does."""
@@ -1021,6 +1026,7 @@ def finishes(call):
     return bool(done)
 
 
+@needs_threads
 @pytest.mark.parametrize("target", [GB, GC])
 def test_add_graph_reads_a_view_of_the_same_dataset(target):
     ds = three_graph_dataset()
@@ -1031,6 +1037,7 @@ def test_add_graph_reads_a_view_of_the_same_dataset(target):
     }
 
 
+@needs_threads
 def test_add_all_reads_this_graph_or_a_view_of_the_same_dataset():
     g = Graph().add(Triple(S, P, Literal("a")))
     assert finishes(lambda: g.addAll(g))

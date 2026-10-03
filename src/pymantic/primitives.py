@@ -599,18 +599,17 @@ class PrefixMap(collections.OrderedDict):
     NamedNode(<http://example.org/bob#me>)
     """
 
-    def resolve(self, value):
-        """Expand a prefixed name (for example "rdfs:label") to an IRI (for
-        example "http://www.w3.org/2000/01/rdf-schema#label").
+    def expand(self, value):
+        """Expand a value using only the prefixes this map declares, returning
+        None if it declares none that apply.
 
-        This follows JSON-LD's compact IRI expansion: a value whose part after
-        the first colon starts with "//" is an absolute IRI; otherwise a
-        declared prefix is expanded; otherwise a value that is syntactically
-        an absolute IRI is returned as one, with an UnknownSchemeWarning if
-        its scheme isn't registered with IANA. A value with no colon uses the
-        default prefix, or failing that is a declared prefix name and resolves
-        to its namespace. A NamedNode is already resolved and is returned
-        unchanged. Anything else raises ValueError."""
+        A prefixed name (for example "rdfs:label") whose prefix is declared
+        expands to an IRI (for example
+        "http://www.w3.org/2000/01/rdf-schema#label"), unless the part after
+        the colon starts with "//", which marks an absolute IRI. A value with
+        no colon uses the default prefix, or failing that is a declared prefix
+        name and expands to its namespace. A NamedNode is already resolved
+        and is returned unchanged."""
         if isinstance(value, NamedNode):
             return value
         prefix, colon, suffix = value.partition(":")
@@ -621,6 +620,18 @@ class PrefixMap(collections.OrderedDict):
                 return Prefix(self[value])("")
         elif not suffix.startswith("//") and prefix in self:
             return Prefix(self[prefix])(suffix)
+        return None
+
+    def resolve(self, value):
+        """Resolve a prefixed name to an IRI by JSON-LD's compact IRI rule:
+        expand it with this map's prefixes, otherwise take a value that is
+        syntactically an absolute IRI as one, with an UnknownSchemeWarning if
+        its scheme isn't registered with IANA. Anything else raises
+        ValueError."""
+        expanded = self.expand(value)
+        if expanded is not None:
+            return expanded
+        prefix, colon, _ = value.partition(":")
         if colon and ABSOLUTE_IRI.match(value):
             if prefix.lower() not in registered_schemes:
                 warnings.warn(

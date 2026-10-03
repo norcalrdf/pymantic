@@ -162,17 +162,10 @@ class Resource(metaclass=MetaResource):
     @classmethod
     def resolve(cls, key):
         """Resolve a prefixed name or term with this class's prefixes, falling
-        back to the global profile when the class doesn't declare the prefix.
-
-        The prefix is checked up front because PrefixMap.resolve takes an
-        undeclared prefix to be an absolute IRI scheme, so it would never
-        fail over to the global profile."""
-        if ":" in key:
-            declared = key.partition(":")[0] in cls.prefixes
-        else:
-            declared = "" in cls.prefixes or key in cls.prefixes
-        if declared:
-            return cls.prefixes.resolve(key)
+        back to the global profile for anything they don't expand."""
+        expanded = cls.prefixes.expand(key)
+        if expanded is not None:
+            return expanded
         return cls.global_profile.resolve(key)
 
     def __eq__(self, other):

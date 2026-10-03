@@ -152,6 +152,82 @@ def testResourceResolveFallsBackToGlobalProfile(reset_metaresource):
     assert Thing.resolve("urn:x") == NamedNode("urn:x")
 
 
+def testResourceSeesLaterGlobalPrefixes(reset_metaresource):
+    """A prefix added to the global profile after a class is defined is
+    visible to that class, and the class's own prefixes still win."""
+
+    class Thing(pymantic.rdf.Resource):
+        prefixes = {"ex": "http://example.com/"}
+
+    profile = pymantic.rdf.Resource.global_profile
+    profile.setPrefix("later", "http://later.example/")
+    profile.setPrefix("ex", "http://WRONG/")
+    try:
+        assert Thing.resolve("later:a") == NamedNode("http://later.example/a")
+        assert Thing.resolve("ex:a") == NamedNode("http://example.com/a")
+    finally:
+        del profile.prefixes["later"]
+        del profile.prefixes["ex"]
+
+
+def testResourceFollowsReplacedGlobalProfile(reset_metaresource):
+    """Replacing global_profile, on the class or a base, after the class is
+    defined changes the prefixes it falls back to."""
+
+    class Thing(pymantic.rdf.Resource):
+        pass
+
+    class Child(Thing):
+        pass
+
+    replacement = pymantic.primitives.Profile()
+    replacement.setPrefix("foo", "http://foo.example/")
+    Thing.global_profile = replacement
+    try:
+        assert Thing.resolve("foo:bar") == NamedNode("http://foo.example/bar")
+        assert Child.resolve("foo:bar") == NamedNode("http://foo.example/bar")
+    finally:
+        del Thing.global_profile
+
+
+def testResourceBareNamesAreGlobalTerms(reset_metaresource):
+    """A bare name the class's own prefixes don't resolve is a term of the
+    global profile, even when the global profile has a default prefix or a
+    prefix of that name."""
+
+    class Thing(pymantic.rdf.Resource):
+        pass
+
+    profile = pymantic.rdf.Resource.global_profile
+    profile.setTerm("label", "http://www.w3.org/2000/01/rdf-schema#label")
+    profile.setDefaultPrefix("http://WRONG/#")
+    try:
+        assert Thing.resolve("label") == NamedNode(
+            "http://www.w3.org/2000/01/rdf-schema#label"
+        )
+        assert Thing.resolve("xsd") is None
+    finally:
+        del profile.terms["label"]
+        del profile.prefixes[""]
+
+
+def testPrefixMapExpand(reset_metaresource):
+    """expand applies only the map's own prefixes, returning None where
+    resolve would fall back to an absolute IRI or raise."""
+    prefixes = PrefixMap({"ex": "http://example.com/", "": "http://default/"})
+    assert prefixes.expand("ex:a") == NamedNode("http://example.com/a")
+    assert prefixes.expand("a") == NamedNode("http://default/a")
+    assert prefixes.expand(":a") == NamedNode("http://default/a")
+    assert prefixes.expand(NamedNode("ex:a")) == NamedNode("ex:a")
+    assert prefixes.expand("urn:x") is None
+    assert prefixes.expand("rdsf:label") is None
+    assert prefixes.expand("ex://a") is None
+    assert PrefixMap({"ex": "http://example.com/"}).expand("ex") == NamedNode(
+        "http://example.com/"
+    )
+    assert PrefixMap().expand("a") is None
+
+
 def testScalarsResolveThroughGlobalProfile(reset_metaresource):
     """Scalars resolve like predicates do, including prefixes only the global
     profile declares."""
@@ -163,6 +239,21 @@ def testScalarsResolveThroughGlobalProfile(reset_metaresource):
     assert NamedNode("http://example.com/a") in Thing.scalars
     assert XSD("string") in Thing.scalars
     assert NamedNode("xsd:string") not in Thing.scalars
+
+
+def testScalarsResolveGlobalTerms(reset_metaresource):
+    """A bare scalar name resolves as a global profile term, as it does when
+    used as a predicate."""
+    profile = pymantic.rdf.Resource.global_profile
+    profile.setTerm("label", "http://www.w3.org/2000/01/rdf-schema#label")
+    try:
+
+        class Thing(pymantic.rdf.Resource):
+            scalars = frozenset(("label",))
+
+        assert NamedNode("http://www.w3.org/2000/01/rdf-schema#label") in Thing.scalars
+    finally:
+        del profile.terms["label"]
 
 
 def testUnresolvableScalarRaises(reset_metaresource):

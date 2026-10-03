@@ -155,6 +155,8 @@ All notable changes to pymantic are recorded here. The format follows
 
 ### Added
 
+- `PrefixMap.expand` expands a name with the map's own prefixes and returns
+  `None` where `resolve` would fall back to an absolute IRI.
 - `pymantic.uri_schemes.schemes` lists every scheme in the IANA registry as
   of 2026-09-22, lowercased; `scripts/update_uri_schemes.py` regenerates it.
 - The W3C RDF 1.1 and 1.2 test suites for N-Triples, N-Quads and Turtle are

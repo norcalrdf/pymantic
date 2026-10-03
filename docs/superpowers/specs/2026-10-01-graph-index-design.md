@@ -161,8 +161,14 @@ and the list rows of high fan-out keys. Per triple: none.
   appears.
 - A version counter is bumped on every add and remove. A `match` or
   iteration generator checks it on each step and raises `RuntimeError` if
-  the graph changed, as dict iteration does today. This is required because
-  a merge rewrites the arrays under a live generator.
+  the graph changed anywhere, even after its last result. This is required
+  because a merge rewrites the arrays under a live generator. It is
+  stricter than the dicts and set it replaces, which raised only when the
+  part being walked changed; see Behavior changes. A dataset-wide read
+  raises if any graph of the dataset changes.
+  Snapshot readers that skip removed triples instead were built and
+  measured (Task 22, branch `task22-snapshot-readers`), but cost 5-11%
+  on default Turtle and two-bound matches, so they are not in.
 
 If benchmarks show fresh `Triple` allocation in `match(subject=s)` slows
 Turtle writing past the acceptance bar, the fallback is one plain list of
@@ -235,6 +241,8 @@ could corrupt it without a lock.
 - The contract: each call is atomic; any mix of threads reading and
   changing one graph or dataset leaves it consistent; there are no
   multi-call transactions, and `addAll` is atomic per batch, not per call.
+  A read open while another thread changes the graph raises
+  `RuntimeError`, as it does when its own thread changes it.
 
 ### Line-TriG
 
@@ -280,6 +288,12 @@ the index tests use them.
   `__contains__` returns a `bool`; `add_graph` copies, so the passed `Graph`
   is not the dataset's graph.
 - `Dataset.graphs` always lists the default graph, first.
+- Changing a graph in any way while a `match`, a lookup, `mapped_triples`
+  or an iteration over it is open raises `RuntimeError` on that
+  generator's next step, even after its last result; a dataset-wide read
+  raises when any of its graphs changes. Before, only a change to the dict
+  or set being walked did, so editing one subject while reading another
+  worked. Collect results with `list()` before changing the graph.
 
 ## Testing
 

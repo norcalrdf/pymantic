@@ -554,7 +554,8 @@ class Resource(metaclass=MetaResource):
             target_subject, BlankNode
         ):
             target_subject = NamedNode(target_subject)
-        for t in self.graph.match(self.subject, None, None):
+        # Collected first: changing the graph ends an open match.
+        for t in list(self.graph.match(self.subject, None, None)):
             self.graph.add((target_subject, t.predicate, t.object))
         return self.classify(self.graph, target_subject)
 

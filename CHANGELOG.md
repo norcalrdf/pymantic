@@ -139,6 +139,13 @@ All notable changes to pymantic are recorded here. The format follows
 - The N-Triples and N-Quads parsers reject relative IRIs and `:` inside blank
   node labels, and require language subtags of at most eight characters.
   A literal typed `rdf:langString` without a language tag is rejected.
+- Changing a graph in any way while a `match`, a lookup such as
+  `objects(s, p)`, `mapped_triples` or an iteration over it is open raises
+  `RuntimeError` on that generator's next step, even after its last
+  result; a read of a whole `Dataset` raises when any of its graphs
+  changes. Previously only a change to the part being walked did, so code
+  that added triples for one subject while reading another's worked.
+  Collect results with `list()` before changing the graph.
 - pymantic requires Python 3.10 or newer. Python 3.10 through 3.14 are
   tested in CI. Python 3.10 reached end of life in October 2026, and a
   future release will drop support for it.
@@ -203,6 +210,8 @@ All notable changes to pymantic are recorded here. The format follows
 - A falsy term such as `NamedNode("")` passed to `match` is matched as a
   term instead of being treated as a wildcard.
 - `Dataset.remove_graph` removes the graph; it did nothing before.
+- `Resource.copy` copies the resource's triples to the target subject;
+  previously it raised `AttributeError`.
 - The Turtle serializer no longer fails with `RecursionError` on a list
   nested a few hundred levels deep, such as `((((...))))`. Past 32 levels
   the inner list is written as a labelled blank node with its `rdf:first`

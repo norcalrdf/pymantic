@@ -498,14 +498,17 @@ def _check_triple_term_bound(triple):
 def _pattern_ids(dictionary, subject, predicate, object):
     """The ids of a match pattern, keeping None as the wildcard, or None if a
     bound term is unknown and so nothing can match."""
+    # Validated before any lookup so a bad pattern raises whatever the
+    # graph happens to contain.
+    for term in (subject, predicate, object):
+        if isinstance(term, Triple):
+            _check_triple_term_bound(term)
     lookup = dictionary.lookup
     pattern = []
     for term in (subject, predicate, object):
         if term is None:
             pattern.append(None)
         else:
-            if isinstance(term, Triple):
-                _check_triple_term_bound(term)
             term_id = lookup(term)
             if term_id is None:
                 return None

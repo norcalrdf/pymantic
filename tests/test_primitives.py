@@ -705,3 +705,18 @@ def test_unbound_triple_term_pattern_raises(pattern):
         list(d.match(None, None, pattern))
     with pytest.raises(ValueError, match="fully bound"):
         d.removeMatches(None, None, pattern)
+
+
+@pytest.mark.parametrize(
+    "unbound", [Triple(ex.a, None, ex.c), Triple(ex.s, ex.p, Triple(None, ex.p, ex.o))]
+)
+@pytest.mark.parametrize("position", ["subject", "predicate"])
+def test_unbound_triple_term_raises_beside_unknown_term(position, unbound):
+    unknown = NamedNode("http://example.com/never-added")
+    args = {"subject": None, "predicate": None, "object": unbound}
+    args[position] = unknown
+    for container in (Graph(), Dataset()):
+        with pytest.raises(ValueError, match="fully bound"):
+            list(container.match(**args))
+        with pytest.raises(ValueError, match="fully bound"):
+            container.removeMatches(**args)

@@ -9,6 +9,7 @@ faster and changes nothing: run it once per tree and compare the lines.
     python benchmarks/timing.py fhir-r5-examples schemaorg-shapes
     PYTHONPATH=<other tree>/src python benchmarks/timing.py fhir-r5-examples
     python benchmarks/timing.py synthetic --repeat 5 --what labels
+    python benchmarks/timing.py obi --what turtle
 
 Inputs are names from benchmarks/inputs.py, or the kinds real, synthetic and
 rdfc10 (default: real). --what picks labels, turtle (default output) and

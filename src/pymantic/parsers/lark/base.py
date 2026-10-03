@@ -16,6 +16,7 @@ class LarkParser:
         them to either the provided graph or a new graph.
         """
         tf = self.lark.options.transformer
+        tf._check_sink(graph)
 
         try:
             if graph is None:

@@ -81,7 +81,10 @@ class PyLDLoader(BaseParser):
             jobj = json.loads(string)
             self.pyld_loader.process_jobj(jobj)
 
+    reads_quads = True
+
     def parse_json(self, jobj, sink=None, options=None):
+        self._check_sink(sink)
         if sink is None:
             sink = self._make_graph()
         self._prepare_parse(sink)

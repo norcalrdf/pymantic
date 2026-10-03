@@ -21,12 +21,14 @@ __all__ = [
 ]
 
 from collections import Counter
+import functools
 import hashlib
 
 from pymantic.primitives import (
     XSD_STRING,
     BlankNode,
     Dataset,
+    Graph,
     Literal,
     NamedNode,
 )
@@ -153,23 +155,27 @@ def statements(graph_or_dataset):
     first three positions and the graph name in the fourth. An IRI name
     makes that record ground; a blank name puts it in that node's
     molecule."""
-    keys = {}
 
     def key(term):
-        if isinstance(term, BlankNode):
-            return term
-        try:
-            return keys[term]
-        except KeyError:
-            keys[term] = term_key(term)
-            return keys[term]
+        return term if isinstance(term, BlankNode) else term_key(term)
 
-    # A Dataset yields quads, and so does a Graph filled by the N-Quads
-    # parser; a Graph of triples yields triples.
-    items = []
-    for item in graph_or_dataset:
-        graph = "" if len(item) == 3 or item[3] is None else key(item[3])
-        items.append((key(item[0]), key(item[1]), key(item[2]), graph))
+    # A Dataset or Graph is read through mapped_quads or mapped_triples,
+    # which build no Quad or Triple per statement and call `key` once per
+    # distinct term; any other iterable of triples or quads is read item by
+    # item, through a cache of `key`.
+    if isinstance(graph_or_dataset, Dataset):
+        items = [
+            (s, p, o, "" if g is None else g)
+            for s, p, o, g in graph_or_dataset.mapped_quads(key)
+        ]
+    elif isinstance(graph_or_dataset, Graph):
+        items = [(s, p, o, "") for s, p, o in graph_or_dataset.mapped_triples(key)]
+    else:
+        cached = functools.cache(key)
+        items = []
+        for item in graph_or_dataset:
+            graph = "" if len(item) == 3 or item[3] is None else cached(item[3])
+            items.append((cached(item[0]), cached(item[1]), cached(item[2]), graph))
     if isinstance(graph_or_dataset, Dataset):
         # The default graph is always there and needs no record; a named
         # graph exists only because it was added, so its name must count.

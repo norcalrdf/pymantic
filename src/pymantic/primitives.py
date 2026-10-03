@@ -166,6 +166,12 @@ class Triple(tuple):
     predicate = property(itemgetter(1))
     object = property(itemgetter(2))
 
+    interfaceName = "Triple"
+
+    def toNT(self):
+        """The N-Triples form of this triple as a triple term."""
+        return f"<<( {self.subject.toNT()} {self.predicate.toNT()} {self.object.toNT()} )>>"
+
     def __str__(self):
         return f"{self.subject.toNT()} {self.predicate.toNT()} {self.object.toNT()} .\n"
 
@@ -479,6 +485,16 @@ class _MappedTerms(dict):
         return mapped
 
 
+def _check_triple_term_bound(triple):
+    """A triple term can only be looked up whole, so None cannot stand for a
+    wildcard anywhere inside one. Only the object position can nest."""
+    for term in triple:
+        if term is None:
+            raise ValueError("a triple term in a pattern must be fully bound")
+    if isinstance(triple.object, Triple):
+        _check_triple_term_bound(triple.object)
+
+
 def _pattern_ids(dictionary, subject, predicate, object):
     """The ids of a match pattern, keeping None as the wildcard, or None if a
     bound term is unknown and so nothing can match."""
@@ -488,6 +504,8 @@ def _pattern_ids(dictionary, subject, predicate, object):
         if term is None:
             pattern.append(None)
         else:
+            if isinstance(term, Triple):
+                _check_triple_term_bound(term)
             term_id = lookup(term)
             if term_id is None:
                 return None

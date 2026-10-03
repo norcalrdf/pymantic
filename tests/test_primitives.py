@@ -651,3 +651,57 @@ def test_partial_makes_a_language_helper():
 
 def test_create_literal_direction():
     assert RDFEnvironment().createLiteral("x", "he", direction="rtl").direction == "rtl"
+
+
+class ex:
+    s, p, o, a, c, r, r2 = (
+        NamedNode("http://example.com/" + n)
+        for n in ("s", "p", "o", "a", "c", "r", "r2")
+    )
+
+
+RDF_REIFIES = NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies")
+
+
+def test_triple_term_to_nt_nested():
+    inner = Triple(
+        NamedNode("http://a"),
+        NamedNode("http://b"),
+        Literal("c", "en", direction="ltr"),
+    )
+    outer = Triple(BlankNode(), NamedNode("http://p"), inner)
+    assert inner.toNT() == '<<( <http://a> <http://b> "c"@en--ltr )>>'
+    assert outer.toNT().endswith(
+        '<http://p> <<( <http://a> <http://b> "c"@en--ltr )>> )>>'
+    )
+    assert Triple.interfaceName == "Triple"
+
+
+def test_graph_holds_and_matches_triple_terms():
+    inner = Triple(ex.s, ex.p, ex.o)
+    g = Graph()
+    g.add(Triple(ex.r, RDF_REIFIES, inner))
+    g.add(Triple(ex.r2, RDF_REIFIES, Triple(ex.s, ex.p, inner)))
+    matches = list(g.match(None, RDF_REIFIES, Triple(ex.s, ex.p, ex.o)))
+    assert [t.subject for t in matches] == [ex.r]
+    assert len(list(g.match(None, None, Triple(ex.s, ex.p, inner)))) == 1
+    assert (
+        str(next(iter(g))) == f"{ex.r.toNT()} {RDF_REIFIES.toNT()} {inner.toNT()} .\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [Triple(None, ex.p, ex.o), Triple(ex.s, ex.p, Triple(ex.a, None, ex.c))],
+)
+def test_unbound_triple_term_pattern_raises(pattern):
+    g = Graph()
+    with pytest.raises(ValueError, match="fully bound"):
+        list(g.match(None, None, pattern))
+    with pytest.raises(ValueError, match="fully bound"):
+        g.removeMatches(None, None, pattern)
+    d = Dataset()
+    with pytest.raises(ValueError, match="fully bound"):
+        list(d.match(None, None, pattern))
+    with pytest.raises(ValueError, match="fully bound"):
+        d.removeMatches(None, None, pattern)

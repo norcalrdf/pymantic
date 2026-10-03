@@ -1227,3 +1227,14 @@ def test_dataset_add_all_rejects_a_triple():
     with pytest.raises(TypeError, match="a Dataset holds quads"):
         ds.addAll([Quad(S, P, Literal("a"), GA), Triple(S, P, Literal("b"))])
     assert list(ds) == [Quad(S, P, Literal("a"), GA)]
+
+
+def test_add_all_raises_the_source_error_when_the_partial_batch_fails_too():
+    # The partial batch holds a quad, which the Graph refuses; the source's
+    # own error is still the one raised, with the refusal as its context.
+    items = [Triple(S, P, Literal("a")), Quad(S, P, Literal("b"), GA)]
+    g = Graph()
+    with pytest.raises(SourceError) as raised:
+        g.addAll(failing_after(items, 2))
+    assert isinstance(raised.value.__context__, TypeError)
+    assert list(g) == [Triple(S, P, Literal("a"))]

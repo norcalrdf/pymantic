@@ -49,7 +49,9 @@ def _add_in_batches(source, lock, add_batch):
     """Read `source` in batches of _ADD_BATCH, calling `add_batch(batch)`
     with `lock` held for each. If reading the source raises, what it
     produced before is added first, so a parser that fails part way keeps
-    the statements before the error, as adding them one by one would."""
+    the statements before the error, as adding them one by one would. The
+    source's error is the one raised, even if adding that batch fails too;
+    the batch's error is then its context."""
     items = iter(source)
     while True:
         batch = []
@@ -58,10 +60,15 @@ def _add_in_batches(source, lock, add_batch):
                 batch.append(item)
                 if len(batch) == _ADD_BATCH:
                     break
-        except BaseException:
+        except BaseException as source_error:
             if batch:
-                with lock:
-                    add_batch(batch)
+                try:
+                    with lock:
+                        add_batch(batch)
+                except BaseException:
+                    # Raised here, the source's error takes the batch's
+                    # as its context.
+                    raise source_error
             raise
         if batch:
             with lock:

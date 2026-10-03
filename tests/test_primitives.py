@@ -1,16 +1,23 @@
+from functools import partial
+import pickle
 import pytest
 import random
 
 from pymantic.primitives import (
+    RDF_DIRLANGSTRING,
+    RDF_LANGSTRING,
+    XSD_STRING,
     BlankNode,
     Dataset,
     Graph,
     Literal,
     NamedNode,
     Quad,
+    RDFEnvironment,
     Triple,
     to_curie,
 )
+from pymantic.term_dictionary import TermDictionary
 
 
 def en(s):
@@ -576,3 +583,71 @@ def test_graph_rejects_a_quad():
         g.add(q)
     assert len(g) == 0
     assert list(g) == []
+
+
+def test_directional_literal():
+    lit = Literal("שלום", "he", direction="rtl")
+    assert lit.direction == "rtl"
+    assert lit.datatype == RDF_DIRLANGSTRING
+    assert lit.toNT() == '"שלום"@he--rtl'
+
+
+def test_direction_is_lowercased():
+    assert Literal("x", "EN", direction="LTR") == Literal("x", "en", direction="ltr")
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        dict(direction="up", language="en"),  # not ltr/rtl
+        dict(direction="ltr"),  # no language
+        dict(direction="ltr", language="en", datatype=RDF_LANGSTRING),
+        dict(direction="ltr", language="en", datatype=XSD_STRING),
+        dict(datatype=RDF_DIRLANGSTRING),  # dirLangString, no direction
+        dict(datatype=RDF_DIRLANGSTRING, language="en"),
+    ],
+)
+def test_rejected_direction_combinations(kwargs):
+    with pytest.raises(ValueError):
+        Literal("x", **kwargs)
+
+
+def test_direction_is_part_of_the_term():
+    assert Literal("x", "en") != Literal("x", "en", direction="ltr")
+    assert Literal("x", "en", direction="ltr") != Literal("x", "en", direction="rtl")
+
+
+def test_literal_never_equals_triple():
+    lit = Literal("x", "en")
+    t = Triple(NamedNode("x"), NamedNode("en"), lit.datatype)
+    assert lit != t
+    d = TermDictionary()
+    assert d.intern(lit) != d.intern(t)
+
+
+def test_make_takes_three_or_four_fields():
+    assert Literal._make(("x", "en", None)) == Literal("x", "en")
+    assert Literal._make(("x", "en", None, "rtl")).direction == "rtl"
+
+
+def test_replace_language_clears_direction_and_datatype():
+    lit = Literal("x", "he", direction="rtl")
+    assert lit._replace(language=None) == Literal("x")
+    assert lit._replace(direction=None) == Literal("x", "he")
+    assert Literal("x", "he")._replace(direction="rtl") == lit
+
+
+def test_repr_asdict_pickle_include_direction():
+    lit = Literal("x", "he", direction="rtl")
+    assert "direction='rtl'" in repr(lit)
+    assert lit._asdict()["direction"] == "rtl"
+    assert pickle.loads(pickle.dumps(lit)) == lit
+
+
+def test_partial_makes_a_language_helper():
+    he_rtl = partial(Literal, language="he", direction="rtl")
+    assert he_rtl("שלום") == Literal("שלום", "he", direction="rtl")
+
+
+def test_create_literal_direction():
+    assert RDFEnvironment().createLiteral("x", "he", direction="rtl").direction == "rtl"

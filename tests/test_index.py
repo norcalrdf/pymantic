@@ -112,13 +112,14 @@ def check_against_reference(graph, ref, rng):
 @pytest.fixture(params=["default", "small"])
 def index_constants(request, monkeypatch):
     """The index's own constants, then constants small enough that the
-    model tests fold pending adds, turn rows into lists and filter rows in
-    remove_many. Gives whether the constants are the small ones."""
+    model tests fold pending adds, turn rows into lists, rebuild list rows
+    and filter rows in remove_many. Gives whether the constants are the small ones."""
     small = request.param == "small"
     if small:
         monkeypatch.setattr(triple_index, "FOLD_MIN", 8)
         monkeypatch.setattr(triple_index, "LIST_DEGREE", 4)
         monkeypatch.setattr(triple_index, "_FILTER_MIN", 2)
+        monkeypatch.setattr(triple_index, "_REBUILD_MIN", 1)
     return small
 
 

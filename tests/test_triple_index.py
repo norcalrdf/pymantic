@@ -414,10 +414,11 @@ def index_rows(index):
 @pytest.fixture
 def small_constants(monkeypatch):
     """Constants small enough that the model tests fold pending adds, turn
-    rows into lists and filter rows in remove_many."""
+    rows into lists, rebuild list rows and filter rows in remove_many."""
     monkeypatch.setattr(triple_index, "FOLD_MIN", 8)
     monkeypatch.setattr(triple_index, "LIST_DEGREE", 4)
     monkeypatch.setattr(triple_index, "_FILTER_MIN", 2)
+    monkeypatch.setattr(triple_index, "_REBUILD_MIN", 1)
 
 
 @pytest.mark.parametrize("seed", range(30, 40))
@@ -705,3 +706,27 @@ def test_a_key_walk_reports_a_change_as_the_index_s(change):
         index.remove(1, 2, 2)
     with pytest.raises(RuntimeError, match="TripleIndex changed during iteration"):
         next(it)
+
+
+@pytest.mark.parametrize("extra", [1, 2, 300])
+def test_many_inserts_into_one_list_row_rebuild_it_once(extra):
+    # A batch too small to fold that puts more than _REBUILD_MIN values
+    # into one list row rebuilds that row once instead of inserting each.
+    index = TripleIndex()
+    loaded = 2 * triple_index.FOLD_MIN * triple_index.FOLD_DIVISOR
+    for i in range(0, 2 * loaded, 2):
+        index.add(i, 1, 0)
+    list(index.match(None, 1, None))
+    row = index._orders[1][1]
+    assert type(row) is list
+    count = triple_index._REBUILD_MIN + extra - 1
+    added = [i * 2 + 1 for i in range(count)]
+    for s in added:
+        index.add(s, 1, 0)
+    expected = sorted([*range(0, 2 * loaded, 2), *added])
+    assert [s for s, _, _ in index.match(None, 1, None)] == expected
+    assert [s for s, _, _ in index.match(None, None, 0)] == expected
+    assert index.folds == 1
+    rebuilt = index._orders[1][1] is not row
+    assert rebuilt is (count > triple_index._REBUILD_MIN)
+    assert type(index._orders[1][1]) is list

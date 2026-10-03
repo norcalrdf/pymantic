@@ -15,7 +15,8 @@ longer than `LIST_DEGREE` (rdf:type in POS, say) is a list instead and takes
 inserts in place; only those few rows are tracked.
 
 Adds go to a pending list of packed keys, moved into the orderings by the
-next query that needs them. A small pending list is inserted value by value.
+next query that needs them. A small pending list is inserted value by value,
+except that a list row taking many of its values is rebuilt with one sort.
 A larger one (a bulk load, or a big batch) is folded: sorted per ordering
 and grouped by first id, so each row it touches is rebuilt once.
 
@@ -33,6 +34,12 @@ LIST_DEGREE = 256
 # more than FOLD_MIN of them and more than 1/FOLD_DIVISOR of the index.
 FOLD_MIN = 1024
 FOLD_DIVISOR = 32
+
+# A merge that inserts more than this many values into one list row
+# rebuilds the row with one sort instead. Inserting a value moves half the
+# row, and the sort costs about as much as 100 such moves on CPython 3.14
+# and 200 on PyPy 3.12, whatever the row's length.
+_REBUILD_MIN = 128
 
 # remove_many filters a row in one pass when it removes more than this many
 # of its values; fewer are deleted one by one with bisect.
@@ -82,8 +89,9 @@ def _row(values):
     return tuple(values) if len(values) <= LIST_DEGREE else values
 
 
-def _insert(rows, a, v):
-    """Insert value `v` into the row of `a`."""
+def _insert(rows, a, v, crowded):
+    """Insert value `v` into the row of `a`, or if that row is a list, add
+    `v` to the values `crowded` holds for it, for `_insert_crowded`."""
     row = rows.get(a)
     if row is None:
         rows[a] = (v,)
@@ -96,7 +104,29 @@ def _insert(rows, a, v):
             row.insert(i, v)
             rows[a] = row
     else:
-        insort(row, v)
+        values = crowded.get(a)
+        if values is None:
+            crowded[a] = [v]
+        else:
+            values.append(v)
+
+
+def _insert_crowded(rows, crowded):
+    """Insert the values `crowded` holds for each list row: one by one if
+    there are few, otherwise by sorting them into a new row, so a big batch
+    into one long row is not quadratic."""
+    for a, values in crowded.items():
+        row = rows[a]
+        if len(values) <= _REBUILD_MIN:
+            for v in values:
+                insort(row, v)
+        else:
+            # Two sorted runs, once the values are sorted, which list.sort
+            # merges in linear time.
+            values.sort()
+            values += row
+            values.sort()
+            rows[a] = values
 
 
 def _delete(rows, a, v):
@@ -345,12 +375,17 @@ class TripleIndex:
             self.folds += 1
             return
         spo, pos, osp = self._orders
+        crowded = ({}, {}, {})
+        spo_crowded, pos_crowded, osp_crowded = crowded
         for k in pending:
             s = k >> 64
             o = k & _MASK32
-            _insert(spo, s, k & _MASK64)
-            _insert(pos, (k >> 32) & _MASK32, o << 32 | s)
-            _insert(osp, o, k >> 32)
+            _insert(spo, s, k & _MASK64, spo_crowded)
+            _insert(pos, (k >> 32) & _MASK32, o << 32 | s, pos_crowded)
+            _insert(osp, o, k >> 32, osp_crowded)
+        for rows, values in zip(self._orders, crowded):
+            if values:
+                _insert_crowded(rows, values)
 
     # Every read does its work on the index (merging pending adds, finding
     # the row) when it is called, not on its generator's first next(), so a

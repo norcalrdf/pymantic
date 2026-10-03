@@ -132,7 +132,9 @@ Operations:
 - `add`: intern the three terms; if the key is new, insert it in `_keys` and
   append it to the pending list.
 - Merge: the next query that needs the orderings moves pending adds in. A
-  few are inserted value by value; a batch larger than
+  few are inserted value by value, except that a list row taking more than
+  `_REBUILD_MIN` (128) of them is rebuilt with one sort, so a batch into a
+  long row is not quadratic; a batch larger than
   `max(FOLD_MIN, len(keys) // FOLD_DIVISOR)` is folded: sorted per ordering,
   grouped by first id, and each touched row rebuilt once.
 - `remove`: delete from `_keys` and bisect the value out of each ordering's

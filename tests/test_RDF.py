@@ -205,7 +205,8 @@ def testResourceBareNamesAreGlobalTerms(reset_metaresource):
         assert Thing.resolve("label") == NamedNode(
             "http://www.w3.org/2000/01/rdf-schema#label"
         )
-        assert Thing.resolve("xsd") is None
+        with pytest.raises(ValueError, match="'xsd'"):
+            Thing.resolve("xsd")
     finally:
         del profile.terms["label"]
         del profile.prefixes[""]
@@ -262,6 +263,25 @@ def testUnresolvableScalarRaises(reset_metaresource):
 
         class Thing(pymantic.rdf.Resource):
             scalars = frozenset(("labl",))
+
+
+def testUnresolvableNameRaises(reset_metaresource):
+    """A bare name that is neither a prefix nor a known term raises, rather
+    than resolving to None, which graph matching treats as a wildcard."""
+    graph = Graph()
+    subject = NamedNode("http://example.com/s")
+    graph.add(
+        Triple(
+            subject,
+            NamedNode("http://www.w3.org/2000/01/rdf-schema#label"),
+            Literal("s"),
+        )
+    )
+    resource = pymantic.rdf.Resource(graph, subject)
+    with pytest.raises(ValueError, match="'labl'"):
+        pymantic.rdf.Resource.resolve("labl")
+    with pytest.raises(ValueError, match="'labl'"):
+        resource["labl"]
 
 
 def testMetaResourceNothingUseful(reset_metaresource):

@@ -52,6 +52,10 @@ All notable changes to pymantic are recorded here. The format follows
   Bracketed safe CURIEs (`[foo:bar]`) are no longer recognised.
 - `rdf.Resource` scalars resolve prefixes the global profile declares, such
   as `xsd`, the same way predicates do.
+- `rdf.Resource.resolve`, and so `resource[...]` and the other predicate
+  lookups, raise `ValueError` for a bare name that is neither a prefix the
+  class declares nor a known term. It used to return `None`, which graph matching treats as a
+  wildcard, so a mistyped predicate matched every triple on the subject.
 - Numeric escapes that produce surrogate code points (`\uD800` to `\uDFFF`)
   or values above U+10FFFF are rejected in all parsers, as the Turtle and
   N-Triples grammars require.

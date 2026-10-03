@@ -44,12 +44,7 @@ class MetaResource(type):
         # finished class so prefixes it doesn't declare reach the global
         # profile. Classes that aren't Resources only have their prefixes.
         resolve = getattr(new_class, "resolve", prefixes.resolve)
-        for scalar in own_scalars:
-            # An unknown term resolves to None through the global profile.
-            predicate = resolve(scalar)
-            if predicate is None:
-                raise ValueError(f"Could not resolve scalar {scalar!r}")
-            scalars.add(predicate)
+        scalars.update(resolve(scalar) for scalar in own_scalars)
         new_class.scalars = frozenset(scalars)
         return new_class
 
@@ -162,11 +157,16 @@ class Resource(metaclass=MetaResource):
     @classmethod
     def resolve(cls, key):
         """Resolve a prefixed name or term with this class's prefixes, falling
-        back to the global profile for anything they don't expand."""
+        back to the global profile for anything they don't expand. Raises
+        ValueError for an unknown term, which the global profile resolves to
+        None, since graph matching would treat None as a wildcard."""
         expanded = cls.prefixes.expand(key)
         if expanded is not None:
             return expanded
-        return cls.global_profile.resolve(key)
+        resolved = cls.global_profile.resolve(key)
+        if resolved is None:
+            raise ValueError(f"Could not resolve {key!r}")
+        return resolved
 
     def __eq__(self, other):
         if isinstance(other, Resource):

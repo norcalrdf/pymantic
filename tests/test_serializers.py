@@ -2409,3 +2409,18 @@ def test_turtle_written_through_lookups_equals_written_through_match():
                 name,
                 stable,
             )
+
+
+def test_ntriples_and_nquads_write_triple_terms_and_directions(primitives):
+    from pymantic.parsers import nquads_parser
+    from pymantic.serializers import serialize_nquads
+
+    nt = '<http://x/s> <http://x/p> <<( <http://x/a> <http://x/b> "c"@en--rtl )>> .\n'
+    out = StringIO()
+    serialize_ntriples(ntriples_parser.parse(nt), out)
+    assert out.getvalue() == nt
+
+    nq = nt[: -len(" .\n")] + " <http://x/g> .\n"
+    out = StringIO()
+    serialize_nquads(nquads_parser.parse(nq), out)
+    assert out.getvalue() == nq

@@ -19,8 +19,8 @@ from pymantic.util import decode_literal
 
 from .base import LarkParser
 
-# The N-Triples 1.1 grammar (https://www.w3.org/TR/n-triples/#n-triples-grammar)
-# and the N-Quads 1.1 grammar (https://www.w3.org/TR/n-quads/#sec-grammar),
+# The N-Triples 1.2 grammar (https://www.w3.org/TR/rdf12-n-triples/#n-triples-grammar)
+# and the N-Quads 1.2 grammar (https://www.w3.org/TR/rdf12-n-quads/#sec-grammar),
 # which differ only in the optional graph label. Departures from the spec text:
 #
 # * The document rules are written as ``EOL* (triple EOL+)* triple?`` rather
@@ -28,8 +28,6 @@ from .base import LarkParser
 #   documents once comments and horizontal whitespace are ignored, but a
 #   comment-only or whitespace-only line leaves consecutive EOL tokens, which
 #   the spec's shape rejects.
-# * PN_CHARS_U omits ":" as in the N-Triples 1.2 grammar; the 1.1 REC text
-#   includes it by mistake and the W3C suite rejects ``_:a:b``.
 # * LANGTAG subtags are limited to 8 characters, the BCP47 well-formedness
 #   rule that RDF Concepts requires of language tags.
 grammar = r"""triples_start: EOL* (triple EOL+)* triple?
@@ -44,12 +42,14 @@ quad: subject predicate object graph? "."
 ?object: iriref
        | BLANK_NODE_LABEL -> blank_node_label
        | literal
+       | triple_term
 ?graph: iriref
       | BLANK_NODE_LABEL -> blank_node_label
+triple_term: "<<(" subject predicate object ")>>"
 literal: STRING_LITERAL_QUOTE ("^^" iriref | LANGTAG)?
 iriref: IRIREF
 
-LANGTAG: "@" /[a-zA-Z]{1,8}/ ("-" /[a-zA-Z0-9]{1,8}/)*
+LANGTAG: "@" /[a-zA-Z]{1,8}/ ("-" /[a-zA-Z0-9]{1,8}/)* ("--" ("ltr" | "rtl"))?
 EOL: /[\r\n]/+
 IRIREF: "<" (/[^\x00-\x20<>"{}|^`\\]/ | UCHAR)* ">"
 STRING_LITERAL_QUOTE: "\"" (/[^\x22\\\x0A\x0D]/ | ECHAR | UCHAR)* "\""
@@ -112,6 +112,10 @@ class NTriplesTransformer(BaseParser, Transformer):
             return self.make_language_literal(literal)
 
     def triple(self, children):
+        subject, predicate, object_ = children
+        return self.make_triple(subject, predicate, object_)
+
+    def triple_term(self, children):
         subject, predicate, object_ = children
         return self.make_triple(subject, predicate, object_)
 

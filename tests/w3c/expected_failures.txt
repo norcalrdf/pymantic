@@ -1,30 +1,6 @@
 # W3C tests pymantic currently fails, one per line: <test id><TAB><reason>.
 # tests/test_w3c.py marks these xfail. Remove a line once the test passes.
 
-rdf12/rdf-n-triples/c14n/dirlangtagged_string	RDF 1.2 base direction language tags (@en--ltr) not implemented
-rdf12/rdf-n-triples/c14n/triple-term-01	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-triples/c14n/triple-term-02	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-triples/c14n/triple-term-03	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-triples/c14n/triple-term-04	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-triples/syntax/ntriples12-01	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-triples/syntax/ntriples12-02	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-triples/syntax/ntriples12-03	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-triples/syntax/ntriples12-bnode-1	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-triples/syntax/ntriples12-nested-1	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-triples/syntax/ntriples-langdir-1	RDF 1.2 base direction language tags (@en--ltr) not implemented
-rdf12/rdf-n-triples/syntax/ntriples-langdir-2	RDF 1.2 base direction language tags (@en--ltr) not implemented
-rdf12/rdf-n-quads/c14n/dirlangtagged_string	RDF 1.2 base direction language tags (@en--ltr) not implemented
-rdf12/rdf-n-quads/c14n/triple-term-01	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-quads/c14n/triple-term-02	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-quads/c14n/triple-term-03	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-quads/c14n/triple-term-04	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-quads/syntax/nquads12-01	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-quads/syntax/nquads12-02	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-quads/syntax/nquads12-03	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-quads/syntax/nquads12-bnode-1	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-quads/syntax/nquads12-nested-1	RDF 1.2 triple terms not implemented
-rdf12/rdf-n-quads/syntax/nquads-langdir-1	RDF 1.2 base direction language tags (@en--ltr) not implemented
-rdf12/rdf-n-quads/syntax/nquads-langdir-2	RDF 1.2 base direction language tags (@en--ltr) not implemented
 rdf12/rdf-turtle/eval/turtle12-rt-01	RDF 1.2 syntax not implemented: reified triples
 rdf12/rdf-turtle/eval/turtle12-rt-01[roundtrip]	RDF 1.2 syntax not implemented: reified triples
 rdf12/rdf-turtle/eval/turtle12-rt-01[stable]	RDF 1.2 syntax not implemented: reified triples

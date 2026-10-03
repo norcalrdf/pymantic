@@ -152,3 +152,22 @@ def test_round_trip_keeps_empty_graphs_and_shared_blank_nodes():
     reparsed = linetrig_parser.parse(out.getvalue())
     assert isomorphic(original, reparsed)
     assert [g.uri for g in reparsed.graphs if len(g) == 0] == [EMPTY]
+
+
+def test_triple_terms_and_direction_round_trip():
+    line = (
+        "<http://e/g> { _:r <http://e/reifies> "
+        '<<( _:s <http://e/p> <<( <http://e/a> <http://e/b> "c"@en--ltr )>> )>> . }\n'
+    )
+    ds = linetrig_parser.parse(line)
+    (quad,) = ds
+    assert quad.graph == G
+    inner = quad.object
+    assert isinstance(quad.subject, BlankNode) and isinstance(inner.subject, BlankNode)
+    assert inner.object.object.direction == "ltr"
+    out = StringIO()
+    serialize_linetrig(ds, out)
+    # The parser gives blank nodes fresh labels; the rest is written back as read.
+    assert out.getvalue() == line.replace("_:r", quad.subject.toNT()).replace(
+        "_:s", inner.subject.toNT()
+    )

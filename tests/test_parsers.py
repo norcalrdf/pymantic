@@ -537,3 +537,44 @@ def test_nquads_parser_rejects_a_graph():
         nquads_parser.parse(
             "<http://example/s> <http://example/p> <http://example/o> .", Graph()
         )
+
+
+def test_ntriples_triple_term_and_direction():
+    g = ntriples_parser.parse_string(
+        '_:r <http://ex/reifies> <<( _:s <http://ex/p> <<( <http://ex/a> <http://ex/b> "c"@en--ltr )>> )>> .\n'
+    )
+    (t,) = g
+    assert isinstance(t.object, Triple)
+    assert t.object.object.object == Literal("c", "en", direction="ltr")
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        '<http://a> <http://b> "c"@en--up .\n',
+        '<http://a> <http://b> "c"@en--LTR .\n',
+        "<<( <http://a> <http://b> <http://c> )>> <http://b> <http://c> .\n",  # not a subject
+        "<http://a> <<( <http://a> <http://b> <http://c> )>> <http://c> .\n",  # not a predicate
+        '<http://a> <http://b> <<( "x" <http://b> <http://c> )>> .\n',  # literal subject inside
+    ],
+)
+def test_ntriples_rejects(bad):
+    with pytest.raises(Exception):
+        ntriples_parser.parse_string(bad)
+
+
+def test_language_tag_without_direction_has_no_direction():
+    (t,) = ntriples_parser.parse_string('<http://a> <http://b> "c"@en-GB .\n')
+    assert t.object == Literal("c", "en-gb")
+    assert t.object.direction is None
+
+
+def test_nquads_triple_term_and_direction_in_a_named_graph():
+    ds = nquads_parser.parse(
+        '<http://ex/s> <http://ex/p> <<( _:b <http://ex/q> "c"@ar--rtl )>> <http://ex/g> .\n'
+    )
+    (q,) = ds
+    assert q.graph == NamedNode("http://ex/g")
+    assert isinstance(q.object, Triple)
+    assert isinstance(q.object.subject, BlankNode)
+    assert q.object.object == Literal("c", "ar", direction="rtl")

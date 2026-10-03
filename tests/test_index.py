@@ -16,6 +16,7 @@ from pymantic.primitives import (
     Quad,
     Triple,
 )
+from pymantic import triple_index
 
 IRIS = [NamedNode("")] + [NamedNode("http://e/%d" % i) for i in range(5)]
 BLANKS = [BlankNode() for _ in range(4)]
@@ -108,12 +109,37 @@ def check_against_reference(graph, ref, rng):
     assert set(graph.objects()) == {t.object for t in ref}
 
 
+@pytest.fixture(params=["default", "small"])
+def index_constants(request, monkeypatch):
+    """The index's own constants, then constants small enough that the
+    model tests fold pending adds, turn rows into lists and filter rows in
+    remove_many. Gives whether the constants are the small ones."""
+    small = request.param == "small"
+    if small:
+        monkeypatch.setattr(triple_index, "FOLD_MIN", 8)
+        monkeypatch.setattr(triple_index, "LIST_DEGREE", 4)
+        monkeypatch.setattr(triple_index, "_FILTER_MIN", 2)
+    return small
+
+
+def index_paths(indexes):
+    """Which of folding and list rows the indexes have been through."""
+    paths = set()
+    for index in indexes:
+        if index.folds:
+            paths.add("folded")
+        if any(type(row) is list for rows in index._orders for row in rows.values()):
+            paths.add("list rows")
+    return paths
+
+
 @pytest.mark.parametrize("seed", range(10))
-def test_graph_agrees_with_a_reference_model(seed):
+def test_graph_agrees_with_a_reference_model(index_constants, seed):
     rng = random.Random(seed)
     graph = Graph()
     # A dict used as an ordered set: re-adding after a remove moves to the end.
     ref = {}
+    paths = set()
     for _ in range(1000):
         roll = rng.random()
         if roll < 0.5:
@@ -137,13 +163,17 @@ def test_graph_agrees_with_a_reference_model(seed):
             for t in matching(ref, s, p, o):
                 del ref[t]
         else:
-            # A batch past the merge threshold, so the next query re-sorts.
+            # A batch the next query folds with the small constants, and
+            # inserts one by one with the index's own.
             batch = [random_triple(rng) for _ in range(40)]
             graph.addAll(batch)
             for t in batch:
                 ref.setdefault(t, None)
         check_against_reference(graph, ref, rng)
         assert len(graph._dictionary) <= 6 * len(graph)
+        paths |= index_paths([graph._index])
+    if index_constants:
+        assert paths == {"folded", "list rows"}
 
 
 S = NamedNode("http://e/s")
@@ -458,11 +488,12 @@ def check_dataset_against_reference(ds, ref, names, rng):
 
 
 @pytest.mark.parametrize("seed", range(10))
-def test_dataset_agrees_with_a_reference_model(seed):
+def test_dataset_agrees_with_a_reference_model(index_constants, seed):
     rng = random.Random(seed)
     ds = Dataset()
     ref = {}
     names = set()
+    paths = set()
 
     def add(q):
         ref.setdefault(q, None)
@@ -510,12 +541,16 @@ def test_dataset_agrees_with_a_reference_model(seed):
             for t in triples:
                 add(Quad(*t, name))
         else:
-            # A batch past the merge threshold, so the next query re-sorts.
+            # A batch the next query folds with the small constants, and
+            # inserts one by one with the index's own.
             batch = [random_quad(rng) for _ in range(40)]
             ds.addAll(batch)
             for q in batch:
                 add(q)
         check_dataset_against_reference(ds, ref, names, rng)
+        paths |= index_paths(ds._graphs.values())
+    if index_constants:
+        assert paths == {"folded", "list rows"}
 
 
 def test_empty_named_graphs_persist_until_removed():
@@ -753,10 +788,11 @@ def lookup_terms(rng, ref):
 
 
 @pytest.mark.parametrize("seed", range(10))
-def test_lookups_agree_with_match(seed):
+def test_lookups_agree_with_match(index_constants, seed):
     rng = random.Random(seed)
     graph = Graph()
     ref = {}
+    paths = set()
     for step in range(300):
         roll = rng.random()
         if roll < 0.6:
@@ -769,7 +805,8 @@ def test_lookups_agree_with_match(seed):
                 graph.remove(t)
                 del ref[t]
         else:
-            # A batch past the merge threshold, so the next query re-sorts.
+            # A batch the next query folds with the small constants, and
+            # inserts one by one with the index's own.
             batch = [random_triple(rng) for _ in range(40)]
             graph.addAll(batch)
             for t in batch:
@@ -777,6 +814,9 @@ def test_lookups_agree_with_match(seed):
         if step % 5 == 0:
             for _ in range(3):
                 check_lookups_against_match(graph, *lookup_terms(rng, ref))
+            paths |= index_paths([graph._index])
+    if index_constants:
+        assert paths == {"folded", "list rows"}
 
 
 def test_lookups_of_unknown_terms_are_empty():

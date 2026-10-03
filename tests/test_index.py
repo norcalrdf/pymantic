@@ -1122,3 +1122,35 @@ def test_a_change_between_the_index_and_the_terms_never_misnames(monkeypatch, re
     assert next(found) == (a, b, c)
     with pytest.raises(RuntimeError, match="changed during iteration"):
         next(found)
+
+
+class SourceError(Exception):
+    pass
+
+
+def failing_after(items, count):
+    """Yield the first `count` items, then raise, as a parser does at a
+    syntax error part way through a stream."""
+    yield from items[:count]
+    raise SourceError(count)
+
+
+@pytest.mark.parametrize("count", [0, 5, 1024, 1500, 2048])
+def test_add_all_keeps_what_a_failing_source_produced(count):
+    triples = [Triple(S, P, Literal(str(i))) for i in range(3000)]
+    g = Graph()
+    with pytest.raises(SourceError):
+        g.addAll(failing_after(triples, count))
+    assert list(g) == triples[:count]
+    quads = [Quad(*t, GA) for t in triples]
+    ds = Dataset()
+    with pytest.raises(SourceError):
+        ds.addAll(failing_after(quads, count))
+    assert list(ds) == quads[:count]
+
+
+def test_dataset_add_all_rejects_a_triple():
+    ds = Dataset()
+    with pytest.raises(TypeError, match="a Dataset holds quads"):
+        ds.addAll([Quad(S, P, Literal("a"), GA), Triple(S, P, Literal("b"))])
+    assert list(ds) == [Quad(S, P, Literal("a"), GA)]

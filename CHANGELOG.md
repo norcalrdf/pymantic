@@ -48,7 +48,9 @@ All notable changes to pymantic are recorded here. The format follows
   GIL. Each call holds a lock (one per graph, or one per dataset shared by
   its graph views) while it changes the graph or starts a read, so every
   call is atomic. There are no transactions across calls, and `addAll`
-  adds in batches of 1024, each atomic.
+  adds in batches of 1024, each atomic. If its source raises part way, as
+  a parser does at a syntax error, what the source produced before the
+  error is added.
 
 ### Security
 
@@ -108,7 +110,8 @@ All notable changes to pymantic are recorded here. The format follows
 - `Graph.add` and `Graph.remove` raise `TypeError` for anything that is not
   a triple of three terms, so a `Quad` can no longer be put in a `Graph`.
   The N-Quads and JSON-LD parsers create a `Dataset` and raise `TypeError`
-  if given a `Graph`.
+  if given a `Graph`. `Dataset.addAll` likewise raises `TypeError` for
+  anything that is not a quad.
 - `Graph()` without a name has `uri` `None` instead of `NamedNode("None")`.
 - `Dataset` keeps one term dictionary for all its graphs, so a blank node is
   the same node in every graph it appears in, including as a graph name. An
@@ -210,8 +213,9 @@ All notable changes to pymantic are recorded here. The format follows
 - A falsy term such as `NamedNode("")` passed to `match` is matched as a
   term instead of being treated as a wildcard.
 - `Dataset.remove_graph` removes the graph; it did nothing before.
-- `Resource.copy` copies the resource's triples to the target subject;
-  previously it raised `AttributeError`.
+- `Resource.copy` copies the resource's triples to the target subject.
+  Previously it raised `AttributeError`: it passed `Graph.add` plain
+  tuples, and `Graph.add` read `.subject` from them.
 - The Turtle serializer no longer fails with `RecursionError` on a list
   nested a few hundred levels deep, such as `((((...))))`. Past 32 levels
   the inner list is written as a labelled blank node with its `rdf:first`

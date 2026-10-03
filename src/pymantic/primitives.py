@@ -42,6 +42,31 @@ _DATASET_CHANGED = "Dataset changed during iteration"
 _ADD_BATCH = 1024
 
 
+def _add_in_batches(source, lock, add_batch):
+    """Read `source` in batches of _ADD_BATCH, calling `add_batch(batch)`
+    with `lock` held for each. If reading the source raises, what it
+    produced before is added first, so a parser that fails part way keeps
+    the statements before the error, as adding them one by one would."""
+    items = iter(source)
+    while True:
+        batch = []
+        try:
+            for item in items:
+                batch.append(item)
+                if len(batch) == _ADD_BATCH:
+                    break
+        except BaseException:
+            if batch:
+                with lock:
+                    add_batch(batch)
+            raise
+        if batch:
+            with lock:
+                add_batch(batch)
+        if len(batch) < _ADD_BATCH:
+            return
+
+
 def is_language(lang):
     """Is something a valid XML language?"""
     if isinstance(lang, NamedNode):
@@ -611,15 +636,16 @@ class Graph:
 
         The triples are added in batches, each in one hold of the lock, so
         another thread may see some batches before the rest. The source is
-        read between batches, never under the lock, so it may be this graph
-        or another graph of the same dataset."""
-        triples = iter(graph_or_triples)
-        while batch := list(itertools.islice(triples, _ADD_BATCH)):
-            with self._lock:
-                self._add_batch(batch)
+        read between batches, never under the lock. It must not be a read
+        of this graph, or of its dataset, that the added triples change: a
+        read ends with RuntimeError when its graph changes, and addAll
+        raises that after adding what it had read. Re-adding a graph's own
+        triples changes nothing, so ``graph.addAll(graph)`` works."""
+        _add_in_batches(graph_or_triples, self._lock, self._add_batch)
         return self
 
     def _add_batch(self, triples):
+        """Add `triples`; the caller holds the lock."""
         if self._owner is not None:
             self._check_index()
         intern = self._dictionary.intern
@@ -965,15 +991,22 @@ class Dataset:
         returns the graph instance it was called on.
 
         As with `Graph.addAll`, the quads are added in batches, each in one
-        hold of the lock, and the source is read between batches."""
-        quads = iter(dataset_or_quads)
-        while batch := list(itertools.islice(quads, _ADD_BATCH)):
-            with self._lock:
-                intern = self._dictionary.intern
-                for s, p, o, graph in batch:
-                    if self._index_for_add(graph).add(intern(s), intern(p), intern(o)):
-                        self._version += 1
+        hold of the lock, and the source is read between batches; it must
+        not be a read of this dataset that the added quads change."""
+        _add_in_batches(dataset_or_quads, self._lock, self._add_batch)
         return self
+
+    def _add_batch(self, quads):
+        """Add `quads`; the caller holds the lock."""
+        intern = self._dictionary.intern
+        for quad in quads:
+            if len(quad) != 4:
+                raise TypeError(
+                    "a Dataset holds quads; add triples to one of its graphs"
+                )
+            s, p, o, graph = quad
+            if self._index_for_add(graph).add(intern(s), intern(p), intern(o)):
+                self._version += 1
 
     def __len__(self):
         with self._lock:

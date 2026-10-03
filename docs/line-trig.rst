@@ -72,6 +72,9 @@ Grammar
 ``EOL`` and comments are the `RDF 1.2 N-Triples`_ productions, with the
 same whitespace and comment rules, so Line-TriG has every term N-Triples
 has, including triple terms and directional language-tagged strings.
+pymantic's reader accepts the RDF 1.1 N-Triples terms its N-Triples parser
+accepts; it will read triple terms and directional language-tagged strings
+once the RDF 1.2 work adds them to that parser.
 
 Why it is valid TriG
 --------------------

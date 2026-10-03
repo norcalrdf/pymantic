@@ -1008,8 +1008,8 @@ class Dataset:
         return self
 
     def addAll(self, dataset_or_quads):
-        """Imports the graph or set of triples in to this graph. This method
-        returns the graph instance it was called on.
+        """Imports the quads of a dataset or iterable of quads in to this
+        dataset. This method returns the dataset it was called on.
 
         As with `Graph.addAll`, the quads are added in batches, each in one
         hold of the lock, and the source is read between batches; it must

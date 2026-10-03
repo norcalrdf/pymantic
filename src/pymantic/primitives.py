@@ -36,6 +36,9 @@ _new_triple = tuple.__new__
 
 _DATASET_CHANGED = "Dataset changed during iteration"
 
+# Raised by whatever refuses to put a quad in a Graph.
+GRAPH_HOLDS_TRIPLES = "a Graph holds triples; use a Dataset for quads"
+
 # addAll adds this many triples or quads per hold of the lock, so a long
 # stream neither takes the lock per triple nor holds it while the stream
 # produces the next ones.
@@ -539,7 +542,7 @@ class Graph:
         """Adds the specified Triple to the graph. This method returns the
         graph instance it was called on."""
         if len(triple) != 3:
-            raise TypeError("a Graph holds triples; parse N-Quads into a Dataset")
+            raise TypeError(GRAPH_HOLDS_TRIPLES)
         s, p, o = triple
         with self._lock:
             if self._owner is not None:
@@ -555,7 +558,7 @@ class Graph:
         """Removes the specified Triple from the graph. This method returns the
         graph instance it was called on."""
         if len(triple) != 3:
-            raise TypeError("a Graph holds triples; parse N-Quads into a Dataset")
+            raise TypeError(GRAPH_HOLDS_TRIPLES)
         with self._lock:
             ids = self._ids(triple)
             if ids is None:
@@ -654,9 +657,7 @@ class Graph:
         try:
             for triple in triples:
                 if len(triple) != 3:
-                    raise TypeError(
-                        "a Graph holds triples; parse N-Quads into a Dataset"
-                    )
+                    raise TypeError(GRAPH_HOLDS_TRIPLES)
                 s, p, o = triple
                 if add(intern(s), intern(p), intern(o)):
                     added += 1

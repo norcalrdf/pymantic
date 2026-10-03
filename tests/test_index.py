@@ -385,7 +385,9 @@ def test_distinct_terms_support_len_membership_and_reiteration():
 
 def test_remove_of_a_quad_raises_type_error():
     g = Graph().add(Triple(S, P, Literal("a")))
-    with pytest.raises(TypeError, match="parse N-Quads into a Dataset"):
+    with pytest.raises(
+        TypeError, match="a Graph holds triples; use a Dataset for quads"
+    ):
         g.remove(Quad(S, P, Literal("a"), NamedNode("http://e/g")))
 
 
@@ -1131,7 +1133,7 @@ def test_add_all_adds_a_stream_longer_than_a_batch():
 
 def test_add_all_keeps_the_triples_before_a_bad_one():
     g = Graph()
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="a Graph holds triples; use a Dataset"):
         g.addAll([Triple(S, P, Literal("a")), Quad(S, P, Literal("b"), GA)])
     assert list(g) == [Triple(S, P, Literal("a"))]
 

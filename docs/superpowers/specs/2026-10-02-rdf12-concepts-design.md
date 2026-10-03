@@ -234,11 +234,17 @@ Test-driven throughout, on `tox -e py314` while working.
    `nt-ttl12-langdir` lines, and the Turtle lines that test only triple
    terms.
 6. **Round trips.** Parse, write, parse through N-Triples, N-Quads, Line-TriG
-   and Turtle, with and without `stable=True`.
+   and Turtle, with and without `stable=True`. Line-TriG also round-trips one
+   dataset that uses everything at once: an empty named graph, nested triple
+   terms with blank nodes inside, and directional literals.
 7. **Interpreters.** The full tox interpreter matrix before finishing.
 
 Docs: `CHANGELOG.md`, `docs/graph-comparison.rst` (flattening) and
-`docs/line-trig.rst` (Line-TriG inherits both features).
+`docs/line-trig.rst`. Line-TriG inherits both features, which makes it the
+only format pymantic reads and writes that holds every RDF 1.2 dataset:
+N-Quads cannot write an empty named graph, N-Triples and Turtle hold one
+graph, and Turtle still lacks reifiers and annotations. `line-trig.rst` says
+so.
 
 ## Future work
 

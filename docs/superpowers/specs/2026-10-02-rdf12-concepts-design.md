@@ -115,6 +115,18 @@ A `direction=` keyword, next to every existing `language` argument:
   direction, only literals in that direction. `objects_by_lang(p, "he")`
   matches Hebrew literals of any direction.
 
+`pymantic.util` already has `en(value)` and `de(value)`, which build
+language-tagged literals. It gains `ltr(literal)` and `rtl(literal)`, named
+for the HTML and CSS values Babel's `text_direction` uses. Each returns the
+literal with that direction, and with the datatype `rdf:dirLangString`; a
+literal without a language raises `ValueError` from `Literal`. Their
+docstrings show the pattern for a helper of one's own:
+
+```python
+def he_rtl(value):
+    return rtl(Literal(value, language="he"))
+```
+
 `rdf.IMPLIED_DATATYPES` gains `rdf:dirLangString`, so
 `objects_by_datatype(p)` does not count it as a written datatype. The
 `Resource` key filter (`r['rdfs:label', 'en']`) does not gain a direction
@@ -195,6 +207,7 @@ all, so its statements, labels and digests are unchanged.
 - `Triple`, `Quad` and `Literal` no longer equal a plain tuple or each other.
 - `rdf:dirLangString` literals.
 - `direction=` on `createLiteral` and `Resource.objects_by_lang`.
+- `util.ltr()` and `util.rtl()`.
 - N-Triples, N-Quads, Line-TriG and Turtle read and write triple terms and
   base direction.
 
@@ -214,6 +227,9 @@ Test-driven throughout, on `tox -e py314` while working.
    triple-term pattern.
 3. **Resource.** `objects_by_lang` with and without direction;
    `objects_by_datatype` with directional literals; `createLiteral`.
+   `util.ltr` and `util.rtl`, including on a literal without a language and
+   on one that already has the other direction; `util.en` and `util.de`,
+   which have no tests today.
 4. **compare.** Isomorphic and non-isomorphic pairs with blank nodes inside
    triple terms, nested two deep, with one blank node both asserted and inside
    a triple term, and pairs that differ only in direction. `canonical_labels`

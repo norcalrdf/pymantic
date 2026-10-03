@@ -946,3 +946,50 @@ def testUnboundClass(reset_metaresource):
         pymantic.rdf.Resource.classify(graph, funky_subject),
         pymantic.rdf.Resource,
     )
+
+
+def _directional_labels_resource():
+    graph = Graph()
+    r = pymantic.rdf.Resource(graph, NamedNode("http://example.com/"))
+    label = pymantic.rdf.Resource.resolve("rdfs:label")
+    labels = {
+        "plain": Literal("a", language="he"),
+        "rtl": Literal("b", language="he", direction="rtl"),
+        "ltr": Literal("c", language="he", direction="ltr"),
+        "en": Literal("d", language="en"),
+    }
+    for lit in labels.values():
+        graph.add(Triple(r.subject, label, lit))
+    return r, label, labels
+
+
+def test_objects_by_lang_direction(reset_metaresource):
+    """Direction narrows a language match; without one every direction matches."""
+    r, label, labels = _directional_labels_resource()
+    assert set(r.objects_by_lang(label, "he")) == {
+        labels["plain"],
+        labels["rtl"],
+        labels["ltr"],
+    }
+    assert r.objects_by_lang(label, "he", direction="rtl") == [labels["rtl"]]
+    assert r.objects_by_lang(label, "en", direction="rtl") == []
+
+
+def test_objects_by_lang_direction_without_language(reset_metaresource):
+    """Direction alone selects every language-tagged literal with that direction."""
+    r, label, labels = _directional_labels_resource()
+    assert r.objects_by_lang(label, direction="ltr") == [labels["ltr"]]
+
+
+def test_dirlangstring_is_not_a_written_datatype(reset_metaresource):
+    """A directional literal's rdf:dirLangString is implied, like rdf:langString."""
+    r, label, labels = _directional_labels_resource()
+    assert r.objects_by_datatype(label) == []
+
+
+def test_classify_returns_triple_terms_unchanged(reset_metaresource):
+    """A triple term is a value, not a resource to classify."""
+    graph = Graph()
+    ex = Prefix("http://example.com/")
+    t = Triple(ex("a"), ex("b"), ex("c"))
+    assert pymantic.rdf.Resource.classify(graph, t) is t

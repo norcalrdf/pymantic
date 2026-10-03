@@ -200,8 +200,9 @@ All notable changes to pymantic are recorded here. The format follows
 - The W3C RDF 1.2 expected-failure list shrank by 49 tests: 24 N-Triples and
   N-Quads, 15 Turtle parser, and 10 Turtle writer round-trip and stable
   output.
-- `pyoxigraph` joined the `testing` extra, on CPython only, as the oracle
-  that compares graphs holding RDF 1.2 terms; rdflib cannot represent them.
+- `pyoxigraph` joined the `testing` extra, on CPython outside Pyodide, as the
+  oracle that compares graphs holding RDF 1.2 terms; rdflib cannot represent
+  them.
 
 ### Fixed
 

@@ -226,7 +226,8 @@ loaded into `pyoxigraph.Dataset`, canonicalized with
 terms keep rdflib, so no existing test changes.
 
 pyoxigraph joins the `testing` extra as
-`pyoxigraph>=0.5.11; platform_python_implementation == "CPython"`. PyPI has
+`pyoxigraph>=0.5.11; platform_python_implementation == "CPython" and sys_platform != "emscripten"`.
+Pyodide reports CPython, so the platform test keeps it out there. PyPI has
 wheels for CPython 3.10 to 3.14 and abi3 for 3.15, but none for PyPy 3.12,
 GraalPy or Pyodide. There, a test that needs the oracle skips with the reason
 "pyoxigraph, the RDF 1.2 oracle, is not available on this interpreter".

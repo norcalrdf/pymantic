@@ -159,9 +159,11 @@ and the list rows of high fan-out keys. Per triple: none.
 - `subjects()`, `predicates()` and `objects()` walk the distinct runs of the
   first column of SPO, POS and OSP, so a term with no remaining triples never
   appears.
-- A version counter is bumped on every add and remove. A `match` or
-  iteration generator checks it on each step and raises `RuntimeError` if
-  the graph changed anywhere, even after its last result. This is required
+- A version counter is bumped on every add and remove. A `match` with a
+  term unbound, or an iteration, checks it on each step and raises
+  `RuntimeError` if the graph changed anywhere, even after its last
+  result. A fully bound `match` is a membership test made when called, so
+  it needs no check, and the caller may remove its one triple. This is required
   because a merge rewrites the arrays under a live generator. It is
   stricter than the dicts and set it replaces, which raised only when the
   part being walked changed; see Behavior changes. A dataset-wide read
@@ -290,12 +292,13 @@ the index tests use them.
 - `Dataset.graphs` always lists the default graph, first. Iterating a
   dataset and `match(graph=None)` yield the default graph's quads first,
   then each named graph's in creation order.
-- Changing a graph in any way while a `match`, a lookup, `mapped_triples`
-  or an iteration over it is open raises `RuntimeError` on that
-  generator's next step, even after its last result; a dataset-wide read
-  raises when any of its graphs changes. Before, only a change to the dict
-  or set being walked did, so editing one subject while reading another
-  worked. Collect results with `list()` before changing the graph.
+- Changing a graph in any way while a `match` with a term left unbound, a
+  lookup, `mapped_triples` or an iteration over it is open raises
+  `RuntimeError` on that generator's next step, even after its last
+  result; a dataset-wide read raises when any of its graphs changes.
+  Before, only a change to the dict or set being walked did, so editing
+  one subject while reading another worked. Collect results with `list()`
+  before changing the graph.
 
 ## Testing
 

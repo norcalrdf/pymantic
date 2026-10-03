@@ -41,6 +41,8 @@ LINE = re.compile(r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+")
 class LineTriGTransformer(NTriplesTransformer):
     """Transform the tokenized Line-TriG into quads and empty graph markers."""
 
+    reads_quads = True
+
     def triple(self, children):
         subject, predicate, object_ = children
         return self.make_quad(subject, predicate, object_, None)
@@ -69,6 +71,7 @@ class LineTriGParser(LarkParser):
         """Parse a string or file-like object into a dataset, either the
         one provided or a new one."""
         tf = self.lark.options.transformer
+        tf._check_sink(dataset)
 
         try:
             if dataset is None:

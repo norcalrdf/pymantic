@@ -532,8 +532,17 @@ def test_nquads_parser_returns_a_dataset():
     assert isinstance(ds, Dataset)
 
 
-def test_nquads_parser_rejects_a_graph():
-    with pytest.raises(TypeError, match="Dataset"):
-        nquads_parser.parse(
-            "<http://example/s> <http://example/p> <http://example/o> .", Graph()
-        )
+@pytest.mark.parametrize(
+    "document",
+    [
+        "<http://example/s> <http://example/p> <http://example/o> .",
+        "",
+        "# only a comment\n",
+    ],
+    ids=["a quad", "empty", "comment only"],
+)
+@pytest.mark.parametrize("stream", [False, True], ids=["string", "stream"])
+def test_nquads_parser_rejects_a_graph(document, stream):
+    source = StringIO(document) if stream else document
+    with pytest.raises(TypeError, match="a Graph holds triples; use a Dataset"):
+        nquads_parser.parse(source, Graph())

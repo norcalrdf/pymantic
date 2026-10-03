@@ -21,6 +21,8 @@ from .ntriples import NTriplesTransformer, grammar
 class NQuadsTransformer(NTriplesTransformer):
     """Transform the tokenized nquads into RDF primitives."""
 
+    reads_quads = True
+
     def quad(self, children):
         # A statement without a graph label belongs to the default graph,
         # which pymantic represents as graph=None.

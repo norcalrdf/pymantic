@@ -152,3 +152,9 @@ def test_round_trip_keeps_empty_graphs_and_shared_blank_nodes():
     reparsed = linetrig_parser.parse(out.getvalue())
     assert isomorphic(original, reparsed)
     assert [g.uri for g in reparsed.graphs if len(g) == 0] == [EMPTY]
+
+
+@pytest.mark.parametrize("document", ["<http://e/s> <http://e/p> <http://e/o> .", ""])
+def test_parse_rejects_a_graph(document):
+    with pytest.raises(TypeError, match="a Graph holds triples; use a Dataset"):
+        linetrig_parser.parse(document, Graph())

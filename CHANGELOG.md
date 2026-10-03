@@ -109,8 +109,9 @@ All notable changes to pymantic are recorded here. The format follows
   to the one that was added but not necessarily the same object.
 - `Graph.add` and `Graph.remove` raise `TypeError` for anything that is not
   a triple of three terms, so a `Quad` can no longer be put in a `Graph`.
-  The N-Quads and JSON-LD parsers create a `Dataset` and raise `TypeError`
-  if given a `Graph`. `Dataset.addAll` likewise raises `TypeError` for
+  The N-Quads, JSON-LD and Line-TriG parsers create a `Dataset`, and
+  given a `Graph` they raise `TypeError` before reading anything, so an
+  empty document is refused too. `Dataset.addAll` likewise raises `TypeError` for
   anything that is not a quad.
 - `Graph()` without a name has `uri` `None` instead of `NamedNode("None")`.
 - `Dataset` keeps one term dictionary for all its graphs, so a blank node is

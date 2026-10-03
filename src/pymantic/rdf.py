@@ -205,6 +205,8 @@ class Resource(metaclass=MetaResource):
         Direction does not apply when lang is "" (bare literals)."""
         if lang == "":
             return self.bare_literals(predicate)
+        if direction is not None:
+            direction = direction.lower()
         return [
             t.object
             for t in self.graph.match(self.subject, predicate, None)
@@ -596,7 +598,7 @@ def literalize(graph, value, lang, datatype):
         isinstance(value, set)
         or isinstance(value, frozenset)
         or isinstance(value, list)
-        or (isinstance(value, tuple) and not isinstance(value, Literal))
+        or (isinstance(value, tuple) and not isinstance(value, (Literal, Triple)))
     ):
         return frozenset(objectify_value(graph, v, lang, datatype) for v in value)
     else:
@@ -604,10 +606,10 @@ def literalize(graph, value, lang, datatype):
 
 
 def objectify_value(graph, value, lang=None, datatype=None):
-    """Convert a single value into either a Literal or a Resource."""
+    """Convert a single value into a Literal, a Resource or a triple term."""
     if isinstance(value, BlankNode) or isinstance(value, NamedNode):
         return Resource.classify(graph, value)
-    elif isinstance(value, Literal) or isinstance(value, Resource):
+    elif isinstance(value, (Literal, Triple, Resource)):
         return value
     elif isinstance(value, str):
         return Literal(value, language=lang, datatype=datatype)
@@ -619,7 +621,7 @@ def check_objects(graph, value, lang, datatype, rdf_class):
     """Determine that value or the things in values are appropriate for the
     specified explicit object access key."""
     if isinstance(value, frozenset) or (
-        isinstance(value, tuple) and not isinstance(value, Literal)
+        isinstance(value, tuple) and not isinstance(value, (Literal, Triple))
     ):
         for v in value:
             if (

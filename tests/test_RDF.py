@@ -993,3 +993,27 @@ def test_classify_returns_triple_terms_unchanged(reset_metaresource):
     ex = Prefix("http://example.com/")
     t = Triple(ex("a"), ex("b"), ex("c"))
     assert pymantic.rdf.Resource.classify(graph, t) is t
+
+
+def test_objects_by_lang_direction_is_case_insensitive(reset_metaresource):
+    """Direction matches regardless of case, as Literal lowercases it."""
+    r, label, labels = _directional_labels_resource()
+    assert r.objects_by_lang(label, "he", direction="RTL") == [labels["rtl"]]
+
+
+@pytest.mark.parametrize(
+    "wrap",
+    [lambda t: t, lambda t: [t], lambda t: {t}],
+    ids=["bare", "list", "set"],
+)
+def test_set_triple_term_object(reset_metaresource, wrap):
+    """A triple term is one object, never a sequence of three."""
+    graph = Graph()
+    ex = Prefix("http://example.com/")
+    r = pymantic.rdf.Resource(graph, ex("s"))
+    t = Triple(ex("a"), ex("b"), ex("c"))
+    r[ex("p")] = wrap(t)
+    assert list(graph.match(r.subject, ex("p"), None)) == [
+        Triple(r.subject, ex("p"), t)
+    ]
+    assert list(r[ex("p")]) == [t]

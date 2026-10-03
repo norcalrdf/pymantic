@@ -255,6 +255,8 @@ def turtle_repr(
             # rdf:langString datatype is implicit.
             validate_language(node.language)
             name = turtle_string_escape(node.value) + "@" + node.language
+            if node.direction:
+                name += "--" + node.direction
         elif node.datatype == XSD_STRING:
             # Simple string.
             name = turtle_string_escape(node.value)
@@ -268,6 +270,22 @@ def turtle_repr(
             name += "^^" + turtle_repr(
                 node.datatype, profile, None, None, used_prefixes=used_prefixes
             )
+    elif node.interfaceName == "Triple":
+        name = (
+            "<<( "
+            + " ".join(
+                turtle_repr(
+                    part,
+                    profile,
+                    name_map,
+                    bnode_name_maker,
+                    base,
+                    used_prefixes=used_prefixes,
+                )
+                for part in node
+            )
+            + " )>>"
+        )
     return name
 
 
@@ -538,6 +556,19 @@ def object_list(object_names, indent, column):
     return (",\n" + " " * column).join(object_names)
 
 
+def triple_term_blank_nodes(objects):
+    """The blank nodes at any depth inside the triple terms among objects."""
+    found = set()
+    pending = [o for o in objects if o.interfaceName == "Triple"]
+    while pending:
+        for part in pending.pop():
+            if part.interfaceName == "BlankNode":
+                found.add(part)
+            elif part.interfaceName == "Triple":
+                pending.append(part)
+    return found
+
+
 class _TurtleWriter:
     """Writes one graph to a stream as Turtle.
 
@@ -571,6 +602,13 @@ class _TurtleWriter:
         # How many triples have each node as their object, which both
         # planners need; counted once here.
         references = graph.object_counts()
+        # Turtle cannot write [ ... ] or ( ... ) inside a triple term, so a
+        # blank node in one is always named by its label there. Counting it
+        # as referenced twice more keeps the planners from writing it inline,
+        # as a collection or as an unlabelled [] subject anywhere else, which
+        # would lose its link to that label.
+        for node in triple_term_blank_nodes(references):
+            references[node] += 2
         self.inline, self.as_subject, self.consumed = plan_collections(
             graph, references
         )
@@ -755,10 +793,10 @@ def serialize_turtle(
 
     With ``stable``, blank nodes are instead named by
     :func:`pymantic.compare.canonical_labels`, and the objects of one
-    predicate are sorted: IRIs and literals by their Turtle name, then blank
-    nodes by their molecule's canonical form and their position in it (see
-    docs/graph-comparison.rst). A blank node referenced exactly once is
-    written inline as ``[ ... ]`` at that reference (see
+    predicate are sorted: IRIs, literals and triple terms by their Turtle
+    name, then blank nodes by their molecule's canonical form and their
+    position in it (see docs/graph-comparison.rst). A blank node referenced
+    exactly once is written inline as ``[ ... ]`` at that reference (see
     :func:`plan_inline_blank_nodes`), and only the prefixes the output uses
     are declared. The same graph then always produces the same bytes, and
     editing one blank node's content changes only the lines of its molecule.

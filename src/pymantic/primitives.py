@@ -548,7 +548,7 @@ class Graph:
                 self._check_index()
             intern = self._dictionary.intern
             if self._index.add(intern(s), intern(p), intern(o)):
-                self._changed()
+                self._changed(1)
         return self
 
     def remove(self, triple):
@@ -564,7 +564,7 @@ class Graph:
             if ids not in self._index:
                 raise KeyError(triple)
             self._index.remove(*ids)
-            self._changed()
+            self._changed(-1)
             self._compact()
         return self
 
@@ -626,7 +626,7 @@ class Graph:
             doomed = list(self._index.match(*pattern))
             if doomed:
                 self._index.remove_many(doomed)
-                self._changed()
+                self._changed(-len(doomed))
                 self._compact()
         return self
 
@@ -650,7 +650,7 @@ class Graph:
             self._check_index()
         intern = self._dictionary.intern
         add = self._index.add
-        added = False
+        added = 0
         try:
             for triple in triples:
                 if len(triple) != 3:
@@ -659,10 +659,10 @@ class Graph:
                     )
                 s, p, o = triple
                 if add(intern(s), intern(p), intern(o)):
-                    added = True
+                    added += 1
         finally:
             if added:
-                self._changed()
+                self._changed(added)
 
     def merge(self, graph):
         """Returns a new Graph which is a concatenation of this graph and the
@@ -817,11 +817,14 @@ class Graph:
         the index, so it calls this to fail as every other read does."""
         len(self._index)
 
-    def _changed(self):
-        """Tell the owning dataset, if any, that this graph changed, so its
-        dataset-wide generators stop."""
-        if self._owner is not None:
-            self._owner._version += 1
+    def _changed(self, added):
+        """Tell the owning dataset, if any, that this graph changed by
+        `added` triples (negative for removes), so its dataset-wide
+        generators stop and its count of quads stays right."""
+        owner = self._owner
+        if owner is not None:
+            owner._version += 1
+            owner._quad_count += added
 
     def _compact(self):
         """Let the dictionary's owner compact it after a remove."""
@@ -861,6 +864,10 @@ class Dataset:
         # walking every graph checks this too: a change to another graph
         # can compact the dictionary and hand a freed id to a new term.
         self._version = 0
+        # The quads in every graph, kept as they are added and removed so
+        # that the compaction check after each remove costs no sum over
+        # what may be thousands of graphs.
+        self._quad_count = 0
 
     def add(self, quad):
         s, p, o, graph = quad
@@ -869,6 +876,7 @@ class Dataset:
             index = self._index_for_add(graph)
             if index.add(intern(s), intern(p), intern(o)):
                 self._version += 1
+                self._quad_count += 1
 
     def remove(self, quad):
         with self._lock:
@@ -878,6 +886,7 @@ class Dataset:
             index, ids = found
             index.remove(*ids)
             self._version += 1
+            self._quad_count -= 1
             self._maybe_compact()
 
     def add_graph(self, graph, named=None):
@@ -896,6 +905,7 @@ class Dataset:
             for s, p, o in triples:
                 if index.add(intern(s), intern(p), intern(o)):
                     self._version += 1
+                    self._quad_count += 1
 
     def remove_graph(self, graph_or_uri):
         """Remove a named graph, given it or its name. Views of it from
@@ -907,7 +917,9 @@ class Dataset:
             name_id = self._dictionary.lookup(name)
             if name_id is None or name_id not in self._graphs:
                 raise KeyError(name)
-            self._graphs.pop(name_id).detach()
+            index = self._graphs.pop(name_id)
+            self._quad_count -= len(index)
+            index.detach()
             self._version += 1
             self._maybe_compact()
 
@@ -980,6 +992,7 @@ class Dataset:
                     doomed = list(index.match(*pattern))
                     if doomed:
                         index.remove_many(doomed)
+                        self._quad_count -= len(doomed)
                         removed = True
                 if removed:
                     self._version += 1
@@ -1007,13 +1020,11 @@ class Dataset:
             s, p, o, graph = quad
             if self._index_for_add(graph).add(intern(s), intern(p), intern(o)):
                 self._version += 1
+                self._quad_count += 1
 
     def __len__(self):
         with self._lock:
-            return self._len()
-
-    def _len(self):
-        return sum(len(index) for index in self._graphs.values())
+            return self._quad_count
 
     def __contains__(self, item):
         """A `Quad` is looked up in its graph, a `Triple` in the default
@@ -1116,7 +1127,7 @@ class Dataset:
         # one live term per graph name.
         dictionary = self._dictionary
         names = len(self._graphs) - 1
-        if len(dictionary) > 6 * self._len() + names:
+        if len(dictionary) > 6 * self._quad_count + names:
             live = {name_id for name_id in self._graphs if name_id is not None}
             for index in self._graphs.values():
                 live.update(index.ids())

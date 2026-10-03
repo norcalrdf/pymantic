@@ -451,6 +451,8 @@ def check_mapped_quads(ds):
 
 def check_dataset_against_reference(ds, ref, names, rng):
     assert len(ds) == len(ref)
+    # The running count compaction reads, against the indexes themselves.
+    assert ds._quad_count == sum(len(index) for index in ds._graphs.values())
     quads = list(ds)
     assert len(quads) == len(ref)
     assert set(quads) == set(ref)
@@ -486,6 +488,34 @@ def check_dataset_against_reference(ds, ref, names, rng):
     assert len(ds._dictionary) <= 6 * len(ds) + len(names)
 
 
+def edit_a_view(rng, ds, ref):
+    """Add, remove or removeMatches through the view of a random graph,
+    keeping `ref` in step."""
+    view = rng.choice(ds.graphs)
+    name = view.uri
+    in_view = [q for q in ref if q.graph == name]
+    roll = rng.random()
+    if roll < 0.3:
+        t = random_triple(rng)
+        view.add(t)
+        ref.setdefault(Quad(*t, name), None)
+    elif roll < 0.5:
+        triples = [random_triple(rng) for _ in range(rng.randrange(1, 6))]
+        view.addAll(triples)
+        for t in triples:
+            ref.setdefault(Quad(*t, name), None)
+    elif roll < 0.8:
+        if in_view:
+            q = rng.choice(in_view)
+            view.remove(Triple(q.subject, q.predicate, q.object))
+            del ref[q]
+    else:
+        s, p, o = random_quad_pattern(rng, in_view)
+        view.removeMatches(s, p, o)
+        for q in matching(in_view, s, p, o):
+            del ref[q]
+
+
 @pytest.mark.parametrize("seed", range(10))
 def test_dataset_agrees_with_a_reference_model(index_constants, seed):
     rng = random.Random(seed)
@@ -501,11 +531,11 @@ def test_dataset_agrees_with_a_reference_model(index_constants, seed):
 
     for _ in range(1000):
         roll = rng.random()
-        if roll < 0.4:
+        if roll < 0.35:
             q = random_quad(rng)
             ds.add(q)
             add(q)
-        elif roll < 0.65:
+        elif roll < 0.6:
             if ref and rng.random() < 0.8:
                 q = rng.choice(list(ref))
                 ds.remove(q)
@@ -516,12 +546,14 @@ def test_dataset_agrees_with_a_reference_model(index_constants, seed):
                     continue
                 with pytest.raises(KeyError):
                     ds.remove(q)
-        elif roll < 0.8:
+        elif roll < 0.73:
             s, p, o = random_quad_pattern(rng, ref)
             graph = rng.choice(DS_GRAPHS)
             assert ds.removeMatches(s, p, o, graph) is ds
             for q in matching_quads(ref, s, p, o, graph):
                 del ref[q]
+        elif roll < 0.8:
+            edit_a_view(rng, ds, ref)
         elif roll < 0.87:
             name = rng.choice(DS_NAMES)
             if name in names:

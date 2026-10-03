@@ -242,9 +242,9 @@ Test-driven throughout, on `tox -e py314` while working.
 Docs: `CHANGELOG.md`, `docs/graph-comparison.rst` (flattening) and
 `docs/line-trig.rst`. Line-TriG inherits both features, which makes it the
 only format pymantic reads and writes that holds every RDF 1.2 dataset:
-N-Quads cannot write an empty named graph, N-Triples and Turtle hold one
-graph, and Turtle still lacks reifiers and annotations. `line-trig.rst` says
-so.
+N-Quads cannot write an empty named graph, and N-Triples and Turtle hold one
+graph. (Turtle's missing reifiers and annotations are shorthand for triples it
+can already write, so they cost no expressiveness.) `line-trig.rst` says so.
 
 ## Future work
 

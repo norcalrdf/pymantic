@@ -215,6 +215,22 @@ all, so its statements, labels and digests are unchanged.
 
 Test-driven throughout, on `tox -e py314` while working.
 
+**Oracle.** The W3C harness and the compare-manifest cross-check convert
+graphs to rdflib and use `rdflib.compare.isomorphic`, but rdflib 7.6.0
+cannot represent triple terms or directions (its parser rejects both).
+Graphs containing either are compared with pyoxigraph instead, a Rust
+implementation with RDF 1.2 support: both sides are written as N-Quads,
+loaded into `pyoxigraph.Dataset`, canonicalized with
+`CanonicalizationAlgorithm.UNSTABLE` and compared with `==`. pymantic's own
+`compare` is never the oracle for its own output. Graphs with only RDF 1.1
+terms keep rdflib, so no existing test changes.
+
+pyoxigraph joins the `testing` extra as
+`pyoxigraph>=0.5.11; platform_python_implementation == "CPython"`. PyPI has
+wheels for CPython 3.10 to 3.14 and abi3 for 3.15, but none for PyPy 3.12,
+GraalPy or Pyodide. There, a test that needs the oracle skips with the reason
+"pyoxigraph, the RDF 1.2 oracle, is not available on this interpreter".
+
 1. **Golden digests, first commit.** On b4eacd5, before any change, record
    `term_code` for a spread of literals (simple, typed, language-tagged,
    escapes, non-ASCII) and the `stable=True` N-Triples, N-Quads and Turtle
@@ -257,3 +273,6 @@ can already write, so they cost no expressiveness.) `line-trig.rst` says so.
   triple-term ids.
 - JSON-LD `@direction` through pyld's `rdfDirection` option
   (`'i18n-datatype'` or `'compound-literal'`).
+- A Jena 6.1+ cross-check script (Jena has RDF 1.2 syntax since 6.1.0),
+  run by hand, not in CI. Its graph comparison CLI is unverified: the tool
+  docs list `rdfdiff`.

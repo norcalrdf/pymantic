@@ -382,10 +382,9 @@ def list_cells(graph, head):
 
 def inline_candidates(graph, references, inline, as_subject, consumed):
     """Blank nodes that may be written as [ ... ]: the object of exactly one
-    triple (``references`` counts the triples each term is the object of),
-    no part in a collection (``inline``, ``as_subject`` and ``consumed`` are
-    from :func:`plan_collections`), and no rdf:first or rdf:rest of their
-    own."""
+    triple (``references`` as for :func:`plan_collections`), no part in a
+    collection (``inline``, ``as_subject`` and ``consumed`` are from
+    :func:`plan_collections`), and no rdf:first or rdf:rest of their own."""
     candidates = set()
     for node, count in references.items():
         if count != 1 or getattr(node, "interfaceName", None) != "BlankNode":
@@ -476,10 +475,10 @@ def plan_inline_blank_nodes(
     which collections are nested too deep to write with ( ... ).
 
     A blank node qualifies when it is the object of exactly one triple
-    (``references`` counts the triples each term is the object of), takes
-    no part in a collection (``inline``, ``as_subject`` and ``consumed`` are
-    from :func:`plan_collections`) and has no rdf:first or rdf:rest of its
-    own. It is written where its one reference is, so that reference must
+    (``references`` as for :func:`plan_collections`), takes no part in a
+    collection (``inline``, ``as_subject`` and ``consumed`` are from
+    :func:`plan_collections`) and has no rdf:first or rdf:rest of its own.
+    It is written where its one reference is, so that reference must
     itself be written: walking the objects of every other subject, through
     collections, claims each qualifying node the walk meets and then walks
     on from it. A qualifying node the walk never reaches is in a cycle whose

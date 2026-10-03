@@ -6,6 +6,7 @@ import random
 import sys
 import threading
 
+from pymantic import triple_index
 from pymantic.primitives import (
     XSD_STRING,
     BlankNode,
@@ -16,7 +17,6 @@ from pymantic.primitives import (
     Quad,
     Triple,
 )
-from pymantic import triple_index
 
 IRIS = [NamedNode("")] + [NamedNode("http://e/%d" % i) for i in range(5)]
 BLANKS = [BlankNode() for _ in range(4)]

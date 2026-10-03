@@ -22,7 +22,13 @@ from pymantic.parsers.jsonld import (  # noqa: E402
     RemoteContextsDisabledError,
     UnsafePyLDLoader,
 )
-from pymantic.primitives import Dataset, Graph, Literal, NamedNode, Quad  # noqa: E402
+from pymantic.primitives import (  # noqa: E402
+    Dataset,
+    Graph,
+    Literal,
+    NamedNode,
+    Quad,
+)
 
 NAME_IRI = "http://ex/name"
 XSD_STRING = NamedNode("http://www.w3.org/2001/XMLSchema#string")

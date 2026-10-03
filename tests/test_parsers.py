@@ -578,3 +578,45 @@ def test_nquads_triple_term_and_direction_in_a_named_graph():
     assert isinstance(q.object, Triple)
     assert isinstance(q.object.subject, BlankNode)
     assert q.object.object == Literal("c", "ar", direction="rtl")
+
+
+RDF_TYPE = NamedNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+
+
+def test_turtle_triple_term():
+    g = turtle_parser.parse(
+        '@prefix : <http://ex/> . :r :reifies <<( [] a <<( :a :b "c"@he--rtl )>> )>> .'
+    )
+    (t,) = g
+    inner = t.object
+    assert isinstance(inner.subject, BlankNode)
+    assert inner.predicate == RDF_TYPE
+    assert inner.object.object == Literal("c", "he", direction="rtl")
+
+
+def test_turtle_triple_term_in_object_list_shares_blank_node():
+    g = turtle_parser.parse(
+        "@prefix : <http://ex/> . _:x :p <<( _:x :q :o )>>, :d ; :r :e ."
+    )
+    (with_term,) = [t for t in g if isinstance(t.object, Triple)]
+    assert with_term.object.subject is with_term.subject
+    assert {t.object for t in g if not isinstance(t.object, Triple)} == {
+        NamedNode("http://ex/d"),
+        NamedNode("http://ex/e"),
+    }
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        ":r :p <<( [ :q :o ] :b :c )>> .",  # property list inside
+        ":r :p <<( :a :b ( 1 2 ) )>> .",  # collection inside
+        "<<( :a :b :c )>> :p :o .",  # triple term as subject
+        ':r :p "c"@en--up .',
+        ':r :p "c"@en--RTL .',
+        ":r :p << :a :b :c >> .",  # reified triple, out of scope
+    ],
+)
+def test_turtle_rejects(bad):
+    with pytest.raises(Exception):
+        turtle_parser.parse("@prefix : <http://ex/> . " + bad)

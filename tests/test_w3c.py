@@ -34,7 +34,6 @@ import pytest
 import random
 import rdflib
 from rdflib.collection import Collection
-from rdflib.compare import isomorphic
 from rdflib.namespace import RDF, Namespace
 import re
 import signal
@@ -48,7 +47,7 @@ from pymantic.serializers import (
     serialize_ntriples,
     serialize_turtle,
 )
-from tests.oracle import to_rdflib
+from tests import oracle
 
 W3C_DIR = pathlib.Path(__file__).parent / "w3c"
 TOP_LEVEL_MANIFESTS = [
@@ -218,8 +217,10 @@ def parse_action(entry):
 
 def assert_isomorphic(graph, entry):
     expected = ntriples_parser.parse_string(entry.result.read_bytes())
-    assert isomorphic(
-        to_rdflib(graph), to_rdflib(expected)
+    if oracle.has_rdf12_terms(graph) or oracle.has_rdf12_terms(expected):
+        oracle.require_oracle()
+    assert oracle.isomorphic(
+        graph, expected
     ), "graph parsed from %s differs from %s" % (entry.action.name, entry.result.name)
 
 
@@ -306,11 +307,24 @@ def shuffled_relabelled(graph, seed):
     def term(node):
         if isinstance(node, BlankNode):
             return fresh.setdefault(node, BlankNode())
+        if isinstance(node, Triple):
+            return Triple(term(node.subject), term(node.predicate), term(node.object))
         return node
 
     triples = [Triple(term(s), term(p), term(o)) for s, p, o in graph]
     rng.shuffle(triples)
     return Graph().addAll(triples)
+
+
+def test_shuffled_relabelled_relabels_inside_triple_terms():
+    graph = turtle_parser.parse(
+        "@prefix : <http://ex/> . _:x :p <<( :a :q <<( _:x :r :o )>> )>> ."
+    )
+    (original,) = graph
+    (copy,) = shuffled_relabelled(graph, 1)
+    nested = copy.object.object.subject
+    assert copy.subject is not original.subject
+    assert nested is copy.subject
 
 
 @pytest.mark.parametrize(

@@ -55,6 +55,10 @@ object_list: object ("," object)*
 ?subject: iri | blank_node | collection
 ?predicate: iri
 ?object: iri | blank_node | collection | blank_node_property_list | literal
+       | triple_term
+triple_term: "<<(" tt_subject verb tt_object ")>>"
+?tt_subject: iri | blank_node
+?tt_object: iri | blank_node | literal | triple_term
 ?literal: rdf_literal | numeric_literal | boolean_literal
 blank_node_property_list: "[" predicate_object_list "]"
 collection: "(" object* ")"
@@ -74,7 +78,7 @@ IRIREF: "<" (/[^\x00-\x20<>"{}|^`\\]/ | UCHAR)* ">"
 PNAME_NS: PN_PREFIX? ":"
 PNAME_LN: PNAME_NS PN_LOCAL
 BLANK_NODE_LABEL: "_:" (PN_CHARS_U | /[0-9]/) ((PN_CHARS | ".")* PN_CHARS)?
-LANGTAG: "@" /[a-zA-Z]+/ ("-" /[a-zA-Z0-9]+/)*
+LANGTAG: "@" /[a-zA-Z]+/ ("-" /[a-zA-Z0-9]+/)* ("--" ("ltr" | "rtl"))?
 INTEGER: /[+-]?[0-9]+/
 DECIMAL: /[+-]?[0-9]*/ "." /[0-9]+/
 DOUBLE: /[+-]?/ (/[0-9]+/ "." /[0-9]*/ EXPONENT
@@ -121,10 +125,20 @@ def unpack_node(value):
     A blank node property list or collection transforms to a generator that
     yields the triples it contains and then, last, the node that stands for
     it. A plain term comes with no triples."""
-    if isinstance(value, (NamedNode, Literal, BlankNode)):
+    if isinstance(value, (NamedNode, Literal, BlankNode, Triple)):
         return [], value
     *triples, node = value
     return triples, node
+
+
+def verb_predicate(verb):
+    """The predicate a verb stands for: the keyword ``a`` arrives as a token
+    and means rdf:type."""
+    if isinstance(verb, Token):
+        if verb.value != "a":
+            raise ValueError(verb)
+        return RDF_TYPE
+    return verb
 
 
 def unpack_predicate_object_list(subject, pol):
@@ -132,10 +146,7 @@ def unpack_predicate_object_list(subject, pol):
     yield from triples
 
     for predicate, objects in grouper(pol, 2):
-        if isinstance(predicate, Token):
-            if predicate.value != "a":
-                raise ValueError(predicate)
-            predicate = RDF_TYPE
+        predicate = verb_predicate(predicate)
 
         for object_ in objects:
             triples, object_ = unpack_node(object_)
@@ -243,6 +254,10 @@ class TurtleTransformer(BaseParser, Transformer):
             prev_node = this_bn
 
         yield prev_node
+
+    def triple_term(self, children):
+        subject, verb, object_ = children
+        return self.make_triple(subject, verb_predicate(verb), object_)
 
     def numeric_literal(self, children):
         (numeric,) = children

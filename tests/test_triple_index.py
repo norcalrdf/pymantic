@@ -629,3 +629,79 @@ def test_tuple_rows_are_untracked_after_a_collection():
     assert not any(gc.is_tracked(row) for row in tuples)
     # Only the rows past LIST_DEGREE are lists: here the 20 predicates.
     assert len(lists) == 20
+
+
+class RowWithAWriter(list):
+    """A list row whose iterator runs `write` just before handing out the
+    value at `position`: a writer thread landing between a reader's
+    version check and its next fetch."""
+
+    def __init__(self, row, position, write):
+        super().__init__(row)
+        self.position = position
+        self.write = write
+
+    def __iter__(self):
+        values = list.__iter__(self)
+        row = self
+
+        class Values:
+            fetched = 0
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                if self.fetched == row.position:
+                    row.write()
+                self.fetched += 1
+                return next(values)
+
+        return Values()
+
+
+def merge_an_add(index):
+    index.add(1, 2, 10_000)
+    list(index.match(1, 2, None))
+
+
+@pytest.mark.parametrize(
+    "write",
+    [
+        lambda index: index.remove(1, 2, 0),
+        lambda index: index.remove_many([(1, 2, 0), (1, 2, 1)]),
+        merge_an_add,
+    ],
+    ids=["remove", "remove_many", "merge"],
+)
+@pytest.mark.parametrize("position", [1, "last"])
+def test_a_change_between_check_and_fetch_of_a_list_row_raises(write, position):
+    # Without a version check after each fetch and after the loop, a remove
+    # here shifts the list under the reader, which then ends normally
+    # having skipped a triple that is still present.
+    index = TripleIndex()
+    count = triple_index.LIST_DEGREE + 10
+    for o in range(count):
+        index.add(1, 2, o)
+    list(index.match(1, None, None))
+    rows = index._orders[triple_index._SPO]
+    assert type(rows[1]) is list
+    at = count - 1 if position == "last" else position
+    rows[1] = RowWithAWriter(rows[1], at, lambda: write(index))
+    with pytest.raises(RuntimeError, match="changed during iteration"):
+        list(index.match(1, None, None))
+
+
+@pytest.mark.parametrize("change", ["add", "remove"])
+def test_a_key_walk_reports_a_change_as_the_index_s(change):
+    index = TripleIndex()
+    for o in range(3):
+        index.add(1, 2, o)
+    it = iter(index)
+    next(it)
+    if change == "add":
+        index.add(9, 9, 9)
+    else:
+        index.remove(1, 2, 2)
+    with pytest.raises(RuntimeError, match="TripleIndex changed during iteration"):
+        next(it)

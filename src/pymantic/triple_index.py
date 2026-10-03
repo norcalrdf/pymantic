@@ -167,7 +167,9 @@ class TripleIndex:
         self._orders = ({}, {}, {})
         # Packed keys of adds not yet in the orderings, in add order.
         self._pending = []
-        # Bumped on every change; live generators compare against it.
+        # Bumped on every change, before the change is made: a reader
+        # checks it after fetching each value, so a value fetched while a
+        # row is being changed in place is never yielded.
         self._version = 0
         self._detached = False
         # How many times pending adds were folded into the orderings.
@@ -201,9 +203,9 @@ class TripleIndex:
         keys = self._keys
         if key in keys:
             return False
+        self._version += 1
         self._pending.append(key)
         keys[key] = None
-        self._version += 1
         return True
 
     def remove(self, s, p, o):
@@ -214,6 +216,7 @@ class TripleIndex:
         key = s << 64 | p << 32 | o
         if key not in self._keys:
             raise KeyError((s, p, o))
+        self._version += 1
         # Merge first so the triple is in the orderings, not pending.
         if self._pending:
             self._merge()
@@ -222,7 +225,6 @@ class TripleIndex:
         _delete(spo, s, p << 32 | o)
         _delete(pos, p, o << 32 | s)
         _delete(osp, o, s << 32 | p)
-        self._version += 1
 
     def remove_many(self, spos):
         """Remove several triples, rebuilding each row they touch once.
@@ -241,6 +243,7 @@ class TripleIndex:
             doomed[key] = None
         if not doomed:
             return
+        self._version += 1
         if self._pending:
             self._merge()
         for key in doomed:
@@ -255,7 +258,6 @@ class TripleIndex:
                 values.add(k & _MASK64)
             for a, values in gone.items():
                 _remove_values(rows, a, values)
-        self._version += 1
 
     def match(self, s, p, o):
         """Yield the (s, p, o) triples matching a pattern; None is a wildcard.
@@ -330,6 +332,10 @@ class TripleIndex:
 
     def _merge(self):
         """Move the pending adds into the orderings."""
+        # A merge inserts into list rows in place but needs no version bump
+        # of its own: a row reader merges before it starts, so every add a
+        # later merge inserts was made after the reader started, and each
+        # add bumped the version before the merge could touch a row.
         pending = self._pending
         self._pending = []
         if len(pending) > max(FOLD_MIN, len(self._keys) // FOLD_DIVISOR):
@@ -349,33 +355,44 @@ class TripleIndex:
     # Every read does its work on the index (merging pending adds, finding
     # the row) when it is called, not on its generator's first next(), so a
     # caller that holds a lock around the call covers everything that
-    # changes the index. The generator checks the version before its first
-    # result too, since it may outlive a change or a detach before then.
-    # After every yield it checks again before reading on, so a change is
-    # caught even after the last result, as dict iteration does.
+    # changes the index. A generator walks a live list row or the live keys
+    # dict without a lock, so it checks the version after fetching each
+    # value and before yielding it, and once more when the walk ends:
+    # every change bumps the version before it touches a row, so a value
+    # fetched mid-change, or a walk cut short by a row shrinking under it,
+    # is caught. The check after the walk also catches a change made after
+    # the last result, as dict iteration does.
 
     def _lookup(self, s, p, o):
         found = _in_range(s, p, o) and (s << 64 | p << 32 | o) in self._keys
         return self._one((s, p, o) if found else None, self._version)
 
     def _one(self, spo, version):
-        if self._version != version:
-            raise _changed(self)
         if spo is not None:
-            yield spo
             if self._version != version:
                 raise _changed(self)
+            yield spo
+        if self._version != version:
+            raise _changed(self)
 
     def _walk_keys(self):
         return self._keys_from(self._version)
 
     def _keys_from(self, version):
+        try:
+            for key in self._keys:
+                if self._version != version:
+                    raise _changed(self)
+                yield (key >> 64, (key >> 32) & _MASK32, key & _MASK32)
+        except RuntimeError:
+            # The dict's own "changed size during iteration", when another
+            # thread changes it between checks: every change bumps the
+            # version first, so report it as the index's change.
+            if self._version != version:
+                raise _changed(self) from None
+            raise
         if self._version != version:
             raise _changed(self)
-        for key in self._keys:
-            yield (key >> 64, (key >> 32) & _MASK32, key & _MASK32)
-            if self._version != version:
-                raise _changed(self)
 
     def _scan(self, order, a, b):
         """The triples in the row of `a` in `order` whose second column is
@@ -389,25 +406,23 @@ class TripleIndex:
         return self._row_triples(order, a, row, self._version)
 
     def _row_triples(self, order, a, row, version):
-        if self._version != version:
-            raise _changed(self)
-        # A list row may change in place under a live generator; the version
-        # check after each yield stops before reading it again.
         if order == _SPO:
             for v in row:
-                yield (a, v >> 32, v & _MASK32)
                 if self._version != version:
                     raise _changed(self)
+                yield (a, v >> 32, v & _MASK32)
         elif order == _POS:
             for v in row:
-                yield (v & _MASK32, a, v >> 32)
                 if self._version != version:
                     raise _changed(self)
+                yield (v & _MASK32, a, v >> 32)
         else:
             for v in row:
-                yield (v >> 32, v & _MASK32, a)
                 if self._version != version:
                     raise _changed(self)
+                yield (v >> 32, v & _MASK32, a)
+        if self._version != version:
+            raise _changed(self)
 
     def _distinct(self, order):
         if self._pending:
@@ -415,9 +430,9 @@ class TripleIndex:
         return self._ids_from(sorted(self._orders[order]), self._version)
 
     def _ids_from(self, ids, version):
-        if self._version != version:
-            raise _changed(self)
         for a in ids:
-            yield a
             if self._version != version:
                 raise _changed(self)
+            yield a
+        if self._version != version:
+            raise _changed(self)

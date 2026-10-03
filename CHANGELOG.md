@@ -114,6 +114,8 @@ All notable changes to pymantic are recorded here. The format follows
   empty document is refused too. `Dataset.addAll` likewise raises `TypeError` for
   anything that is not a quad.
 - `Graph()` without a name has `uri` `None` instead of `NamedNode("None")`.
+- `in` on a `Graph` or `Dataset` is `False` for a statement holding an
+  unhashable term, such as a list, instead of raising `TypeError`.
 - `Dataset` keeps one term dictionary for all its graphs, so a blank node is
   the same node in every graph it appears in, including as a graph name. An
   empty named graph persists until `remove_graph`. `Triple in dataset`

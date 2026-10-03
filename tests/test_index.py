@@ -1238,3 +1238,15 @@ def test_add_all_raises_the_source_error_when_the_partial_batch_fails_too():
         g.addAll(failing_after(items, 2))
     assert isinstance(raised.value.__context__, TypeError)
     assert list(g) == [Triple(S, P, Literal("a"))]
+
+
+def test_a_statement_with_an_unhashable_term_is_not_contained():
+    # No graph can hold an unhashable term, so `in` answers False as it
+    # does for anything else that is not a statement.
+    g = Graph().add(Triple(S, P, Literal("a")))
+    ds = Dataset()
+    ds.add(Quad(S, P, Literal("a"), GA))
+    assert ((S, P, ["a"]) in g) is False
+    assert (([], P, Literal("a")) in ds) is False
+    assert ((S, P, Literal("a"), {}) in ds) is False
+    assert ((S, {}, Literal("a"), GA) in ds) is False

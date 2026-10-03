@@ -692,7 +692,11 @@ class Graph:
         if not isinstance(item, tuple) or len(item) != 3:
             return False
         with self._lock:
-            ids = self._ids(item)
+            try:
+                ids = self._ids(item)
+            except TypeError:
+                # An unhashable term, which no graph holds.
+                return False
             if ids is None:
                 self._check_index()
                 return False
@@ -1050,7 +1054,11 @@ class Dataset:
         elif len(item) != 4:
             return False
         with self._lock:
-            found = self._quad_ids(item)
+            try:
+                found = self._quad_ids(item)
+            except TypeError:
+                # An unhashable term, which no dataset holds.
+                return False
             return found is not None and found[1] in found[0]
 
     def __iter__(self):

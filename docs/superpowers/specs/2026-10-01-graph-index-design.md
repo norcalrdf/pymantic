@@ -283,6 +283,8 @@ the index tests use them.
 - `match` and the graph return the graph's own instance of each term, equal
   to the one added.
 - `Graph()` without a name has `uri` `None`, not `NamedNode("None")`.
+- `in` on a `Graph` or `Dataset` is `False` for a statement holding an
+  unhashable term, instead of raising `TypeError`.
 - The N-Quads parser returns a `Dataset`. Passing it a `Graph` raises
   `TypeError`; `Graph.add` rejects `Quad`s.
 - `Dataset`: reads no longer create graphs; `remove_graph` works; empty named

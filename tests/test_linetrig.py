@@ -5,8 +5,17 @@ import pytest
 
 from pymantic.compare import isomorphic
 from pymantic.parsers import linetrig_parser
-from pymantic.primitives import BlankNode, Dataset, Graph, NamedNode, Quad
+from pymantic.primitives import (
+    BlankNode,
+    Dataset,
+    Graph,
+    Literal,
+    NamedNode,
+    Quad,
+    Triple,
+)
 from pymantic.serializers import serialize_linetrig
+from tests.oracle import isomorphic as oracle_isomorphic, require_oracle
 
 S = NamedNode("http://e/s")
 P = NamedNode("http://e/p")
@@ -171,3 +180,24 @@ def test_triple_terms_and_direction_round_trip():
     assert out.getvalue() == line.replace("_:r", quad.subject.toNT()).replace(
         "_:s", inner.subject.toNT()
     )
+
+
+def test_linetrig_round_trips_every_rdf12_feature():
+    require_oracle()
+    reifies = NamedNode("http://e/reifies")
+    q = NamedNode("http://e/q")
+    r_prop = NamedNode("http://e/r")
+    r, s = BlankNode(), BlankNode()
+    inner = Triple(s, q, Literal("v", language="he", direction="rtl"))
+    outer = Triple(s, P, inner)
+    original = Dataset()
+    original.add_graph(Graph(), named=EMPTY)
+    original.add(Quad(r, reifies, outer, G))
+    original.add(Quad(s, r_prop, r, G))
+    original.add(Quad(S, P, Literal("w", language="ar", direction="rtl"), None))
+    out = StringIO()
+    serialize_linetrig(original, out)
+    reparsed = linetrig_parser.parse(out.getvalue())
+    # Compared as N-Quads, which has no empty named graphs; check that one apart.
+    assert oracle_isomorphic(original, reparsed)
+    assert [g.uri for g in reparsed.graphs if len(g) == 0] == [EMPTY]

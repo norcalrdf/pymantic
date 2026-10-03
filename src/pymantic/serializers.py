@@ -102,17 +102,20 @@ def serialize_linetrig(dataset, f):
     """Serialize some dataset to f as Line-TriG, the line-oriented TriG
     profile defined in docs/line-trig.rst: default graph triples first, then
     each named graph's triples, then ``G { }`` for each empty named graph."""
-    graphs = sorted(dataset.graphs, key=lambda graph: graph.uri is not None)
-    for graph in graphs:
+    empty = []
+    # Dataset.graphs lists the default graph first.
+    for graph in dataset.graphs:
+        if graph.uri is None:
+            start, end = "", " .\n"
+        elif len(graph) == 0:
+            empty.append(graph.uri)
+            continue
+        else:
+            start, end = graph.uri.toNT() + " { ", " . }\n"
         for triple in graph:
-            line = " ".join(term.toNT() for term in triple) + " ."
-            if graph.uri is None:
-                f.write(line + "\n")
-            else:
-                f.write(graph.uri.toNT() + " { " + line + " }\n")
-    for graph in graphs:
-        if graph.uri is not None and len(graph) == 0:
-            f.write(graph.uri.toNT() + " { }\n")
+            f.write(start + " ".join(term.toNT() for term in triple) + end)
+    for name in empty:
+        f.write(name.toNT() + " { }\n")
 
 
 def default_bnode_name_generator():

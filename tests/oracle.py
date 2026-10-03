@@ -82,9 +82,10 @@ def to_pyoxigraph(graph_or_dataset):
 def isomorphic(a, b):
     """Whether two pymantic graphs, or two datasets, are isomorphic, by
     pyoxigraph when either holds RDF 1.2 terms and by rdflib otherwise. The
-    rdflib path compares graphs only; a caller holding RDF 1.2 terms calls
-    :func:`require_oracle` first."""
+    rdflib path compares graphs only. Without pyoxigraph, a comparison that
+    needs it skips the calling test."""
     if has_rdf12_terms(a) or has_rdf12_terms(b):
+        require_oracle()
         return to_pyoxigraph(a) == to_pyoxigraph(b)
     if isinstance(a, Dataset) or isinstance(b, Dataset):
         raise TypeError("the rdflib oracle compares graphs, not datasets")

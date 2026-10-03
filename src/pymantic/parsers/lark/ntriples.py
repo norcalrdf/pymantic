@@ -116,6 +116,7 @@ class NTriplesTransformer(BaseParser, Transformer):
         return self.make_triple(subject, predicate, object_)
 
     def triple_term(self, children):
+        # Kept apart from triple: the Line-TriG transformer overrides triple to build quads.
         subject, predicate, object_ = children
         return self.make_triple(subject, predicate, object_)
 

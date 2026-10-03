@@ -166,10 +166,11 @@ class _TripleTermNode(BlankNode):
     BlankNode so every blank node test in this module covers it."""
 
 
-def has_blank_node(triple_term):
+def _has_blank_node(triple_term):
+    """Whether a blank node occurs at any depth inside triple_term."""
     return any(
         isinstance(part, BlankNode)
-        or (isinstance(part, Triple) and has_blank_node(part))
+        or (isinstance(part, Triple) and _has_blank_node(part))
         for part in triple_term
     )
 
@@ -203,7 +204,7 @@ def statements(graph_or_dataset):
         try:
             return keys[term]
         except KeyError:
-            if isinstance(term, Triple) and has_blank_node(term):
+            if isinstance(term, Triple) and _has_blank_node(term):
                 s, p, o = key(term[0]), key(term[1]), key(term[2])
                 helper = keys[term] = _TripleTermNode()
                 helper_items.append((helper, TT_SUBJECT, s, ""))

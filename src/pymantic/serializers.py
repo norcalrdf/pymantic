@@ -556,7 +556,7 @@ def object_list(object_names, indent, column):
     return (",\n" + " " * column).join(object_names)
 
 
-def triple_term_blank_nodes(objects):
+def _triple_term_blank_nodes(objects):
     """The blank nodes at any depth inside the triple terms among objects."""
     found = set()
     pending = [o for o in objects if o.interfaceName == "Triple"]
@@ -607,7 +607,7 @@ class _TurtleWriter:
         # as referenced twice more keeps the planners from writing it inline,
         # as a collection or as an unlabelled [] subject anywhere else, which
         # would lose its link to that label.
-        for node in triple_term_blank_nodes(references):
+        for node in _triple_term_blank_nodes(references):
             references[node] += 2
         self.inline, self.as_subject, self.consumed = plan_collections(
             graph, references

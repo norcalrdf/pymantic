@@ -9,7 +9,7 @@ Re-record only when a change is meant to move digests; the test then shows
 exactly which.
 
     python -m tests.stable_digests --write   # record the fixture
-    python -m tests.stable_digests           # count entries that differ
+    python -m tests.stable_digests           # list differences; exit 1 if any
 """
 
 import argparse
@@ -17,6 +17,7 @@ import hashlib
 from io import StringIO
 import json
 import pathlib
+import sys
 
 from pymantic.compare import term_code, term_key
 from pymantic.primitives import XSD, Dataset, Literal, NamedNode
@@ -108,11 +109,14 @@ def main():
     changed = sorted(
         k for k, v in then["outputs"].items() if now["outputs"].get(k) != v
     )
-    if now["term_codes"] != then["term_codes"]:
+    codes_differ = now["term_codes"] != then["term_codes"]
+    if codes_differ:
         print("term codes differ")
     print("%d of %d outputs differ" % (len(changed), len(then["outputs"])))
     for test_id in changed[:10]:
         print("  " + test_id)
+    if changed or codes_differ:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

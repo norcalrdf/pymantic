@@ -4,6 +4,7 @@ import pathlib
 import pytest
 import random
 import sys
+import threading
 
 from pymantic.primitives import (
     XSD_STRING,
@@ -1002,3 +1003,56 @@ def test_a_term_freed_and_reused_during_dataset_iteration_is_never_read(read):
     ds.add(Quad(S, P, Literal("new"), GC))
     with pytest.raises(RuntimeError, match="Dataset changed during iteration"):
         next(it)
+
+
+def test_a_dataset_and_its_views_share_one_lock():
+    ds = three_graph_dataset()
+    assert all(view._lock is ds._lock for view in ds.graphs)
+    assert Graph()._lock is not Graph()._lock
+
+
+def finishes(call):
+    """Run call in a thread and say whether it finished: a call that waits
+    on a lock it already holds never does."""
+    done = []
+    thread = threading.Thread(target=lambda: done.append(call()), daemon=True)
+    thread.start()
+    thread.join(timeout=10)
+    return bool(done)
+
+
+@pytest.mark.parametrize("target", [GB, GC])
+def test_add_graph_reads_a_view_of_the_same_dataset(target):
+    ds = three_graph_dataset()
+    assert finishes(lambda: ds.add_graph(view_of(ds, GB), named=target))
+    assert {q for q in ds if q.graph == target} == {
+        Quad(S, P, Literal("b1"), target),
+        Quad(S, P, Literal("b2"), target),
+    }
+
+
+def test_add_all_reads_this_graph_or_a_view_of_the_same_dataset():
+    g = Graph().add(Triple(S, P, Literal("a")))
+    assert finishes(lambda: g.addAll(g))
+    assert list(g) == [Triple(S, P, Literal("a"))]
+    ds = three_graph_dataset()
+    view = view_of(ds, GA)
+    assert finishes(lambda: view.addAll(view_of(ds, GB)))
+    assert finishes(lambda: ds.addAll(Quad(*t, GC) for t in view))
+    assert {q.object for q in ds.match(graph=GC)} == {
+        Literal(v) for v in ("a1", "a2", "b1", "b2")
+    }
+
+
+def test_add_all_adds_a_stream_longer_than_a_batch():
+    triples = [Triple(S, P, Literal(str(i))) for i in range(2500)]
+    assert list(Graph().addAll(iter(triples))) == triples
+    quads = [Quad(*t, GA) for t in triples]
+    assert list(Dataset().addAll(iter(quads))) == quads
+
+
+def test_add_all_keeps_the_triples_before_a_bad_one():
+    g = Graph()
+    with pytest.raises(TypeError):
+        g.addAll([Triple(S, P, Literal("a")), Quad(S, P, Literal("b"), GA)])
+    assert list(g) == [Triple(S, P, Literal("a"))]

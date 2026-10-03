@@ -208,6 +208,34 @@ N-Quads cannot carry an empty named graph
 ([RDF 1.2 N-Quads](https://www.w3.org/TR/rdf12-n-quads/) says so in a
 note), so a dataset written as N-Quads loses them. Line-TriG keeps them.
 
+### Threads
+
+Free-threaded Python is coming, and even with the GIL a thread can switch
+between any two bytecodes. Reads change shared state here: the first read
+after adds merges or folds the pending adds into the rows, and interning
+and compaction change the dictionary. So two threads reading one graph
+could corrupt it without a lock.
+
+- One `threading.Lock` per standalone `Graph` and one per `Dataset`, shared
+  by the dataset's graph views, as they share its dictionary. It lives in
+  `Graph` and `Dataset`; `TermDictionary` and `TripleIndex` stay lock-free
+  building blocks, and the lock belongs to whoever owns the dictionary,
+  because interning and compaction reach across every index that shares it.
+- Held for every change (`add`, `remove`, `removeMatches`, `add_graph`,
+  `remove_graph`, with their interning and compaction), for `len`, `in`,
+  `object_counts` and the argument-free `subjects()`, `predicates()` and
+  `objects()`, and for the start of every generator read: the pattern's
+  ids, the merge of pending adds, and capturing what the read walks. The
+  index's readers do that work when called, not on their first `next()`,
+  so the lock covers it. Never held while a generator yields.
+- Never taken while held. `add_graph` reads its source graph before taking
+  the lock, since the source may be a view of the same dataset; `addAll`
+  reads its source between batches of 1024, each added in one hold. So a
+  plain `Lock` is enough.
+- The contract: each call is atomic; any mix of threads reading and
+  changing one graph or dataset leaves it consistent; there are no
+  multi-call transactions, and `addAll` is atomic per batch, not per call.
+
 ### Line-TriG
 
 Datasets with empty named graphs and shared blank nodes need test fixtures,

@@ -44,6 +44,11 @@ All notable changes to pymantic are recorded here. The format follows
   and `Graph.predicate_objects(subject)` yields a subject's (predicate,
   object) pairs. None of them builds a `Triple`, so they are cheaper than
   reading the same positions from `match`.
+- `Graph` and `Dataset` can be shared between threads, with or without the
+  GIL. Each call holds a lock (one per graph, or one per dataset shared by
+  its graph views) while it changes the graph or starts a read, so every
+  call is atomic. There are no transactions across calls, and `addAll`
+  adds in batches of 1024, each atomic.
 
 ### Security
 

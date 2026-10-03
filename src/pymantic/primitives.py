@@ -24,6 +24,7 @@ import collections
 import datetime
 import itertools
 from operator import itemgetter
+import threading
 
 from pymantic.serializers import iri_escape, nt_escape, validate_language
 from pymantic.term_dictionary import TermDictionary
@@ -34,6 +35,11 @@ import pymantic.uri_schemes as uri_schemes
 _new_triple = tuple.__new__
 
 _DATASET_CHANGED = "Dataset changed during iteration"
+
+# addAll adds this many triples or quads per hold of the lock, so a long
+# stream neither takes the lock per triple nor holds it while the stream
+# produces the next ones.
+_ADD_BATCH = 1024
 
 
 def is_language(lang):
@@ -450,7 +456,10 @@ class Graph:
 
     Terms are stored once in a `TermDictionary` and triples as id triples in
     a `TripleIndex`, so the graph keeps no `Triple` objects: reads build
-    fresh ones from the graph's own term instances."""
+    fresh ones from the graph's own term instances.
+
+    Each call is atomic with respect to other threads: a lock is held while
+    a change is made and while a read starts, never while a read yields."""
 
     def __init__(self, graph_uri=None):
         if graph_uri is not None and not isinstance(graph_uri, NamedNode):
@@ -463,6 +472,10 @@ class Graph:
         # reference to itself so the graph is freed without the cycle
         # collector.
         self._owner = None
+        # Guards the dictionary and the index. Whoever owns the dictionary
+        # owns the lock: a dataset's views share the dataset's. No method
+        # takes it while holding it, so it need not be reentrant.
+        self._lock = threading.Lock()
         self._actions = set()
 
     @classmethod
@@ -474,6 +487,7 @@ class Graph:
         graph._dictionary = dictionary
         graph._index = index
         graph._owner = owner
+        graph._lock = owner._lock
         graph._actions = set()
         return graph
 
@@ -491,14 +505,15 @@ class Graph:
         graph instance it was called on."""
         if len(triple) != 3:
             raise TypeError("a Graph holds triples; parse N-Quads into a Dataset")
-        if self._owner is not None:
-            # A view of a removed graph must not intern into its dataset's
-            # dictionary before the index refuses the add.
-            self._check_index()
-        intern = self._dictionary.intern
         s, p, o = triple
-        if self._index.add(intern(s), intern(p), intern(o)):
-            self._changed()
+        with self._lock:
+            if self._owner is not None:
+                # A view of a removed graph must not intern into its
+                # dataset's dictionary before the index refuses the add.
+                self._check_index()
+            intern = self._dictionary.intern
+            if self._index.add(intern(s), intern(p), intern(o)):
+                self._changed()
         return self
 
     def remove(self, triple):
@@ -506,15 +521,16 @@ class Graph:
         graph instance it was called on."""
         if len(triple) != 3:
             raise TypeError("a Graph holds triples; parse N-Quads into a Dataset")
-        ids = self._ids(triple)
-        if ids is None:
-            self._check_index()
-            raise KeyError(triple)
-        if ids not in self._index:
-            raise KeyError(triple)
-        self._index.remove(*ids)
-        self._changed()
-        self._compact()
+        with self._lock:
+            ids = self._ids(triple)
+            if ids is None:
+                self._check_index()
+                raise KeyError(triple)
+            if ids not in self._index:
+                raise KeyError(triple)
+            self._index.remove(*ids)
+            self._changed()
+            self._compact()
         return self
 
     def match(self, subject=None, predicate=None, object=None):
@@ -539,44 +555,78 @@ class Graph:
         graph first saw its terms; an unbound pattern yields in insertion
         order.
         """
-        pattern = _pattern_ids(self._dictionary, subject, predicate, object)
-        if pattern is None:
-            self._check_index()
-            return
-        terms = self._dictionary.terms
-        if None not in pattern:
-            # A membership test rather than the index's version-checked
-            # generator, so the caller may remove the one match while
-            # this generator is still open.
-            if pattern in self._index:
+        with self._lock:
+            pattern = _pattern_ids(self._dictionary, subject, predicate, object)
+            if pattern is None:
+                self._check_index()
+                return
+            terms = self._dictionary.terms
+            if None not in pattern:
+                # A membership test rather than the index's version-checked
+                # generator, so the caller may remove the one match while
+                # this generator is still open.
+                if pattern not in self._index:
+                    return
                 s, p, o = pattern
-                yield _new_triple(Triple, (terms[s], terms[p], terms[o]))
+                found = _new_triple(Triple, (terms[s], terms[p], terms[o]))
+            else:
+                found = None
+                ids = self._index.match(*pattern)
+        if found is not None:
+            yield found
             return
-        for s, p, o in self._index.match(*pattern):
+        for s, p, o in ids:
             yield _new_triple(Triple, (terms[s], terms[p], terms[o]))
 
     def removeMatches(self, subject=None, predicate=None, object=None):
         """This method removes those triples in the current graph which match
         the given arguments. An argument of None matches any term, as in
         match(), so calling with no arguments removes every triple."""
-        pattern = _pattern_ids(self._dictionary, subject, predicate, object)
-        if pattern is None:
-            self._check_index()
-            return self
-        # Collected first: removing ends any generator over the index.
-        doomed = list(self._index.match(*pattern))
-        if doomed:
-            self._index.remove_many(doomed)
-            self._changed()
-            self._compact()
+        with self._lock:
+            pattern = _pattern_ids(self._dictionary, subject, predicate, object)
+            if pattern is None:
+                self._check_index()
+                return self
+            # Collected first: removing ends any generator over the index.
+            doomed = list(self._index.match(*pattern))
+            if doomed:
+                self._index.remove_many(doomed)
+                self._changed()
+                self._compact()
         return self
 
     def addAll(self, graph_or_triples):
         """Imports the graph or set of triples in to this graph. This method
-        returns the graph instance it was called on."""
-        for triple in graph_or_triples:
-            self.add(triple)
+        returns the graph instance it was called on.
+
+        The triples are added in batches, each in one hold of the lock, so
+        another thread may see some batches before the rest. The source is
+        read between batches, never under the lock, so it may be this graph
+        or another graph of the same dataset."""
+        triples = iter(graph_or_triples)
+        while batch := list(itertools.islice(triples, _ADD_BATCH)):
+            with self._lock:
+                self._add_batch(batch)
         return self
+
+    def _add_batch(self, triples):
+        if self._owner is not None:
+            self._check_index()
+        intern = self._dictionary.intern
+        add = self._index.add
+        added = False
+        try:
+            for triple in triples:
+                if len(triple) != 3:
+                    raise TypeError(
+                        "a Graph holds triples; parse N-Quads into a Dataset"
+                    )
+                s, p, o = triple
+                if add(intern(s), intern(p), intern(o)):
+                    added = True
+        finally:
+            if added:
+                self._changed()
 
     def merge(self, graph):
         """Returns a new Graph which is a concatenation of this graph and the
@@ -591,18 +641,22 @@ class Graph:
     def __contains__(self, item):
         if not isinstance(item, tuple) or len(item) != 3:
             return False
-        ids = self._ids(item)
-        if ids is None:
-            self._check_index()
-            return False
-        return ids in self._index
+        with self._lock:
+            ids = self._ids(item)
+            if ids is None:
+                self._check_index()
+                return False
+            return ids in self._index
 
     def __len__(self):
-        return len(self._index)
+        with self._lock:
+            return len(self._index)
 
     def __iter__(self):
-        terms = self._dictionary.terms
-        for s, p, o in self._index:
+        with self._lock:
+            terms = self._dictionary.terms
+            ids = iter(self._index)
+        for s, p, o in ids:
             yield _new_triple(Triple, (terms[s], terms[p], terms[o]))
 
     def toArray(self):
@@ -617,8 +671,10 @@ class Graph:
         This builds no `Triple`, and calls `fn` once per distinct term
         rather than once per position, so it is the fast path for reading a
         whole graph through a function of its terms."""
-        mapped = _MappedTerms(fn, self._dictionary.terms)
-        for s, p, o in self._index:
+        with self._lock:
+            mapped = _MappedTerms(fn, self._dictionary.terms)
+            ids = iter(self._index)
+        for s, p, o in ids:
             yield mapped[s], mapped[p], mapped[o]
 
     def object_counts(self):
@@ -626,10 +682,11 @@ class Graph:
         triples it is the object of, equal to counting the objects while
         iterating the graph. The index already holds each object's triples
         together, so this reads their number without visiting them."""
-        terms = self._dictionary.terms
-        return collections.Counter(
-            {terms[o]: n for o, n in self._index.object_counts().items()}
-        )
+        with self._lock:
+            terms = self._dictionary.terms
+            return collections.Counter(
+                {terms[o]: n for o, n in self._index.object_counts().items()}
+            )
 
     def subjects(self, predicate=None, object=None):
         """With no arguments, returns a list of the distinct subjects in the
@@ -640,8 +697,9 @@ class Graph:
         This builds no `Triple`, so it is cheaper than reading the subjects
         out of :meth:`match`."""
         if predicate is None and object is None:
-            terms = self._dictionary.terms
-            return [terms[i] for i in self._index.subjects()]
+            with self._lock:
+                terms = self._dictionary.terms
+                return [terms[i] for i in self._index.subjects()]
         return self._matching_terms(0, None, predicate, object)
 
     def predicates(self, subject=None, object=None):
@@ -653,8 +711,9 @@ class Graph:
         This builds no `Triple`, so it is cheaper than reading the
         predicates out of :meth:`match`."""
         if subject is None and object is None:
-            terms = self._dictionary.terms
-            return [terms[i] for i in self._index.predicates()]
+            with self._lock:
+                terms = self._dictionary.terms
+                return [terms[i] for i in self._index.predicates()]
         return self._matching_terms(1, subject, None, object)
 
     def objects(self, subject=None, predicate=None):
@@ -666,8 +725,9 @@ class Graph:
         This builds no `Triple`, so it is the fast path for reading the
         values of one subject's property."""
         if subject is None and predicate is None:
-            terms = self._dictionary.terms
-            return [terms[i] for i in self._index.objects()]
+            with self._lock:
+                terms = self._dictionary.terms
+                return [terms[i] for i in self._index.objects()]
         return self._matching_terms(2, subject, predicate, None)
 
     def predicate_objects(self, subject):
@@ -682,24 +742,28 @@ class Graph:
         return self._predicate_objects(subject)
 
     def _predicate_objects(self, subject):
-        pattern = _pattern_ids(self._dictionary, subject, None, None)
-        if pattern is None:
-            self._check_index()
-            return
-        terms = self._dictionary.terms
-        for _, p, o in self._index.match(*pattern):
+        with self._lock:
+            pattern = _pattern_ids(self._dictionary, subject, None, None)
+            if pattern is None:
+                self._check_index()
+                return
+            terms = self._dictionary.terms
+            ids = self._index.match(*pattern)
+        for _, p, o in ids:
             yield terms[p], terms[o]
 
     def _matching_terms(self, column, subject, predicate, object):
         """Yields the term in position `column` of each triple matching the
         pattern, which leaves at least one position unbound, so the index's
         version-checked generator serves every pattern here."""
-        pattern = _pattern_ids(self._dictionary, subject, predicate, object)
-        if pattern is None:
-            self._check_index()
-            return
-        terms = self._dictionary.terms
-        for ids in self._index.match(*pattern):
+        with self._lock:
+            pattern = _pattern_ids(self._dictionary, subject, predicate, object)
+            if pattern is None:
+                self._check_index()
+                return
+            terms = self._dictionary.terms
+            found = self._index.match(*pattern)
+        for ids in found:
             yield terms[ids[column]]
 
     def _ids(self, triple):
@@ -708,6 +772,8 @@ class Graph:
         s, p, o = triple
         ids = (lookup(s), lookup(p), lookup(o))
         return None if None in ids else ids
+
+    # The methods below expect the caller to hold the lock.
 
     def _check_index(self):
         """Raise RuntimeError if this is a view of a graph its dataset has
@@ -745,9 +811,13 @@ class Dataset:
     `TermDictionary`, so a term is one id across the whole dataset. Each
     graph is its own `TripleIndex`, keyed by the id of its name; the default
     graph is keyed by None and always exists. A named graph exists from when
-    it is first added until `remove_graph`, holding triples or not."""
+    it is first added until `remove_graph`, holding triples or not.
+
+    Each call is atomic with respect to other threads, as for `Graph`; the
+    dataset and its views share one lock."""
 
     def __init__(self):
+        self._lock = threading.Lock()
         self._dictionary = TermDictionary()
         self._graphs = {None: TripleIndex()}
         # Bumped on every change to any graph, through the dataset or a
@@ -758,19 +828,21 @@ class Dataset:
 
     def add(self, quad):
         s, p, o, graph = quad
-        intern = self._dictionary.intern
-        index = self._index_for_add(graph)
-        if index.add(intern(s), intern(p), intern(o)):
-            self._version += 1
+        with self._lock:
+            intern = self._dictionary.intern
+            index = self._index_for_add(graph)
+            if index.add(intern(s), intern(p), intern(o)):
+                self._version += 1
 
     def remove(self, quad):
-        found = self._quad_ids(quad)
-        if found is None:
-            raise KeyError(quad)
-        index, ids = found
-        index.remove(*ids)
-        self._version += 1
-        self._maybe_compact()
+        with self._lock:
+            found = self._quad_ids(quad)
+            if found is None:
+                raise KeyError(quad)
+            index, ids = found
+            index.remove(*ids)
+            self._version += 1
+            self._maybe_compact()
 
     def add_graph(self, graph, named=None):
         """Copy the triples of `graph` into the graph called `named`, or
@@ -779,11 +851,15 @@ class Dataset:
         name = named if named is not None else graph.uri
         if name is None:
             raise ValueError("Graph must be named")
-        intern = self._dictionary.intern
-        index = self._index_for_add(name)
-        for s, p, o in graph:
-            if index.add(intern(s), intern(p), intern(o)):
-                self._version += 1
+        # Read before taking the lock: `graph` may be a view of this
+        # dataset, whose reads take the same lock.
+        triples = list(graph)
+        with self._lock:
+            intern = self._dictionary.intern
+            index = self._index_for_add(name)
+            for s, p, o in triples:
+                if index.add(intern(s), intern(p), intern(o)):
+                    self._version += 1
 
     def remove_graph(self, graph_or_uri):
         """Remove a named graph, given it or its name. Views of it from
@@ -791,27 +867,29 @@ class Dataset:
         name = graph_or_uri.uri if isinstance(graph_or_uri, Graph) else graph_or_uri
         if name is None:
             raise ValueError("the default graph cannot be removed")
-        name_id = self._dictionary.lookup(name)
-        if name_id is None or name_id not in self._graphs:
-            raise KeyError(name)
-        self._graphs.pop(name_id).detach()
-        self._version += 1
-        self._maybe_compact()
+        with self._lock:
+            name_id = self._dictionary.lookup(name)
+            if name_id is None or name_id not in self._graphs:
+                raise KeyError(name)
+            self._graphs.pop(name_id).detach()
+            self._version += 1
+            self._maybe_compact()
 
     @property
     def graphs(self):
         """A list of `Graph` views of the dataset's graphs, default graph
         first. Editing a view edits the dataset."""
-        terms = self._dictionary.terms
-        return [
-            Graph._view(
-                None if name_id is None else terms[name_id],
-                self._dictionary,
-                index,
-                self,
-            )
-            for name_id, index in self._graphs.items()
-        ]
+        with self._lock:
+            terms = self._dictionary.terms
+            return [
+                Graph._view(
+                    None if name_id is None else terms[name_id],
+                    self._dictionary,
+                    index,
+                    self,
+                )
+                for name_id, index in self._graphs.items()
+            ]
 
     def match(self, subject=None, predicate=None, object=None, graph=None):
         """Yield the quads matching a pattern, None being a wildcard. A
@@ -819,24 +897,36 @@ class Dataset:
         default graph's quads have `graph` None. Matching every graph with
         a term unbound raises RuntimeError, as iterating the dataset does,
         if any graph changes while the generator is open."""
-        pattern = _pattern_ids(self._dictionary, subject, predicate, object)
-        if pattern is None:
-            return
-        terms = self._dictionary.terms
-        if None not in pattern:
-            # Membership tests, as in Graph.match, so the caller may remove
-            # a match while this generator is open. All done before the
-            # first yield: a remove can compact the dictionary and later
-            # adds reuse the freed ids, so the pattern's ids are only good
-            # until then.
-            triple = tuple(terms[i] for i in pattern)
-            names = [name for name, index in self._indexes(graph) if pattern in index]
+        with self._lock:
+            pattern = _pattern_ids(self._dictionary, subject, predicate, object)
+            if pattern is None:
+                return
+            terms = self._dictionary.terms
+            if None not in pattern:
+                # Membership tests, as in Graph.match, so the caller may
+                # remove a match while this generator is open. All done
+                # before the first yield: a remove can compact the
+                # dictionary and later adds reuse the freed ids, so the
+                # pattern's ids are only good until then.
+                triple = tuple(terms[i] for i in pattern)
+                names = [
+                    name for name, index in self._indexes(graph) if pattern in index
+                ]
+            else:
+                names = None
+                # Each graph's read starts here, under the lock; the
+                # dataset's version stops the walk if any graph changes.
+                parts = [
+                    (name, index.match(*pattern))
+                    for name, index in self._indexes(graph)
+                ]
+                version = self._version
+        if names is not None:
             for name in names:
                 yield _new_triple(Quad, (*triple, name))
             return
-        version = self._version
-        for name, index in self._indexes(graph):
-            for s, p, o in index.match(*pattern):
+        for name, ids in parts:
+            for s, p, o in ids:
                 yield _new_triple(Quad, (terms[s], terms[p], terms[o], name))
                 if graph is None and self._version != version:
                     raise RuntimeError(_DATASET_CHANGED)
@@ -844,28 +934,42 @@ class Dataset:
     def removeMatches(self, subject=None, predicate=None, object=None, graph=None):
         """This method removes those triples in the current graph which match
         the given arguments."""
-        pattern = _pattern_ids(self._dictionary, subject, predicate, object)
-        if pattern is not None:
-            removed = False
-            for _, index in self._indexes(graph):
-                # Collected first: removing ends any generator over the index.
-                doomed = list(index.match(*pattern))
-                if doomed:
-                    index.remove_many(doomed)
-                    removed = True
-            if removed:
-                self._version += 1
-                self._maybe_compact()
+        with self._lock:
+            pattern = _pattern_ids(self._dictionary, subject, predicate, object)
+            if pattern is not None:
+                removed = False
+                for _, index in self._indexes(graph):
+                    # Collected first: removing ends any generator over the
+                    # index.
+                    doomed = list(index.match(*pattern))
+                    if doomed:
+                        index.remove_many(doomed)
+                        removed = True
+                if removed:
+                    self._version += 1
+                    self._maybe_compact()
         return self
 
     def addAll(self, dataset_or_quads):
         """Imports the graph or set of triples in to this graph. This method
-        returns the graph instance it was called on."""
-        for quad in dataset_or_quads:
-            self.add(quad)
+        returns the graph instance it was called on.
+
+        As with `Graph.addAll`, the quads are added in batches, each in one
+        hold of the lock, and the source is read between batches."""
+        quads = iter(dataset_or_quads)
+        while batch := list(itertools.islice(quads, _ADD_BATCH)):
+            with self._lock:
+                intern = self._dictionary.intern
+                for s, p, o, graph in batch:
+                    if self._index_for_add(graph).add(intern(s), intern(p), intern(o)):
+                        self._version += 1
         return self
 
     def __len__(self):
+        with self._lock:
+            return self._len()
+
+    def _len(self):
         return sum(len(index) for index in self._graphs.values())
 
     def __contains__(self, item):
@@ -877,14 +981,17 @@ class Dataset:
             item = (*item, None)
         elif len(item) != 4:
             return False
-        found = self._quad_ids(item)
-        return found is not None and found[1] in found[0]
+        with self._lock:
+            found = self._quad_ids(item)
+            return found is not None and found[1] in found[0]
 
     def __iter__(self):
-        terms = self._dictionary.terms
-        version = self._version
-        for name, index in self._indexes(None):
-            for s, p, o in index:
+        with self._lock:
+            terms = self._dictionary.terms
+            parts = [(name, iter(index)) for name, index in self._indexes(None)]
+            version = self._version
+        for name, ids in parts:
+            for s, p, o in ids:
                 yield _new_triple(Quad, (terms[s], terms[p], terms[o], name))
                 if self._version != version:
                     raise RuntimeError(_DATASET_CHANGED)
@@ -902,17 +1009,23 @@ class Dataset:
         This builds no `Quad`, and calls `fn` once per distinct term across
         the whole dataset, graph names included, so it is the fast path for
         reading a whole dataset through a function of its terms."""
-        mapped = _MappedTerms(fn, self._dictionary.terms)
-        version = self._version
-        for name_id, index in self._graphs.items():
+        with self._lock:
+            mapped = _MappedTerms(fn, self._dictionary.terms)
             # An empty graph yields nothing, so its name is not mapped.
-            if not len(index):
-                continue
+            parts = [
+                (name_id, iter(index))
+                for name_id, index in self._graphs.items()
+                if len(index)
+            ]
+            version = self._version
+        for name_id, ids in parts:
             name = None if name_id is None else mapped[name_id]
-            for s, p, o in index:
+            for s, p, o in ids:
                 yield mapped[s], mapped[p], mapped[o], name
                 if self._version != version:
                     raise RuntimeError(_DATASET_CHANGED)
+
+    # The methods below expect the caller to hold the lock.
 
     def _index_for_add(self, name):
         """The index of the graph called `name`, created if it is new."""
@@ -960,7 +1073,7 @@ class Dataset:
         # one live term per graph name.
         dictionary = self._dictionary
         names = len(self._graphs) - 1
-        if len(dictionary) > 6 * len(self) + names:
+        if len(dictionary) > 6 * self._len() + names:
             live = {name_id for name_id in self._graphs if name_id is not None}
             for index in self._graphs.values():
                 live.update(index.ids())

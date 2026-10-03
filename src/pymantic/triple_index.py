@@ -346,43 +346,51 @@ class TripleIndex:
             _insert(pos, (k >> 32) & _MASK32, o << 32 | s)
             _insert(osp, o, k >> 32)
 
-    # Each generator checks for detach on its first next(), since it may
-    # have been created before the detach. After every yield it checks the
-    # version before reading on, so a change is caught even after the last
-    # result, as dict iteration does.
+    # Every read does its work on the index (merging pending adds, finding
+    # the row) when it is called, not on its generator's first next(), so a
+    # caller that holds a lock around the call covers everything that
+    # changes the index. The generator checks the version before its first
+    # result too, since it may outlive a change or a detach before then.
+    # After every yield it checks again before reading on, so a change is
+    # caught even after the last result, as dict iteration does.
 
     def _lookup(self, s, p, o):
-        if self._detached:
-            raise RuntimeError(_DETACHED)
-        version = self._version
-        if _in_range(s, p, o) and (s << 64 | p << 32 | o) in self._keys:
-            yield (s, p, o)
+        found = _in_range(s, p, o) and (s << 64 | p << 32 | o) in self._keys
+        return self._one((s, p, o) if found else None, self._version)
+
+    def _one(self, spo, version):
+        if self._version != version:
+            raise _changed(self)
+        if spo is not None:
+            yield spo
             if self._version != version:
                 raise _changed(self)
 
     def _walk_keys(self):
-        if self._detached:
-            raise RuntimeError(_DETACHED)
-        version = self._version
+        return self._keys_from(self._version)
+
+    def _keys_from(self, version):
+        if self._version != version:
+            raise _changed(self)
         for key in self._keys:
             yield (key >> 64, (key >> 32) & _MASK32, key & _MASK32)
             if self._version != version:
                 raise _changed(self)
 
     def _scan(self, order, a, b):
-        """Yield the triples in the row of `a` in `order` whose second
-        column is `b`, or all of them if `b` is None."""
-        if self._detached:
-            raise RuntimeError(_DETACHED)
+        """The triples in the row of `a` in `order` whose second column is
+        `b`, or all of them if `b` is None."""
         if self._pending:
             self._merge()
-        version = self._version
-        row = self._orders[order].get(a)
-        if row is None:
-            return
-        if b is not None:
+        row = self._orders[order].get(a, ())
+        if b is not None and row:
             lo = b << 32
             row = row[bisect_left(row, lo) : bisect_left(row, lo + _STEP32)]
+        return self._row_triples(order, a, row, self._version)
+
+    def _row_triples(self, order, a, row, version):
+        if self._version != version:
+            raise _changed(self)
         # A list row may change in place under a live generator; the version
         # check after each yield stops before reading it again.
         if order == _SPO:
@@ -402,12 +410,14 @@ class TripleIndex:
                     raise _changed(self)
 
     def _distinct(self, order):
-        if self._detached:
-            raise RuntimeError(_DETACHED)
         if self._pending:
             self._merge()
-        version = self._version
-        for a in sorted(self._orders[order]):
+        return self._ids_from(sorted(self._orders[order]), self._version)
+
+    def _ids_from(self, ids, version):
+        if self._version != version:
+            raise _changed(self)
+        for a in ids:
             yield a
             if self._version != version:
                 raise _changed(self)

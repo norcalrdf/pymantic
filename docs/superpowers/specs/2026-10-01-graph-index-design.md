@@ -287,7 +287,9 @@ the index tests use them.
   graphs persist; `Triple in dataset` checks only the default graph;
   `__contains__` returns a `bool`; `add_graph` copies, so the passed `Graph`
   is not the dataset's graph.
-- `Dataset.graphs` always lists the default graph, first.
+- `Dataset.graphs` always lists the default graph, first. Iterating a
+  dataset and `match(graph=None)` yield the default graph's quads first,
+  then each named graph's in creation order.
 - Changing a graph in any way while a `match`, a lookup, `mapped_triples`
   or an iteration over it is open raises `RuntimeError` on that
   generator's next step, even after its last result; a dataset-wide read

@@ -120,7 +120,9 @@ All notable changes to pymantic are recorded here. The format follows
   checks only the default graph, a `Quad` is checked in its own graph, and
   `in` returns a `bool`. `add_graph` copies the graph's triples in, so later
   edits to the `Graph` passed do not reach the dataset. `Dataset.graphs`
-  lists the default graph first, always.
+  lists the default graph first, always, and iterating a dataset or
+  `match` with `graph=None` yields the default graph's quads first, then
+  each named graph's in the order the graphs were created.
 - Every `Literal` carries a datatype, as RDF 1.1 Concepts requires: a literal
   built with neither datatype nor language gets `xsd:string`, and one built
   with a language gets `rdf:langString`. `Literal("v")` and

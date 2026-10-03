@@ -13,7 +13,9 @@ class TermDictionary:
 
     def __init__(self):
         # terms[id] is the term, or None for a freed id. Callers index it
-        # directly and must not modify it.
+        # directly and must not modify it. Compaction replaces the list
+        # rather than changing it, so a caller holding an earlier list can
+        # still name the ids it held then.
         self.terms = []
         self._ids = {}
         self._free = []
@@ -46,14 +48,21 @@ class TermDictionary:
     def compact(self, live_ids):
         """Free every id not in live_ids and return how many were freed.
 
-        Ids are not renumbered, so ids held by the caller stay valid.
+        Ids are not renumbered, so ids held by the caller stay valid. The
+        freed ids are cleared in a new `terms` list, and become free for
+        reuse only once it has replaced the old one, so the old list keeps
+        naming every id it named.
         """
         terms = self.terms
         dead = [
             i for i, term in enumerate(terms) if term is not None and i not in live_ids
         ]
+        if not dead:
+            return 0
+        fresh = terms.copy()
         for term_id in dead:
             del self._ids[terms[term_id]]
-            terms[term_id] = None
+            fresh[term_id] = None
+        self.terms = fresh
         self._free.extend(dead)
         return len(dead)

@@ -1063,3 +1063,62 @@ def test_add_all_keeps_the_triples_before_a_bad_one():
     with pytest.raises(TypeError):
         g.addAll([Triple(S, P, Literal("a")), Quad(S, P, Literal("b"), GA)])
     assert list(g) == [Triple(S, P, Literal("a"))]
+
+
+GAP_READERS = {
+    "iter": lambda g, a, b, c: iter(g),
+    "match": lambda g, a, b, c: g.match(a),
+    "mapped_triples": lambda g, a, b, c: (
+        tuple(m[1] for m in t) for t in g.mapped_triples(mark)
+    ),
+    "objects": lambda g, a, b, c: ((a, b, o) for o in g.objects(a, b)),
+    "predicate_objects": lambda g, a, b, c: (
+        (a, p, o) for p, o in g.predicate_objects(a)
+    ),
+    "subjects": lambda g, a, b, c: ((s, b, c) for s in g.subjects(b, c)),
+    "dataset iter": lambda ds, a, b, c: (q[:3] for q in ds),
+    "dataset match": lambda ds, a, b, c: (q[:3] for q in ds.match(a)),
+    "mapped_quads": lambda ds, a, b, c: (
+        tuple(m[1] for m in q[:3]) for q in ds.mapped_quads(mark)
+    ),
+}
+
+
+@pytest.mark.parametrize("read", GAP_READERS)
+def test_a_change_between_the_index_and_the_terms_never_misnames(monkeypatch, read):
+    # Another thread's remove, compaction and reuse of the freed ids can
+    # run after the index hands a read its checked ids and before the read
+    # turns them into terms. The read must still name the triple it read.
+    from pymantic.triple_index import TripleIndex
+
+    a, b, c = (NamedNode(f"http://e/gap-{x}") for x in "abc")
+    new = Triple(*(NamedNode(f"http://e/new-{x}") for x in "def"))
+    target = Dataset() if read.startswith(("dataset", "mapped_quads")) else Graph()
+    if isinstance(target, Dataset):
+        target.add(Quad(a, b, c, None))
+    else:
+        target.add(Triple(a, b, c))
+    graph = target if isinstance(target, Graph) else view_of(target, None)
+
+    def change():
+        graph.removeMatches()
+        graph.add(new)
+        assert {graph._dictionary.lookup(t) for t in new} == {0, 1, 2}
+
+    def with_gap(method):
+        def read_with_gap(self, *args):
+            for ids in method(self, *args):
+                if not done:
+                    done.append(True)
+                    change()
+                yield ids
+
+        return read_with_gap
+
+    done = []
+    monkeypatch.setattr(TripleIndex, "match", with_gap(TripleIndex.match))
+    monkeypatch.setattr(TripleIndex, "__iter__", with_gap(TripleIndex.__iter__))
+    found = GAP_READERS[read](target, a, b, c)
+    assert next(found) == (a, b, c)
+    with pytest.raises(RuntimeError, match="changed during iteration"):
+        next(found)

@@ -461,6 +461,16 @@ class Graph:
     Each call is atomic with respect to other threads: a lock is held while
     a change is made and while a read starts, never while a read yields."""
 
+    # A read turns ids into terms without the lock, through the
+    # dictionary's `terms` list as it was when the read started. The index
+    # yields only ids it has checked against its version, so they belong to
+    # a triple present when the read started, and were live then. Such an id
+    # is never cleared or reused in that list: compaction gives the
+    # dictionary a new list, and only ids free before the read started are
+    # reused in place. So the read names its triple correctly even when
+    # another thread removes it, compacts and reuses its ids between the
+    # index's check and the lookup.
+
     def __init__(self, graph_uri=None):
         if graph_uri is not None and not isinstance(graph_uri, NamedNode):
             graph_uri = NamedNode(graph_uri)

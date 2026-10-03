@@ -70,6 +70,24 @@ def test_compact_frees_dead_ids_and_reuses_them():
     assert d.terms[new_id] == NamedNode("http://e/new")
 
 
+def test_compact_leaves_an_earlier_terms_list_naming_its_terms():
+    # A read keeps the list it started with to name its ids, so a
+    # compaction and the reuse of a freed id must not reach that list.
+    d = TermDictionary()
+    nodes = [NamedNode("http://e/%d" % n) for n in range(3)]
+    ids = [d.intern(n) for n in nodes]
+    before = d.terms
+    assert d.compact({ids[0]}) == 2
+    reused = d.intern(NamedNode("http://e/new"))
+    assert before == nodes
+    assert d.terms is not before
+    assert d.terms[reused] == NamedNode("http://e/new")
+    # With nothing to free, the list is kept.
+    after = d.terms
+    assert d.compact({ids[0], reused}) == 0
+    assert d.terms is after
+
+
 def test_compact_with_every_id_live_frees_nothing():
     d = TermDictionary()
     ids = {d.intern(NamedNode("http://e/%d" % n)) for n in range(3)}

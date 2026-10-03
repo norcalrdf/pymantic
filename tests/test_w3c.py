@@ -42,12 +42,13 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import url2pathname
 
 from pymantic.parsers import nquads_parser, ntriples_parser, turtle_parser
-from pymantic.primitives import BlankNode, Graph, Literal, NamedNode, Triple
+from pymantic.primitives import BlankNode, Graph, Triple
 from pymantic.serializers import (
     serialize_nquads,
     serialize_ntriples,
     serialize_turtle,
 )
+from tests.oracle import to_rdflib
 
 W3C_DIR = pathlib.Path(__file__).parent / "w3c"
 TOP_LEVEL_MANIFESTS = [
@@ -213,30 +214,6 @@ def parse_action(entry):
     if entry.kind.startswith("TestNQuads"):
         return nquads_parser.parse_string(data)
     raise ValueError("no parser for %s" % entry.kind)
-
-
-def to_rdflib(graph):
-    """Convert a pymantic graph to an rdflib graph for isomorphism checks.
-    rdflib represents a language-tagged string by its language alone, with no
-    explicit rdf:langString datatype, so those are converted by language."""
-    out = rdflib.Graph()
-
-    def term(node):
-        if isinstance(node, BlankNode):
-            return rdflib.BNode(node.value)
-        if isinstance(node, Literal):
-            if node.language:
-                return rdflib.Literal(node.value, lang=node.language)
-            return rdflib.Literal(
-                node.value, datatype=rdflib.URIRef(str(node.datatype))
-            )
-        if not isinstance(node, NamedNode):
-            raise TypeError("parser produced %r, which is not an RDF term" % (node,))
-        return rdflib.URIRef(str(node))
-
-    for triple in graph:
-        out.add((term(triple.subject), term(triple.predicate), term(triple.object)))
-    return out
 
 
 def assert_isomorphic(graph, entry):

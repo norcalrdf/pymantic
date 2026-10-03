@@ -5,7 +5,8 @@ mf:entries, mf:action and mf:result) with two entry types of its own:
 pc:IsomorphicTest and pc:NonIsomorphicTest. It is read with rdflib so the
 harness does not depend on the code it tests. Both files of a pair are
 parsed with the pymantic parser for their extension and compared both ways
-round; for triple files rdflib's isomorphism check is used as an oracle.
+round. tests.oracle cross-checks every pair of triple files and every pair
+that holds RDF 1.2 terms: rdflib for RDF 1.1 graphs, pyoxigraph otherwise.
 """
 
 from io import StringIO
@@ -13,15 +14,22 @@ import pathlib
 import pytest
 import rdflib
 from rdflib.collection import Collection
-from rdflib.compare import isomorphic as rdflib_isomorphic
 from rdflib.namespace import RDF, Namespace
 from urllib.parse import urlparse
 from urllib.request import url2pathname
 
 from pymantic.compare import isomorphic
 from pymantic.parsers import nquads_parser, ntriples_parser, turtle_parser
+from pymantic.primitives import (
+    Dataset,
+    Graph,
+    Literal,
+    NamedNode,
+    Quad,
+    Triple,
+)
 from pymantic.serializers import serialize_nquads, serialize_ntriples
-from tests.test_w3c import to_rdflib
+from tests import oracle
 
 COMPARE_DIR = pathlib.Path(__file__).parent / "compare"
 MANIFEST = COMPARE_DIR / "manifest.ttl"
@@ -95,8 +103,11 @@ def test_manifest_pair(pair):
     a, b = parse(pair.action), parse(pair.result)
     assert isomorphic(a, b) is pair.expected
     assert isomorphic(b, a) is pair.expected
-    if pair.action.suffix != ".nq":
-        assert rdflib_isomorphic(to_rdflib(a), to_rdflib(b)) is pair.expected
+    if oracle.has_rdf12_terms(a) or oracle.has_rdf12_terms(b):
+        oracle.require_oracle()
+        assert oracle.isomorphic(a, b) is pair.expected
+    elif pair.action.suffix != ".nq":
+        assert oracle.isomorphic(a, b) is pair.expected
     if pair.expected:
         assert stable_lines(a, pair.action) == stable_lines(b, pair.result)
     else:
@@ -125,3 +136,16 @@ def test_near_miss_variants_differ_from_base_in_one_place():
         added = [line for line in lines if line not in base]
         assert len(removed) == 1, path.name
         assert len(added) <= 1, path.name
+
+
+def test_has_rdf12_terms():
+    s, p = NamedNode("http://example.org/s"), NamedNode("http://example.org/p")
+    plain = Graph().addAll([Triple(s, p, Literal("x", "he"))])
+    directional = Graph().addAll([Triple(s, p, Literal("x", "he", direction="rtl"))])
+    triple_term = Graph().addAll([Triple(s, p, Triple(s, p, s))])
+    assert not oracle.has_rdf12_terms(plain)
+    assert oracle.has_rdf12_terms(directional)
+    assert oracle.has_rdf12_terms(triple_term)
+    dataset = Dataset()
+    dataset.add(Quad(s, p, Triple(s, p, s), s))
+    assert oracle.has_rdf12_terms(dataset)

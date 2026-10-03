@@ -53,6 +53,8 @@ def stable_lines(graph_or_dataset):
     def term(node):
         if node.interfaceName == "BlankNode":
             return "_:" + labels[node]
+        if node.interfaceName == "Triple":
+            return "<<( %s %s %s )>>" % tuple(map(term, node))
         return node.toNT()
 
     # A quad in the default graph is written as a triple. A Dataset or Graph

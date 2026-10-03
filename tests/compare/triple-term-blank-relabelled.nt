@@ -1,0 +1,2 @@
+_:second <http://example.org/r> _:first .
+_:first <http://example.org/p> <<( _:second <http://example.org/q> <http://example.org/o> )>> .

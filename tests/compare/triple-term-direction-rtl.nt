@@ -1,0 +1,1 @@
+_:x <http://example.org/p> <<( _:x <http://example.org/q> "shalom"@he--rtl )>> .

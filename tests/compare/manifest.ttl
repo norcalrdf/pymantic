@@ -24,6 +24,11 @@
         <#blank-edge-reversed>
         <#literal-versus-iri>
         <#dataset-graph-moved>
+        <#triple-term-blank-relabelled>
+        <#triple-term-nested-relabelled>
+        <#triple-term-inner-subject-swapped>
+        <#triple-term-direction-changed>
+        <#triple-term-ground-reordered>
     ) .
 
 <#chain-relabelled> a pc:IsomorphicTest ;
@@ -89,3 +94,29 @@
     mf:name "dataset with one quad moved to another graph" ;
     mf:action <dataset.nq> ;
     mf:result <dataset-graph-moved.nq> .
+
+<#triple-term-blank-relabelled> a pc:IsomorphicTest ;
+    mf:name "blank node inside a triple term, relabelled" ;
+    rdfs:comment "One blank node is both asserted and the subject of a triple term." ;
+    mf:action <triple-term-blank.nt> ;
+    mf:result <triple-term-blank-relabelled.nt> .
+
+<#triple-term-nested-relabelled> a pc:IsomorphicTest ;
+    mf:name "blank nodes in triple terms nested two deep, relabelled" ;
+    mf:action <triple-term-nested.nt> ;
+    mf:result <triple-term-nested-relabelled.nt> .
+
+<#triple-term-inner-subject-swapped> a pc:NonIsomorphicTest ;
+    mf:name "triple term subject swapped for the asserted blank node" ;
+    mf:action <triple-term-blank.nt> ;
+    mf:result <triple-term-swapped.nt> .
+
+<#triple-term-direction-changed> a pc:NonIsomorphicTest ;
+    mf:name "base direction changed inside a triple term" ;
+    mf:action <triple-term-direction-ltr.nt> ;
+    mf:result <triple-term-direction-rtl.nt> .
+
+<#triple-term-ground-reordered> a pc:IsomorphicTest ;
+    mf:name "ground triple terms, reordered" ;
+    mf:action <triple-term-ground.nt> ;
+    mf:result <triple-term-ground-reordered.nt> .

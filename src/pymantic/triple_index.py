@@ -32,7 +32,7 @@ LIST_DEGREE = 256
 # Pending adds are folded, rather than inserted one by one, when there are
 # more than FOLD_MIN of them and more than 1/FOLD_DIVISOR of the index.
 FOLD_MIN = 1024
-FOLD_DIVISOR = 16
+FOLD_DIVISOR = 32
 
 # remove_many filters a row in one pass when it removes more than this many
 # of its values; fewer are deleted one by one with bisect.

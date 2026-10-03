@@ -536,7 +536,7 @@ then query once; time that with `triple_index.FOLD_MIN, FOLD_DIVISOR` set
 to `0, 1 << 62` (always fold) and to `1 << 62, 1` (never fold), for k in
 256, 1024, 4096 and n/64 to n/4.
 
-| input (triples) | fold faster from | fold/insert at n/32 | at n/16 (today) |
+| input (triples) | fold faster from | fold/insert at n/32 | at n/16 |
 |---|---|---|---|
 | fhir-r5-examples (646k) | 1,024 to 4,096 adds | 0.31x | 0.28x |
 | doid (310k) | 1,024 to 4,096 adds | 0.65x | 0.54x |
@@ -546,9 +546,12 @@ to `0, 1 << 62` (always fold) and to `1 << 62, 1` (never fold), for k in
 (PyPy 3.12 is similar, with folding winning on
 FHIR from 256 adds.) A batch between FOLD_MIN and n/16 on FHIR is inserted
 at up to 3.5x the cost of folding it, about 190 ms for 40k adds. FOLD_DIVISOR
-32 would halve that range at a cost of about 0.2 ms (10-16%) on
+32 halves that range at a cost of about 0.2 ms (10-16%) on
 schemaorg-sized graphs for batches of 1,024 to 1,500. Bulk loads and small
-batches are unaffected either way. Left for Gavin to decide.
+batches are unaffected either way.
+
+Decision (Gavin, 2026-10-03): FOLD_DIVISOR 32. LIST_DEGREE 256 and
+FOLD_MIN 1024 stay.
 
 ### PyO3
 

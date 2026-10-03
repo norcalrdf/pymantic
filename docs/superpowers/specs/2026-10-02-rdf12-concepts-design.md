@@ -69,13 +69,17 @@ l == t, hash(l) == hash(t)                 # True True
 ```
 
 Once triple terms sit in `TermDictionary` beside literals, such a pair would
-share an id. `Triple`, `Quad` and `Literal` define `__eq__`, `__ne__` and
-`__hash__` that include the class, so none of them equals another kind or a
-bare tuple. `Triple(a, b, c) == (a, b, c)` becomes false; the implementation
-checks the code and tests for anything relying on it first.
+share an id. Shape separates them: `Literal` becomes a 4-tuple (next
+section), and a 4-tuple never equals a 3-tuple. A test pins
+`Literal != Triple` with unequal hashes, so a later change of shape fails
+loudly.
 
-Python's `hash()` of a string is salted per process, so no digest depends on
-it, and this change moves no digest.
+Class-aware `__eq__` and `__hash__` were rejected: replacing tuple's C
+methods with Python ones made interning an equal, non-identical literal about
+4x slower on 3.14 (31 ns to 129 ns), on the parse path the graph index was
+tuned for. What remains is harmless: a `Literal` can equal a `Quad` (both
+4-tuples), but quads are never interned as terms, and `Triple(a, b, c)` still
+equals `(a, b, c)`.
 
 ### Literal direction
 
@@ -203,7 +207,6 @@ all, so its statements, labels and digests are unchanged.
 - Triple terms: `Triple` may be the object of a triple.
 - `Literal` has a fourth field, `direction`; code that unpacks a literal as
   three values breaks.
-- `Triple`, `Quad` and `Literal` no longer equal a plain tuple or each other.
 - `rdf:dirLangString` literals.
 - `direction=` on `createLiteral` and `Resource.objects_by_lang`.- N-Triples, N-Quads, Line-TriG and Turtle read and write triple terms and
   base direction.
@@ -217,8 +220,8 @@ Test-driven throughout, on `tox -e py314` while working.
    escapes, non-ASCII) and the `stable=True` N-Triples, N-Quads and Turtle
    output of every W3C test input that parses today, stored as one SHA-256
    per input. A test asserts both.
-2. **Primitives.** The Literal/Triple collision; equality and hashing across
-   kinds and against bare tuples; every allowed and rejected direction,
+2. **Primitives.** The Literal/Triple collision (unequal, unequal hashes,
+   distinct dictionary ids); every allowed and rejected direction,
    language and datatype combination; direction case; nested `toNT()`;
    interning and matching triple terms; `ValueError` for `None` inside a
    triple-term pattern.

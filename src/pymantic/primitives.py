@@ -236,7 +236,7 @@ def t_as_q(graph_name, triple):
 
 
 class Literal(tuple):
-    """Literal(`value`, `language`, `datatype`)
+    """An RDF Literal: Literal(`value`, `language`, `datatype`).
 
     Literals represent values such as numbers, dates and strings in RDF data. A
     Literal is comprised of three attributes:
@@ -249,7 +249,9 @@ class Literal(tuple):
     attribute specified by a text string token, as specified in [BCP47],
     normalized to lowercase (e.g., 'en', 'fr', 'en-gb').
 
-    Literals may not have both a datatype and a language."""
+    RDF does not allow a literal to have both a datatype and a language;
+    this class does not check it.
+    """
 
     __slots__ = ()
 
@@ -288,7 +290,7 @@ class Literal(tuple):
         return {"value": t[0], "language": t[1], "datatype": t[2]}
 
     def _replace(_self, **kwds):
-        "Return a new Literal object replacing specified fields with new value"
+        """Return a new Literal object replacing specified fields with new values."""
         result = _self._make(map(kwds.pop, ("value", "language", "datatype"), _self))
         if kwds:
             raise ValueError("Got unexpected field names: %r" % kwds.keys())

@@ -98,10 +98,12 @@ PN_LOCAL_RE = re.compile(
 
 
 def escape_prefix_local(name):
-    """Escape the local part of a prefixed name (``prefix:local``) so it is a
-    valid Turtle PN_LOCAL. Returns None when the local part cannot be expressed
-    as a prefixed name even with escapes, in which case the caller should fall
-    back to the full <IRI> form."""
+    """Escape the local part of a prefixed name so it is a valid PN_LOCAL.
+
+    ``name`` is ``prefix:local``. Returns None when the local part cannot be
+    expressed as a prefixed name even with escapes, in which case the
+    caller should fall back to the full <IRI> form.
+    """
     prefix, colon, local = name.partition(":")
     if prefix and not PN_PREFIX_RE.fullmatch(prefix):
         raise ValueError("Invalid Turtle prefix name")
@@ -127,9 +129,12 @@ IRIREF_FORBIDDEN = set(map(chr, range(0x21))) | set('<>"{}|^`\\')
 
 
 def turtle_iri_escape(iri):
-    """Escape an IRI for output between < and > in Turtle by percent-encoding
-    the UTF-8 bytes of characters the IRIREF production forbids. All other
-    characters, including non-ASCII, pass through unchanged."""
+    """Escape an IRI for writing between < and > in Turtle.
+
+    The characters the IRIREF production forbids are percent-encoded as
+    UTF-8 bytes; all other characters, including non-ASCII, pass through
+    unchanged.
+    """
     return "".join(
         (
             "".join("%%%02X" % byte for byte in char.encode("utf-8"))
@@ -202,8 +207,11 @@ RDF_NIL = "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"
 
 
 def list_cell_shape(graph, node):
-    """(first, rest, has_other_predicates) if node looks like an RDF list
-    cell: a blank node with exactly one rdf:first and one rdf:rest."""
+    """Return (first, rest, has_other_predicates) if node is an RDF list cell.
+
+    A list cell is a blank node with exactly one rdf:first and one rdf:rest;
+    for anything else the result is None.
+    """
     if getattr(node, "interfaceName", None) != "BlankNode":
         return None
     firsts, rests, others = [], [], False
@@ -231,7 +239,8 @@ def plan_collections(graph):
     subjects of their own. A node only qualifies when the whole chain from it
     to rdf:nil is made of blank nodes with exactly one rdf:first, exactly one
     rdf:rest, nothing else, and (past the head) exactly one reference; any
-    other shape is written as ordinary triples so no information is lost."""
+    other shape is written as ordinary triples so no information is lost.
+    """
     references = Counter(triple.object for triple in graph)
 
     inline, as_subject, consumed = {}, {}, set()
@@ -273,12 +282,13 @@ def plan_collections(graph):
 
 
 class _TurtleWriter:
-    """Writes one graph to a stream as Turtle.
+    """The state of writing one graph to a stream as Turtle.
 
     The parts of the output share state: blank node labels are handed out
     as nodes are first named, and an inline collection is written once, at
     its one reference, after which it is only named. This object holds that
-    state for the length of one serialization."""
+    state for the length of one serialization.
+    """
 
     def __init__(self, graph, f, base, profile, bnode_name_generator):
         self.graph = graph
@@ -373,7 +383,8 @@ def serialize_turtle(
     written relative to it. The prefixes in profile are declared and used to
     abbreviate IRIs. bnode_name_generator is called once to get an iterator
     of blank node labels. Subjects, and predicates within a subject, are
-    ordered by their written form."""
+    ordered by their written form.
+    """
     if profile is None:
         from pymantic.primitives import Profile
 

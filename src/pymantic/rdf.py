@@ -172,7 +172,7 @@ class Resource(metaclass=MetaResource):
         return hash(self.subject)
 
     def bare_literals(self, predicate):
-        """Objects for a predicate that are language-less, datatype-less Literals."""
+        """Return the objects of a predicate that have neither language nor datatype."""
         return [
             t.object
             for t in self.graph.match(self.subject, predicate, None)
@@ -205,8 +205,12 @@ class Resource(metaclass=MetaResource):
             ]
 
     def objects_by_datatype(self, predicate, datatype=None):
-        """Objects for a predicate that match a specified datatype or, if
-        datatype is None, have a datatype specified."""
+        """Return the objects of a predicate with the given datatype.
+
+        If datatype is None, return the objects that have any datatype. If
+        datatype is "", return the objects with neither language nor datatype,
+        as :meth:`bare_literals` does.
+        """
         if datatype:
             return [
                 t.object

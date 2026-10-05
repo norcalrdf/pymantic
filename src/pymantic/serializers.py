@@ -348,15 +348,15 @@ def plan_collections(graph, references=None):
 
 
 def list_cells(graph, head):
-    """The cells of a list that :func:`plan_collections` accepted, from
-    ``head`` along rdf:rest to rdf:nil."""
-    cells = []
+    """Yield the cells of a list that :func:`plan_collections` accepted.
+
+    The walk starts at ``head`` and follows rdf:rest to rdf:nil.
+    """
     node = head
     while node != RDF_NIL:
-        cells.append(node)
+        yield node
         (rest,) = graph.match(subject=node, predicate=RDF_REST)
         node = rest.object
-    return cells
 
 
 def inline_candidates(graph, inline, as_subject, consumed, references):

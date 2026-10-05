@@ -1,6 +1,6 @@
 """Graph isomorphism and content-derived blank node labels.
 
-This module implements the algorithm described in docs/graph-comparison.rst;
+This module implements the algorithm described in :doc:`/graph-comparison`;
 read that note first. The functions here carry the names used there:
 :func:`statements` prepares a graph or dataset, :func:`bail_stage` runs the
 five comparison stages, :func:`molecules` splits the blank nodes into
@@ -469,7 +469,7 @@ def isomorphic(a, b, work_limit=None):
     empty ones included. Raises :class:`Undecidable` if a molecule's
     work budget runs out. ``work_limit`` lowers that budget to at most the
     given number of node visits per molecule; it can never raise it. See
-    docs/graph-comparison.rst."""
+    :doc:`/graph-comparison`."""
     return bail_stage(a, b, work_limit) is None
 
 
@@ -519,5 +519,5 @@ def canonical_labels(graph_or_dataset, work_limit=None):
     label like any other. Raises :class:`Undecidable` if a molecule's work budget runs
     out. ``work_limit`` lowers that budget to at most the given number of
     node visits per molecule; it can never raise it. See
-    docs/graph-comparison.rst."""
+    :doc:`/graph-comparison`."""
     return canonical_labels_and_order(graph_or_dataset, work_limit)[0]

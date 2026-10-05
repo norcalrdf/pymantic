@@ -43,10 +43,12 @@ def nt_escape(node_string):
 
 
 def stable_lines(graph_or_dataset):
-    """The N-Triples or N-Quads lines of a graph or dataset with blank nodes
-    named by :func:`pymantic.compare.canonical_labels`, sorted, so that the
-    same content always gives the same lines whatever the labels and order
-    it was built with. See docs/graph-comparison.rst."""
+    """Return the sorted N-Triples or N-Quads lines of a graph or dataset.
+
+    Blank nodes are named by :func:`pymantic.compare.canonical_labels`, so
+    the same content always gives the same lines whatever the labels and
+    order it was built with. See :doc:`/graph-comparison`.
+    """
     from pymantic.compare import canonical_labels
 
     labels = canonical_labels(graph_or_dataset)
@@ -155,14 +157,17 @@ IRIREF_FORBIDDEN = set(map(chr, range(0x21))) | set('<>"{}|^`\\')
 
 
 def iri_escape(iri):
-    """Escape an IRI for output between < and > in Turtle, N-Triples or
-    N-Quads by percent-encoding the UTF-8 bytes of characters the IRIREF
-    production forbids. All other characters, including % and non-ASCII,
-    pass through unchanged, so two valid IRIs never produce the same text.
-    The forbidden characters are percent-encoded rather than written as
-    UCHAR escapes because Turtle forbids them in an IRI even when escaped;
-    a term holding one is not a valid IRI, and is written as the valid IRI
-    its percent-encoding gives."""
+    """Escape an IRI for writing between < and > in Turtle, N-Triples or N-Quads.
+
+    The characters the IRIREF production forbids are percent-encoded as
+    UTF-8 bytes; everything else, including % and non-ASCII, is written as
+    it is, so two valid IRIs never produce the same text.
+
+    Percent-encoding rather than UCHAR escapes, because Turtle forbids
+    those characters in an IRI even when escaped. A term holding one is not
+    a valid IRI to begin with, and is written as the valid IRI its
+    percent-encoding gives.
+    """
     if IRIREF_FORBIDDEN.isdisjoint(iri):
         return iri
     return "".join(
@@ -176,9 +181,14 @@ def iri_escape(iri):
 
 
 def turtle_string_escapes():
+    """Return the :meth:`str.translate` table for Turtle string literals.
+
+    It maps each character with an ECHAR escape to that escape, except the
+    apostrophe, which needs none inside the double-quoted strings
+    :func:`turtle_string_escape` writes.
+    """
     from pymantic.util import ECHAR_MAP
 
-    # An apostrophe needs no escape inside a double-quoted string.
     return {ord(char): escape for char, escape in ECHAR_MAP.items() if char != "'"}
 
 
@@ -727,7 +737,7 @@ def serialize_turtle(
     :func:`pymantic.compare.canonical_labels`, and the objects of one
     predicate are sorted: IRIs and literals by their Turtle name, then blank
     nodes by their molecule's canonical form and their position in it (see
-    docs/graph-comparison.rst). A blank node referenced exactly once is
+    :doc:`/graph-comparison`). A blank node referenced exactly once is
     written inline as ``[ ... ]`` at that reference (see
     :func:`plan_inline_blank_nodes`), and only the prefixes the output uses
     are declared. The same graph then always produces the same bytes, and

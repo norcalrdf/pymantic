@@ -184,9 +184,11 @@ class Resource(metaclass=MetaResource):
         return hash(self.subject)
 
     def bare_literals(self, predicate):
-        """Objects for a predicate that are simple literals: no language and
-        the datatype xsd:string, which RDF 1.1 Concepts 3.3 gives every
-        literal written without one."""
+        """Return the objects for a predicate that are simple literals.
+
+        A simple literal has no language and the datatype xsd:string, which
+        RDF 1.1 Concepts 3.3 gives every literal written without one.
+        """
         return [
             t.object
             for t in self.graph.match(self.subject, predicate, None)
@@ -214,13 +216,15 @@ class Resource(metaclass=MetaResource):
             ]
 
     def objects_by_datatype(self, predicate, datatype=None):
-        """Objects for a predicate that match a specified datatype or, if
-        datatype is None, carry a datatype of their own.
+        """Return the literal objects for a predicate, selected by datatype.
 
-        Every literal has a datatype, so "of their own" means one that was
-        written rather than implied by the way the literal was written:
-        neither the xsd:string of a simple literal nor the rdf:langString of
-        a language-tagged string."""
+        With a datatype, the literals that have it. With ``""``, the simple
+        literals, as :meth:`bare_literals` returns them. With None, the
+        literals whose datatype is neither xsd:string nor rdf:langString,
+        the two a literal has when it is written without a datatype. A
+        literal written ``"v"^^xsd:string`` is the same term as ``"v"``, so
+        it is left out too.
+        """
         if datatype:
             return [
                 t.object

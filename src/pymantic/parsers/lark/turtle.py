@@ -144,11 +144,14 @@ def unpack_predicate_object_list(subject, pol):
 
 
 class TurtleTransformer(BaseParser, Transformer):
-    """Builds triples from a parsed Turtle document. Prefixed names resolve
-    against the document's own declarations only. With ``profile``, those
-    ``@prefix`` and ``PREFIX`` declarations are also recorded in it, so the
-    caller can serialize with the document's own prefixes; the profile's
-    existing prefixes are never used to read the document."""
+    """Build triples from a parsed Turtle document.
+
+    Prefixed names resolve against the document's own declarations only.
+    With ``profile``, those ``@prefix`` and ``PREFIX`` declarations are also
+    recorded in it, so the caller can serialize with the document's own
+    prefixes; the profile's existing prefixes are never used to read the
+    document.
+    """
 
     def __init__(self, base_iri="", profile=None):
         super().__init__()

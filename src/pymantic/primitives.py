@@ -4,6 +4,8 @@ __all__ = [
     "q_as_t",
     "t_as_q",
     "Literal",
+    "XSD_STRING",
+    "RDF_LANGSTRING",
     "NamedNode",
     "Prefix",
     "BlankNode",
@@ -24,9 +26,8 @@ import datetime
 import itertools
 from operator import itemgetter
 
-from pymantic.serializers import nt_escape, validate_language
+from pymantic.serializers import iri_escape, nt_escape, validate_language
 import pymantic.uri_schemes as uri_schemes
-from pymantic.util import quote_normalized_iri
 
 
 def is_language(lang):
@@ -237,11 +238,18 @@ class Literal(tuple):
 
     * a lexical representation of the nominalValue
     * an optional language represented by a string token
-    * an optional datatype specified by a NamedNode
+    * a datatype specified by a NamedNode
 
     Literals representing plain text in a natural language may have a language
     attribute specified by a text string token, as specified in [BCP47],
     normalized to lowercase (e.g., 'en', 'fr', 'en-gb').
+
+    Every literal has a datatype (RDF 1.1 Concepts 3.3), which is filled in on
+    construction when the caller leaves it out: ``xsd:string`` for a simple
+    literal and ``rdf:langString`` for a language-tagged string. Two literals
+    are the same term exactly when their lexical form, datatype and language
+    all compare equal, so ``Literal("v")`` and
+    ``Literal("v", datatype=XSD_STRING)`` are one term.
 
     Literals may not have both a datatype and a language."""
 
@@ -255,15 +263,35 @@ class Literal(tuple):
     }
 
     def __new__(_cls, value, language=None, datatype=None):
+        """Create a literal, filling in the datatype RDF 1.1 gives it.
+
+        A value that is not a string is converted to its lexical form, with
+        the matching XSD datatype unless one is given. An empty language
+        counts as none.
+        """
         if not isinstance(value, str):
             value, auto_datatype = _cls.types[type(value)](value)
-            if datatype is None:
+            if not datatype:
                 datatype = auto_datatype
+        if not language:
+            # An empty tag is no tag: rdf:langString needs a non-empty one.
+            language = None
         if language is not None:
             # RDF Concepts: language tags compare case-insensitively and
             # their value space is lowercase, so "EN" and "en" must be the
             # same term.
             language = language.lower()
+            # RDF 1.1 Concepts 3.3: a language-tagged string always has the
+            # datatype rdf:langString, and no other datatype may join a
+            # language.
+            if datatype and datatype != RDF_LANGSTRING:
+                raise ValueError("Literals may not have both a datatype and a language")
+            datatype = RDF_LANGSTRING
+        elif not datatype:
+            # A simple literal is syntactic sugar for one typed xsd:string.
+            datatype = XSD_STRING
+        elif datatype == RDF_LANGSTRING:
+            raise ValueError("rdf:langString literals must have a language")
         return tuple.__new__(_cls, (value, language, datatype))
 
     @classmethod
@@ -282,7 +310,14 @@ class Literal(tuple):
         return {"value": t[0], "language": t[1], "datatype": t[2]}
 
     def _replace(_self, **kwds):
-        "Return a new Literal object replacing specified fields with new value"
+        """Return a new Literal with the specified fields replaced."""
+        if "language" in kwds and "datatype" not in kwds:
+            # The datatypes of a simple literal and of a language-tagged
+            # string are implied by the language, so changing the language
+            # re-derives the datatype instead of carrying the old implicit
+            # one forward into a literal that could not hold it.
+            if _self.datatype in (XSD_STRING, RDF_LANGSTRING):
+                kwds["datatype"] = None
         result = _self._make(map(kwds.pop, ("value", "language", "datatype"), _self))
         if kwds:
             raise ValueError("Got unexpected field names: %r" % kwds.keys())
@@ -301,15 +336,18 @@ class Literal(tuple):
         return str(self.value)
 
     def toNT(self):
+        """Return the literal written as N-Triples."""
         quoted = '"' + nt_escape(self.value) + '"'
         if self.language:
+            # A language-tagged string is written with its tag alone; its
+            # rdf:langString datatype is implicit.
             validate_language(self.language)
             return f"{quoted}@{self.language}"
-        elif self.datatype and self.datatype != XSD_STRING:
-            # Canonical N-Triples writes a simple literal without its
-            # implicit xsd:string datatype.
+        elif self.datatype != XSD_STRING:
             return f"{quoted}^^{self.datatype.toNT()}"
         else:
+            # Canonical N-Triples writes a simple literal without its
+            # implicit xsd:string datatype.
             return quoted
 
 
@@ -329,7 +367,8 @@ class NamedNode(str):
         return self.value
 
     def toNT(self):
-        return f"<{nt_escape(quote_normalized_iri(self.value))}>"
+        """Return the IRI written as N-Triples."""
+        return f"<{iri_escape(self.value)}>"
 
 
 class Prefix(NamedNode):
@@ -342,6 +381,8 @@ class Prefix(NamedNode):
 
 XSD = Prefix("http://www.w3.org/2001/XMLSchema#")
 XSD_STRING = XSD("string")
+RDF = Prefix("http://www.w3.org/1999/02/22-rdf-syntax-ns#")
+RDF_LANGSTRING = RDF("langString")
 
 
 class BlankNode:
@@ -536,7 +577,13 @@ class Dataset:
         self._graphs[quad.graph].add(q_as_t(quad))
 
     def remove(self, quad):
-        self._graphs[quad.graph].remove(q_as_t(quad))
+        """Remove a quad, raising KeyError if the dataset lacks its graph."""
+        # Looked up without creating: an empty named graph is part of the
+        # dataset, so only add and add_graph may bring one into being.
+        graph = self._graphs.get(quad.graph)
+        if graph is None:
+            raise KeyError(quad)
+        graph.remove(q_as_t(quad))
 
     def add_graph(self, graph, named=None):
         name = named or graph.uri
@@ -554,9 +601,16 @@ class Dataset:
         return self._graphs.values()
 
     def match(self, subject=None, predicate=None, object=None, graph=None):
+        """Yield the quads matching the given terms; None matches any term.
+
+        With ``graph``, only that named graph is searched, and a graph the
+        dataset does not have yields nothing.
+        """
         if graph:
-            matches = self._graphs[graph].match(subject, predicate, object)
-            for match in matches:
+            named = self._graphs.get(graph)
+            if named is None:
+                return
+            for match in named.match(subject, predicate, object):
                 yield t_as_q(graph, match)
         else:
             for graph_uri, graph in self._graphs.items():

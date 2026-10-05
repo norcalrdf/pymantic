@@ -6,6 +6,33 @@ All notable changes to pymantic are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `pymantic.compare`, with `isomorphic(a, b)` to decide whether two graphs
+  or datasets are the same up to blank node labels, and
+  `canonical_labels(graph)` to give every blank node a label derived from
+  the graph's content alone. Both raise `Undecidable` for a graph built so
+  that no content tells its blank nodes apart (a large clique of blank
+  nodes, for instance) rather than search for an exponential time; the work
+  allowed is polynomial in each group of connected blank nodes, and
+  `work_limit=` lowers it. The approach is described in
+  `docs/graph-comparison.rst`.
+- `stable=True` on `serialize_turtle`, `serialize_ntriples` and
+  `serialize_nquads`. Blank nodes are then named by `canonical_labels` and
+  statements are written in an order derived from content, so the same graph
+  always produces the same bytes and a small edit produces a small diff. In
+  Turtle, a blank node referenced exactly once is written inline as
+  `[ ... ]`, nested up to 32 levels deep (`MAX_INLINE_DEPTH`), beyond
+  which nodes keep a labelled block; each level is indented four columns,
+  and only the prefixes the output uses are declared. The default is
+  `False`.
+- `profile=None` on the Turtle parser's `parse`, `parse_string` and
+  `TurtleTransformer`. With a `Profile`, the document's `@prefix` and
+  `PREFIX` declarations are recorded in it, so
+  `serialize_turtle(graph, f, profile=profile, stable=True)` writes the
+  document back with its own prefixes. Prefixes already in the profile are
+  not used to read the document.
+
 ### Security
 
 - The Turtle serializer now escapes literal strings. Previously a literal
@@ -41,6 +68,22 @@ All notable changes to pymantic are recorded here. The format follows
   3.12 or Pyodide. Without the extra, the rest of pymantic works, and
   importing `pymantic.parsers.jsonld`, or importing `jsonld_parser` from
   `pymantic.parsers`, raises an `ImportError` naming the extra.
+- Every `Literal` carries a datatype, as RDF 1.1 Concepts requires: a literal
+  built with neither datatype nor language gets `xsd:string`, and one built
+  with a language gets `rdf:langString`. `Literal("v")` and
+  `Literal("v", datatype=XSD_STRING)` are therefore equal and hash alike, and
+  a `Graph` given both holds one triple instead of two. An empty language
+  tag counts as none. Giving a language together with any other datatype,
+  or `rdf:langString` without a language, raises `ValueError`.
+  Serialization is unchanged: a simple literal is still written `"v"` and a
+  language-tagged string `"v"@en`, with no datatype.
+- Turtle output writes a subject wider than 40 columns on a line of its
+  own, with its predicates indented four columns, instead of lining the
+  predicates up after it. Subjects up to 40 columns are written as before.
+- Turtle and N-Triples serialization are faster, with the same output.
+  Measured on Python 3.14 against the previous code: Turtle 1.6 to 2.4
+  times (the FHIR R5 examples, 645k triples, 2.7 s to 1.5 s) and N-Triples
+  about 9 times (4.6 s to 0.5 s).
 - Numeric escapes that produce surrogate code points (`\uD800` to `\uDFFF`)
   or values above U+10FFFF are rejected in all parsers, as the Turtle and
   N-Triples grammars require.
@@ -88,9 +131,24 @@ All notable changes to pymantic are recorded here. The format follows
   still returns a `frozenset`.
 - N-Triples output escapes control characters as `\uXXXX` instead of
   silently dropping them.
+- N-Triples and N-Quads output writes non-ASCII characters in IRIs as they
+  are. Previously they were percent-encoded, so `<http://x/é>` came back
+  from a round trip as `<http://x/%C3%A9>`, a different IRI, and the two
+  could not be told apart in output. Characters no IRI may contain are
+  still percent-encoded, as in Turtle output.
+- `Dataset` lookups no longer create the graph they are asked about. Only
+  `add` and `add_graph` create a named graph; `match(graph=name)` on an
+  unknown graph yields nothing and leaves the dataset alone, and `remove`
+  raises `KeyError` for a quad in a graph the dataset does not have. An
+  empty named graph is part of a dataset and is counted by
+  `pymantic.compare`, so a query must not bring one into being.
 
 ### Fixed
 
+- The Turtle serializer no longer fails with `RecursionError` on a list
+  nested a few hundred levels deep, such as `((((...))))`. Past 32 levels
+  the inner list is written as a labelled blank node with its `rdf:first`
+  and `rdf:rest` triples, which reads back as the same list.
 - Shrinking an IRI to a prefixed name only strips the leading namespace.
   Previously every occurrence of the namespace inside the IRI was replaced,
   corrupting IRIs that embed their own namespace (for example in a query

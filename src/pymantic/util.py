@@ -28,7 +28,7 @@ def de(value):
 
 
 def one_or_none(values):
-    """Return the first value from values, or None if values is empty.
+    """Return the only value in values, or None if values is empty.
 
     Raise ValueError if values has more than one thing in it.
     """
@@ -77,10 +77,13 @@ def percent_decode(regmatch):
 
 
 def normalize_iri(iri):
-    """Normalize an IRI using RFC 3987 case and percent-encoding normalization.
+    """Decode the percent-encoded characters of an IRI that need no encoding.
 
-    These are Case Normalization (5.3.2.1) and Percent-Encoding Normalization
-    (5.3.2.3). The IRI should be a unicode object.
+    This is a partial Percent-Encoding Normalization (RFC 3987 5.3.2.3): a
+    run of percent-encoded bytes is decoded as UTF-8, except encodings of
+    U+0000 to U+0020, and any reserved character the run contains is
+    re-encoded with uppercase hex. No case normalization of the scheme or
+    host is done. The IRI should be a str.
     """
     return percent_encoding_re.sub(percent_decode, iri)
 

@@ -30,7 +30,10 @@ from pymantic.util import quote_normalized_iri
 
 
 def is_language(lang):
-    """Return whether something is a valid XML language."""
+    """Return whether lang can be a language: anything but a NamedNode.
+
+    The tag itself is not checked.
+    """
     if isinstance(lang, NamedNode):
         return False
     return True
@@ -55,12 +58,12 @@ def lang_match(lang1, lang2):
 def parse_curie(curie, prefixes):
     """Parse a CURIE within the context of the given namespaces.
 
-    Will also accept explicit URIs and wrap them in an rdflib URIRef.
+    Will also accept explicit URIs and return them as a NamedNode.
 
     Specifically:
 
     1) If the CURIE is not of the form [stuff] and the prefix is in the list of
-       standard URIs, it is wrapped in a URIRef and returned unchanged.
+       standard URIs, it is returned unchanged as a NamedNode.
     2) Otherwise, the CURIE is parsed by the rules of CURIE Syntax 1.0:
        http://www.w3.org/TR/2007/WD-curie-20070307/ The default namespace is
        the namespace keyed by the empty string in the namespaces dictionary.
@@ -98,8 +101,8 @@ def to_curie(uri, namespaces, seperator=":", explicit=False):
 
     namespaces - a dictionary of prefix -> namespace mappings.
 
-    separator - the character to use as the separator between the prefix and
-    the local name.
+    seperator - the character to use as the separator between the prefix and
+    the local name (the parameter is spelled seperator).
 
     explicit - if True and the URI can be abbreviated, wrap the abbreviated
     form in []s to indicate that it is definitely a CURIE.
@@ -578,15 +581,18 @@ class Dataset:
                     yield t_as_q(graph_uri, match)
 
     def removeMatches(self, subject=None, predicate=None, object=None, graph=None):
-        """Remove those triples in the current graph which match the given arguments."""
+        """Remove the quads in this dataset that match the given terms.
+
+        None matches any term. Return the dataset.
+        """
         for quad in self.match(subject, predicate, object, graph):
             self.remove(quad)
         return self
 
     def addAll(self, dataset_or_quads):
-        """Import the graph or set of triples into this graph.
+        """Add every quad of a dataset or iterable of quads to this dataset.
 
-        Return the graph instance it was called on.
+        Return the dataset.
         """
         for quad in dataset_or_quads:
             self.add(quad)
@@ -633,23 +639,19 @@ class PrefixMap(collections.OrderedDict):
     Resolve a known CURIE
 
     >>> prefixes.resolve("rdfs:label")
-    u"http://www.w3.org/2000/01/rdf-schema#label"
+    NamedNode(<http://www.w3.org/2000/01/rdf-schema#label>)
 
-    Shrink an IRI for a known CURIE in to a CURIE
+    Shrink an IRI for a known CURIE into a CURIE
 
     >>> prefixes.shrink("http://www.w3.org/2000/01/rdf-schema#label")
-    u"rdfs:label"
+    'rdfs:label'
 
-    Attempt to resolve a CURIE with an empty prefix
-
-    >>> prefixes.resolve(":me")
-    ":me"
-
-    Set the default prefix and attempt to resolve a CURIE with an empty prefix
+    Resolving a CURIE with an empty prefix and no default prefix raises
+    ValueError. Set the default prefix to resolve one
 
     >>> prefixes.setDefault("http://example.org/bob#")
     >>> prefixes.resolve(":me")
-    u"http://example.org/bob#me"
+    NamedNode(<http://example.org/bob#me>)
     """
 
     def resolve(self, curie):
@@ -701,23 +703,23 @@ class TermMap(dict):
     Resolve a known term to an IRI
 
     >>> terms.resolve("member")
-    u"http://www.w3.org/ns/org#member"
+    'http://www.w3.org/ns/org#member'
 
     Shrink an IRI for a known term to a term
 
     >>> terms.shrink("http://www.w3.org/ns/org#member")
-    u"member"
+    'member'
 
     Attempt to resolve an unknown term
 
-    >>> terms.resolve("label")
-    None
+    >>> terms.resolve("label") is None
+    True
 
     Set the default term vocabulary and then attempt to resolve an unknown term
 
     >>> terms.setDefault("http://www.w3.org/2000/01/rdf-schema#")
     >>> terms.resolve("label")
-    u"http://www.w3.org/2000/01/rdf-schema#label"
+    'http://www.w3.org/2000/01/rdf-schema#label'
     """
 
     def addAll(self, other, override=False):
@@ -777,11 +779,12 @@ class Profile:
             self.prefixes["xsd"] = "http://www.w3.org/2001/XMLSchema#"
 
     def resolve(self, toresolve):
-        """Return the IRI for a Term or CURIE, or None if it cannot be resolved.
+        """Return the IRI for a Term or CURIE.
 
         If toresolve contains a : (colon), return the result of calling
-        prefixes.resolve(toresolve); otherwise return the result of calling
-        terms.resolve(toresolve).
+        prefixes.resolve(toresolve), which raises ValueError for an unknown
+        prefix; otherwise return the result of calling
+        terms.resolve(toresolve), which returns None for an unknown term.
         """
         if ":" in toresolve:
             return self.prefixes.resolve(toresolve)

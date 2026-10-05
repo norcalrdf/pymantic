@@ -69,12 +69,13 @@ class Resource(metaclass=MetaResource):
     predicate access must be by complete URL and produces sets. By subclassing
     Resource, you can take advantage of a number of quality-of-life features:
 
-    1) Bind prefixes to prefixes, and refer to them using CURIEs when
+    1) Bind prefixes to namespace URLs, and refer to them using CURIEs when
        accessing predicates or explicitly resolving CURIEs. Store a dictionary
        mapping prefixes to URLs in the 'prefixes' attribute of your subclass.
        The prefixes dictionaries on all parents are merged with this
        dictionary, and those at the bottom are prioritized. The values in the
-       dictionaries will automatically be turned into rdflib Prefix objects.
+       dictionaries will automatically be turned into
+       :class:`pymantic.primitives.Prefix` objects.
 
     2) Define predicates as scalars. This asserts that a given predicate on this
        resource will only have zero or one value for a given language or
@@ -82,7 +83,7 @@ class Resource(metaclass=MetaResource):
        'scalars' set, which is processed and merged just like prefixes.
 
     3) Automatically classify certain RDF types as certain Resource subclasses.
-       Decorate your class with the pymantic.RDF.register_class decorator, and
+       Decorate your class with the pymantic.rdf.register_class decorator, and
        provide it with the corresponding RDF type. Whenever this type is
        encountered when retrieving objects from a predicate it will
        automatically be instantiated as your class rather than a generic Resource.
@@ -96,10 +97,6 @@ class Resource(metaclass=MetaResource):
        instantiate the correct class for an arbitrary URI), you can do so by
        calling Resource.classify. You can also create a new instance of a
        Resource by calling .new on a subclass.
-
-    Automatic retrieval of resources with no type information is currently
-    implemented here, but is likely to be refactored into a separate persistence
-    layer in the near future.
     """
 
     prefixes = {
@@ -188,7 +185,9 @@ class Resource(metaclass=MetaResource):
     def objects_by_lang(self, predicate, lang=None):
         """Return the objects of a predicate in the given language.
 
-        If lang is None, return the objects that have any language.
+        If lang is None, return the objects that have any language. If lang
+        is "", return the objects with neither language nor datatype, as
+        :meth:`bare_literals` does.
         """
         if lang:
             return [
@@ -226,7 +225,9 @@ class Resource(metaclass=MetaResource):
     def objects_by_type(self, predicate, resource_class=None):
         """Return the objects of a predicate that classify as resource_class.
 
-        If resource_class is None, return the objects that are Resources.
+        Only IRIs and blank nodes are considered, and they are returned as
+        they are in the graph, not as Resources. If resource_class is None,
+        every IRI and blank node object is returned.
         """
         selected_objects = []
         for t in self.graph.match(self.subject, predicate, None):
@@ -243,7 +244,12 @@ class Resource(metaclass=MetaResource):
         return [t.object for t in self.graph.match(self.subject, predicate, None)]
 
     def object_of(self, predicate=None):
-        """Yield the subjects that have this resource as an object of predicate."""
+        """Yield the subjects that have this resource as an object of predicate.
+
+        The subjects are classified as Resources. With no predicate, yield
+        (subject, predicate) pairs for every triple whose object is this
+        resource.
+        """
         if predicate is None:
             for triple in self.graph.match(None, None, self.subject):
                 yield (self.classify(self.graph, triple.subject), triple.predicate)

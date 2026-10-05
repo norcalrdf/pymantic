@@ -4,6 +4,7 @@ import pathlib
 import pytest
 import random
 import sys
+import threading
 
 from pymantic import triple_index
 from pymantic.primitives import (
@@ -1170,11 +1171,179 @@ def test_a_term_freed_and_reused_during_dataset_iteration_is_never_read(read):
         next(it)
 
 
+def test_a_dataset_and_its_views_share_one_lock():
+    ds = three_graph_dataset()
+    assert all(view._lock is ds._lock for view in ds.graphs)
+    assert Graph()._lock is not Graph()._lock
+
+
+needs_threads = pytest.mark.skipif(
+    sys.platform == "emscripten", reason="Pyodide cannot start threads"
+)
+
+
+def finishes(call):
+    """Run call in a thread and say whether it finished: a call that waits
+    on a lock it already holds never does."""
+    done = []
+    thread = threading.Thread(target=lambda: done.append(call()), daemon=True)
+    thread.start()
+    thread.join(timeout=10)
+    return bool(done)
+
+
+@needs_threads
+@pytest.mark.parametrize("target", [GB, GC])
+def test_add_graph_reads_a_view_of_the_same_dataset(target):
+    ds = three_graph_dataset()
+    assert finishes(lambda: ds.add_graph(view_of(ds, GB), named=target))
+    assert {q for q in ds if q.graph == target} == {
+        Quad(S, P, Literal("b1"), target),
+        Quad(S, P, Literal("b2"), target),
+    }
+
+
+@needs_threads
+def test_add_all_reads_this_graph_or_a_view_of_the_same_dataset():
+    g = Graph().add(Triple(S, P, Literal("a")))
+    assert finishes(lambda: g.addAll(g))
+    assert list(g) == [Triple(S, P, Literal("a"))]
+    ds = three_graph_dataset()
+    view = view_of(ds, GA)
+    assert finishes(lambda: view.addAll(view_of(ds, GB)))
+    assert finishes(lambda: ds.addAll(Quad(*t, GC) for t in view))
+    assert {q.object for q in ds.match(graph=GC)} == {
+        Literal(v) for v in ("a1", "a2", "b1", "b2")
+    }
+
+
+def test_add_all_adds_a_stream_longer_than_a_batch():
+    triples = [Triple(S, P, Literal(str(i))) for i in range(2500)]
+    assert list(Graph().addAll(iter(triples))) == triples
+    quads = [Quad(*t, GA) for t in triples]
+    assert list(Dataset().addAll(iter(quads))) == quads
+
+
+def test_add_all_keeps_the_triples_before_a_bad_one():
+    g = Graph()
+    with pytest.raises(TypeError, match="a Graph holds triples; use a Dataset"):
+        g.addAll([Triple(S, P, Literal("a")), Quad(S, P, Literal("b"), GA)])
+    assert list(g) == [Triple(S, P, Literal("a"))]
+
+
+GAP_READERS = {
+    "iter": lambda g, a, b, c: iter(g),
+    "match": lambda g, a, b, c: g.match(a),
+    "mapped_triples": lambda g, a, b, c: (
+        tuple(m[1] for m in t) for t in g.mapped_triples(mark)
+    ),
+    "objects": lambda g, a, b, c: ((a, b, o) for o in g.objects(a, b)),
+    "predicate_objects": lambda g, a, b, c: (
+        (a, p, o) for p, o in g.predicate_objects(a)
+    ),
+    "subjects": lambda g, a, b, c: ((s, b, c) for s in g.subjects(b, c)),
+    "dataset iter": lambda ds, a, b, c: (q[:3] for q in ds),
+    "dataset match": lambda ds, a, b, c: (q[:3] for q in ds.match(a)),
+    "mapped_quads": lambda ds, a, b, c: (
+        tuple(m[1] for m in q[:3]) for q in ds.mapped_quads(mark)
+    ),
+}
+
+
+# Readers that check for changes again after turning ids into terms, so a
+# change between the index's check and the terms ends them before they
+# yield.
+CHECKED_AFTER_TERMS = {
+    "mapped_triples",
+    "dataset iter",
+    "dataset match",
+    "mapped_quads",
+}
+
+
+@pytest.mark.parametrize("read", GAP_READERS)
+def test_a_change_between_the_index_and_the_terms_never_misnames(monkeypatch, read):
+    # Another thread's remove, compaction and reuse of the freed ids can
+    # run after the index hands a read its checked ids and before the read
+    # turns them into terms. The read must name the triple it read, or
+    # raise.
+    from pymantic.triple_index import TripleIndex
+
+    a, b, c = (NamedNode(f"http://e/gap-{x}") for x in "abc")
+    new = Triple(*(NamedNode(f"http://e/new-{x}") for x in "def"))
+    target = Dataset() if read.startswith(("dataset", "mapped_quads")) else Graph()
+    if isinstance(target, Dataset):
+        target.add(Quad(a, b, c, None))
+    else:
+        target.add(Triple(a, b, c))
+    graph = target if isinstance(target, Graph) else view_of(target, None)
+
+    def change():
+        graph.removeMatches()
+        graph.add(new)
+        assert {graph._dictionary.lookup(t) for t in new} == {0, 1, 2}
+
+    def with_gap(method):
+        def read_with_gap(self, *args):
+            for ids in method(self, *args):
+                if not done:
+                    done.append(True)
+                    change()
+                yield ids
+
+        return read_with_gap
+
+    done = []
+    monkeypatch.setattr(TripleIndex, "match", with_gap(TripleIndex.match))
+    monkeypatch.setattr(TripleIndex, "__iter__", with_gap(TripleIndex.__iter__))
+    found = GAP_READERS[read](target, a, b, c)
+    if read not in CHECKED_AFTER_TERMS:
+        assert next(found) == (a, b, c)
+    with pytest.raises(RuntimeError, match="changed during iteration"):
+        next(found)
+
+
+class SourceError(Exception):
+    pass
+
+
+def failing_after(items, count):
+    """Yield the first `count` items, then raise, as a parser does at a
+    syntax error part way through a stream."""
+    yield from items[:count]
+    raise SourceError(count)
+
+
+@pytest.mark.parametrize("count", [0, 5, 1024, 1500, 2048])
+def test_add_all_keeps_what_a_failing_source_produced(count):
+    triples = [Triple(S, P, Literal(str(i))) for i in range(3000)]
+    g = Graph()
+    with pytest.raises(SourceError):
+        g.addAll(failing_after(triples, count))
+    assert list(g) == triples[:count]
+    quads = [Quad(*t, GA) for t in triples]
+    ds = Dataset()
+    with pytest.raises(SourceError):
+        ds.addAll(failing_after(quads, count))
+    assert list(ds) == quads[:count]
+
+
 def test_dataset_add_all_rejects_a_triple():
     ds = Dataset()
     with pytest.raises(TypeError, match="a Dataset holds quads"):
         ds.addAll([Quad(S, P, Literal("a"), GA), Triple(S, P, Literal("b"))])
     assert list(ds) == [Quad(S, P, Literal("a"), GA)]
+
+
+def test_add_all_raises_the_source_error_when_the_partial_batch_fails_too():
+    # The partial batch holds a quad, which the Graph refuses; the source's
+    # own error is still the one raised, with the refusal as its context.
+    items = [Triple(S, P, Literal("a")), Quad(S, P, Literal("b"), GA)]
+    g = Graph()
+    with pytest.raises(SourceError) as raised:
+        g.addAll(failing_after(items, 2))
+    assert isinstance(raised.value.__context__, TypeError)
+    assert list(g) == [Triple(S, P, Literal("a"))]
 
 
 def test_a_statement_with_an_unhashable_term_is_not_contained():
@@ -1293,6 +1462,63 @@ def test_a_fully_bound_dataset_match_answers_as_of_the_call(change):
     assert list(absent) == []
 
 
+@needs_threads
+def test_a_read_never_consumed_holds_no_lock():
+    g = abc_graph()
+    graph_reads = [read(g) for read in GRAPH_READERS.values()]
+    graph_reads.append(g.match(S, P, Literal("a")))
+    assert finishes(lambda: g.add(Triple(S, P, Literal("d"))))
+    ds = three_graph_dataset()
+    dataset_reads = [read(ds) for read in DATASET_READERS.values()]
+    dataset_reads.append(ds.match(S, P, Literal("b1")))
+    assert finishes(lambda: ds.add(Quad(S, P, Literal("new"), GA)))
+    assert finishes(lambda: view_of(ds, GB).add(Triple(S, P, Literal("new"))))
+
+
+class SteppingTriple(tuple):
+    """A triple that steps `reader` when addAll takes its length, so the
+    step runs in the middle of addAll's batch, and records what the step
+    did in `outcome`."""
+
+    def __new__(cls, triple, reader, outcome):
+        self = super().__new__(cls, triple)
+        self.reader = reader
+        self.outcome = outcome
+        return self
+
+    def __len__(self):
+        try:
+            self.outcome.append(next(self.reader))
+        except StopIteration:
+            self.outcome.append("finished")
+        except RuntimeError as error:
+            self.outcome.append(error)
+        return 3
+
+
+@pytest.mark.parametrize("read", DATASET_READERS)
+@pytest.mark.parametrize(
+    "walked", [1, 5, 6], ids=["in the default graph", "at the last quad", "at the end"]
+)
+def test_a_dataset_read_stepped_during_a_view_batch_raises(read, walked):
+    # The batch has already added to GB when the reader, walking another
+    # graph, is stepped; it must not yield, or finish, as if nothing changed.
+    ds = three_graph_dataset()
+    reader = DATASET_READERS[read](ds)
+    for _ in range(walked):
+        next(reader)
+    outcome = []
+    view_of(ds, GB).addAll(
+        [
+            Triple(S, P, Literal("new1")),
+            SteppingTriple(Triple(S, P, Literal("new2")), reader, outcome),
+        ]
+    )
+    (step,) = outcome
+    assert isinstance(step, RuntimeError)
+    assert str(step) == "Dataset changed during iteration"
+
+
 S2 = NamedNode("http://e/s2")
 
 
@@ -1304,6 +1530,76 @@ def split_subject_dataset():
         for n in (1, 2):
             ds.add(Quad(subject, P, Literal(prefix + str(n)), name))
     return ds
+
+
+# The functions of TripleIndex that change an index.
+INDEX_CHANGES = {
+    triple_index.TripleIndex.add.__code__,
+    triple_index.TripleIndex.remove.__code__,
+    triple_index.TripleIndex.remove_many.__code__,
+    triple_index.TripleIndex.detach.__code__,
+}
+
+
+def step_after_the_first_index_change(change, reader):
+    """Run `change`, stepping `reader` as the first index change returns,
+    as another thread could, and return what the step did, or None if no
+    index changed."""
+    outcome = []
+
+    def profile(frame, event, arg):
+        if event == "return" and not outcome and frame.f_code in INDEX_CHANGES:
+            try:
+                outcome.append(next(reader))
+            except StopIteration:
+                outcome.append("finished")
+            except RuntimeError as error:
+                outcome.append(error)
+
+    previous = sys.getprofile()
+    sys.setprofile(profile)
+    try:
+        change()
+    finally:
+        sys.setprofile(previous)
+    return outcome[0] if outcome else None
+
+
+# Built here, not in the change, so that its own index's add is not the
+# first index change a stepped change sees.
+NEW_IN_GB = Graph().add(Triple(S2, P, Literal("new")))
+
+# Each changes GB, and removeMatches GA after it, never the default graph.
+DIRECT_DATASET_CHANGES = {
+    "add": lambda ds: ds.add(Quad(S2, P, Literal("new"), GB)),
+    "remove": lambda ds: ds.remove(Quad(S2, P, Literal("b1"), GB)),
+    "removeMatches": lambda ds: ds.removeMatches(graph=GB),
+    "removeMatches every graph": lambda ds: ds.removeMatches(subject=S2),
+    "add_graph": lambda ds: ds.add_graph(NEW_IN_GB, named=GB),
+    "addAll": lambda ds: ds.addAll(
+        [Quad(S2, P, Literal("new1"), GB), Quad(S2, P, Literal("new2"), GB)]
+    ),
+    "remove_graph": lambda ds: ds.remove_graph(GB),
+}
+
+
+@pytest.mark.parametrize("change", DIRECT_DATASET_CHANGES)
+@pytest.mark.parametrize("read", DATASET_READERS)
+@pytest.mark.parametrize(
+    "walked", [1, 5, 6], ids=["in the default graph", "at the last quad", "at the end"]
+)
+def test_a_dataset_read_stepped_during_a_direct_change_raises(read, change, walked):
+    # The change has altered GB's index when the reader, walking another
+    # graph, is stepped; it must not yield, or finish, as if nothing changed.
+    ds = split_subject_dataset()
+    reader = DATASET_READERS[read](ds)
+    for _ in range(walked):
+        next(reader)
+    step = step_after_the_first_index_change(
+        lambda: DIRECT_DATASET_CHANGES[change](ds), reader
+    )
+    assert isinstance(step, RuntimeError)
+    assert str(step) == "Dataset changed during iteration"
 
 
 # Each changes nothing: every quad it adds is present, and nothing it

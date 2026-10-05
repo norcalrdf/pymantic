@@ -96,6 +96,26 @@ def serialize_nquads(dataset, f, stable=False):
         f.write(str(quad))
 
 
+def serialize_linetrig(dataset, f):
+    """Serialize some dataset to f as Line-TriG, the line-oriented TriG
+    profile defined in docs/line-trig.rst: default graph triples first, then
+    each named graph's triples, then ``G { }`` for each empty named graph."""
+    empty = []
+    # Dataset.graphs lists the default graph first.
+    for graph in dataset.graphs:
+        if graph.uri is None:
+            start, end = "", " .\n"
+        elif len(graph) == 0:
+            empty.append(graph.uri)
+            continue
+        else:
+            start, end = graph.uri.toNT() + " { ", " . }\n"
+        for triple in graph:
+            f.write(start + " ".join(term.toNT() for term in triple) + end)
+    for name in empty:
+        f.write(name.toNT() + " { }\n")
+
+
 def default_bnode_name_generator():
     """Yield blank node labels ``_:b0``, ``_:b1``, ... for default output."""
     i = 0

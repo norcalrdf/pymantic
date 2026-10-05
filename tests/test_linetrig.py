@@ -59,6 +59,11 @@ def test_line_number_counts_cr_and_crlf_endings():
         linetrig_parser.parse(TRIPLE + "\r" + TRIPLE + "\r\nnot a statement\n")
 
 
+def test_empty_graph_line_after_triples_keeps_them():
+    ds = linetrig_parser.parse("<http://e/g> { " + TRIPLE + " }\n<http://e/g> { }\n")
+    assert Quad(S, P, O, G) in ds and len(ds) == 1
+
+
 def test_blank_node_label_is_document_scoped():
     ds = linetrig_parser.parse(
         "_:g { _:b <http://e/p> <http://e/o> . }\n_:b <http://e/p> _:g .\n"
@@ -119,6 +124,20 @@ OUT_OF_PROFILE = {
 def test_out_of_profile_line_is_rejected_with_its_line_number(line, wrap):
     with pytest.raises(ValueError, match="line 2"):
         linetrig_parser.parse(wrap(TRIPLE + "\n" + line + "\n"))
+
+
+def test_writer_puts_default_graph_first_then_named_then_empty():
+    ds = Dataset()
+    ds.add(Quad(S, P, O, G))
+    ds.add(Quad(S, P, O, None))
+    ds.add_graph(Graph(), named=EMPTY)
+    out = StringIO()
+    serialize_linetrig(ds, out)
+    assert out.getvalue() == (
+        "<http://e/s> <http://e/p> <http://e/o> .\n"
+        "<http://e/g> { <http://e/s> <http://e/p> <http://e/o> . }\n"
+        "<http://e/empty> { }\n"
+    )
 
 
 def test_round_trip_keeps_empty_graphs_and_shared_blank_nodes():

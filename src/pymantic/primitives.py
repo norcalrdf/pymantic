@@ -21,21 +21,23 @@ __all__ = [
 ]
 
 import collections
-from collections import defaultdict
 import datetime
 import itertools
 from operator import itemgetter
 
 from pymantic.serializers import iri_escape, nt_escape, validate_language
 from pymantic.term_dictionary import TermDictionary
-from pymantic.triple_index import TripleIndex
+from pymantic.triple_index import ChangeCounter, TripleIndex
 import pymantic.uri_schemes as uri_schemes
 
 # Builds a Triple without the Python-level __new__, for the hot read paths.
 _new_triple = tuple.__new__
 
+_DATASET_CHANGED = "Dataset changed during iteration"
+
 # Raised by whatever refuses to put a quad in a Graph.
 GRAPH_HOLDS_TRIPLES = "a Graph holds triples; use a Dataset for quads"
+DATASET_HOLDS_QUADS = "a Dataset holds quads; add triples to one of its graphs"
 
 
 def is_language(lang):
@@ -470,7 +472,24 @@ class Graph:
         self._uri = graph_uri
         self._dictionary = TermDictionary()
         self._index = TripleIndex()
+        # Whoever owns the dictionary decides when to compact it. A
+        # standalone graph is its own owner, held as None rather than a
+        # reference to itself so the graph is freed without the cycle
+        # collector.
+        self._owner = None
         self._actions = set()
+
+    @classmethod
+    def _view(cls, uri, dictionary, index, owner):
+        """A graph over a dictionary and index that `owner` holds and
+        compacts, such as one graph of a dataset."""
+        graph = cls.__new__(cls)
+        graph._uri = uri
+        graph._dictionary = dictionary
+        graph._index = index
+        graph._owner = owner
+        graph._actions = set()
+        return graph
 
     @property
     def uri(self):
@@ -484,23 +503,32 @@ class Graph:
     def add(self, triple):
         """Adds the specified Triple to the graph. This method returns the
         graph instance it was called on."""
-        if len(triple) != 3:
+        # First, so a view of a removed graph raises whatever the
+        # triple, and interns nothing into its dataset's dictionary.
+        self._check_index()
+        if not isinstance(triple, tuple) or len(triple) != 3:
             raise TypeError(GRAPH_HOLDS_TRIPLES)
         s, p, o = triple
         intern = self._dictionary.intern
-        self._index.add(intern(s), intern(p), intern(o))
+        owner = self._owner
+        if owner is None:
+            self._index.add(intern(s), intern(p), intern(o))
+        elif self._index.add(intern(s), intern(p), intern(o)):
+            owner._quad_count += 1
         return self
 
     def remove(self, triple):
         """Removes the specified Triple from the graph. This method returns the
         graph instance it was called on."""
-        if len(triple) != 3:
+        self._check_index()
+        if not isinstance(triple, tuple) or len(triple) != 3:
             raise TypeError(GRAPH_HOLDS_TRIPLES)
         ids = self._ids(triple)
         if ids is None:
             raise KeyError(triple)
         self._index.remove(*ids)
-        self._maybe_compact()
+        self._count_quads(-1)
+        self._compact()
         return self
 
     def match(self, subject=None, predicate=None, object=None):
@@ -527,6 +555,7 @@ class Graph:
         """
         pattern = _pattern_ids(self._dictionary, subject, predicate, object)
         if pattern is None:
+            self._check_index()
             return iter(())
         terms = self._dictionary.terms
         if None not in pattern:
@@ -546,17 +575,21 @@ class Graph:
         match(), so calling with no arguments removes every triple."""
         pattern = _pattern_ids(self._dictionary, subject, predicate, object)
         if pattern is None:
+            self._check_index()
             return self
         # Collected first: removing ends any generator over the index.
         doomed = list(self._index.match(*pattern))
         if doomed:
             self._index.remove_many(doomed)
-            self._maybe_compact()
+            self._count_quads(-len(doomed))
+            self._compact()
         return self
 
     def addAll(self, graph_or_triples):
         """Imports the graph or set of triples in to this graph. This method
         returns the graph instance it was called on."""
+        # Checked even for an empty source, which never reaches the index.
+        self._check_index()
         for triple in graph_or_triples:
             self.add(triple)
         return self
@@ -572,6 +605,9 @@ class Graph:
         return new_graph
 
     def __contains__(self, item):
+        # First, so a view of a removed graph raises even for an item
+        # answered without reaching the index.
+        self._check_index()
         if not isinstance(item, tuple) or len(item) != 3:
             return False
         try:
@@ -618,6 +654,29 @@ class Graph:
         ids = (lookup(s), lookup(p), lookup(o))
         return None if None in ids else ids
 
+    def _check_index(self):
+        """Raise RuntimeError if this is a view of a graph its dataset has
+        removed. A read that finds an unknown term answers without touching
+        the index, so it calls this to fail as every other read does."""
+        len(self._index)
+
+    def _count_quads(self, added):
+        """Tell the owning dataset, if any, that this graph changed by
+        `added` triples (negative for removes), so its count of quads stays
+        right. Its dataset-wide generators need no telling: the index moved
+        the dataset's change counter before changing."""
+        owner = self._owner
+        if owner is not None:
+            owner._quad_count += added
+
+    def _compact(self):
+        """Let the dictionary's owner compact it after a remove."""
+        owner = self._owner
+        if owner is None:
+            self._maybe_compact()
+        else:
+            owner._maybe_compact()
+
     def _maybe_compact(self):
         # A triple refers to at most 3 terms, so past 6 terms per triple at
         # least half the dictionary is dead.
@@ -628,88 +687,260 @@ class Graph:
 
 
 class Dataset:
+    """A default graph plus named graphs, which may share blank nodes.
+
+    Every graph's terms, and the graph names, are interned in one
+    `TermDictionary`, so a term is one id across the whole dataset. Each
+    graph is its own `TripleIndex`, keyed by the id of its name; the default
+    graph is keyed by None and always exists. A named graph exists from when
+    it is first added until `remove_graph`, holding triples or not."""
+
     def __init__(self):
-        self._graphs = defaultdict(Graph)
+        self._dictionary = TermDictionary()
+        # Moved before every change to any graph, through the dataset or
+        # a view: every graph's index shares it and moves it before each
+        # change it makes, and the dataset moves it before creating a
+        # graph or compacting the dictionary. An index only notices
+        # changes to itself, so a generator walking every graph checks
+        # this too: a change to another graph can compact the dictionary
+        # and hand a freed id to a new term. Moving it before, not after,
+        # means a read stepped part way through a change, as another
+        # thread may, never sees it as no change.
+        self._changes = ChangeCounter()
+        self._graphs = {None: TripleIndex(self._changes)}
+        # The quads in every graph, kept as they are added and removed so
+        # that the compaction check after each remove costs no sum over
+        # what may be thousands of graphs.
+        self._quad_count = 0
 
     def add(self, quad):
-        self._graphs[quad.graph]._uri = quad.graph
-        self._graphs[quad.graph].add(q_as_t(quad))
+        if not isinstance(quad, tuple) or len(quad) != 4:
+            raise TypeError(DATASET_HOLDS_QUADS)
+        s, p, o, graph = quad
+        intern = self._dictionary.intern
+        # Terms first: one that cannot be interned must fail before
+        # the quad's graph is created, or it leaves an empty graph.
+        ids = intern(s), intern(p), intern(o)
+        if self._index_for_add(graph).add(*ids):
+            self._quad_count += 1
 
     def remove(self, quad):
-        """Remove a quad, raising KeyError if the dataset lacks its graph."""
-        # Looked up without creating: an empty named graph is part of the
-        # dataset, so only add and add_graph may bring one into being.
-        graph = self._graphs.get(quad.graph)
-        if graph is None:
+        """Remove a quad, raising KeyError if the dataset lacks it."""
+        if not isinstance(quad, tuple) or len(quad) != 4:
+            raise TypeError(DATASET_HOLDS_QUADS)
+        found = self._quad_ids(quad)
+        if found is None:
             raise KeyError(quad)
-        graph.remove(q_as_t(quad))
+        index, ids = found
+        try:
+            index.remove(*ids)
+        except KeyError:
+            raise KeyError(quad) from None
+        self._quad_count -= 1
+        self._maybe_compact()
 
     def add_graph(self, graph, named=None):
-        name = named or graph.uri
-        if name:
-            graph._uri = name
-            self._graphs[graph.uri] = graph
-        else:
+        """Copy the triples of `graph` into the graph called `named`, or
+        `graph.uri` if `named` is None, creating it if it is new. The
+        dataset keeps its own copy: later edits to `graph` do not reach it."""
+        name = named if named is not None else graph.uri
+        if name is None:
             raise ValueError("Graph must be named")
+        intern = self._dictionary.intern
+        # Interned before the graph is created, as in `add`.
+        ids = [(intern(s), intern(p), intern(o)) for s, p, o in graph]
+        add = self._index_for_add(name).add
+        for spo in ids:
+            if add(*spo):
+                self._quad_count += 1
 
     def remove_graph(self, graph_or_uri):
-        pass
+        """Remove a named graph, given it or its name. Views of it from
+        `graphs` raise RuntimeError from then on."""
+        name = graph_or_uri.uri if isinstance(graph_or_uri, Graph) else graph_or_uri
+        if name is None:
+            raise ValueError("the default graph cannot be removed")
+        name_id = self._dictionary.lookup(name)
+        if name_id is None or name_id not in self._graphs:
+            raise KeyError(name)
+        index = self._graphs[name_id]
+        count = len(index)
+        # Detached before the graph leaves the dataset: detaching moves
+        # the change counter, which must move before any change.
+        index.detach()
+        del self._graphs[name_id]
+        self._quad_count -= count
+        self._maybe_compact()
 
     @property
     def graphs(self):
-        return self._graphs.values()
+        """A list of `Graph` views of the dataset's graphs, default graph
+        first. Editing a view edits the dataset."""
+        terms = self._dictionary.terms
+        return [
+            Graph._view(
+                None if name_id is None else terms[name_id],
+                self._dictionary,
+                index,
+                self,
+            )
+            for name_id, index in self._graphs.items()
+        ]
 
     def match(self, subject=None, predicate=None, object=None, graph=None):
-        """Yield the quads matching the given terms; None matches any term.
-
-        With ``graph``, only that named graph is searched, and a graph the
-        dataset does not have yields nothing.
-        """
-        if graph:
-            named = self._graphs.get(graph)
-            if named is None:
-                return
-            for match in named.match(subject, predicate, object):
-                yield t_as_q(graph, match)
-        else:
-            for graph_uri, graph in self._graphs.items():
-                for match in graph.match(subject, predicate, object):
-                    yield t_as_q(graph_uri, match)
+        """Yield the quads matching a pattern, None being a wildcard. A
+        `graph` of None matches every graph, the default graph first; the
+        default graph's quads have `graph` None. Matching every graph with
+        a term unbound raises RuntimeError, as iterating the dataset does,
+        if any graph changes while the generator is open."""
+        pattern = _pattern_ids(self._dictionary, subject, predicate, object)
+        if pattern is None:
+            return iter(())
+        terms = self._dictionary.terms
+        if None not in pattern:
+            # Membership tests made now, as in Graph.match, so the
+            # caller may remove a match while the result is open. The
+            # quads are built now too: a remove can compact the
+            # dictionary and later adds reuse the freed ids, so the
+            # pattern's ids are only good until then.
+            triple = tuple(terms[i] for i in pattern)
+            return iter(
+                [
+                    _new_triple(Quad, (*triple, name))
+                    for name, index in self._indexes(graph)
+                    if pattern in index
+                ]
+            )
+        # Each graph's read starts here. One graph's index stops its own
+        # walk; a walk of every graph also stops on the dataset's version
+        # if any graph changes.
+        parts = [(name, index.match(*pattern)) for name, index in self._indexes(graph)]
+        version = self._changes.version if graph is None else None
+        return self._quads(terms, parts, version)
 
     def removeMatches(self, subject=None, predicate=None, object=None, graph=None):
         """This method removes those triples in the current graph which match
         the given arguments."""
-        for quad in self.match(subject, predicate, object, graph):
-            self.remove(quad)
+        pattern = _pattern_ids(self._dictionary, subject, predicate, object)
+        if pattern is not None:
+            removed = False
+            for _, index in self._indexes(graph):
+                # Collected first: removing ends any generator over the
+                # index.
+                doomed = list(index.match(*pattern))
+                if doomed:
+                    removed = True
+                    index.remove_many(doomed)
+                    self._quad_count -= len(doomed)
+            if removed:
+                self._maybe_compact()
         return self
 
     def addAll(self, dataset_or_quads):
-        """Imports the graph or set of triples in to this graph. This method
-        returns the graph instance it was called on."""
+        """Imports the quads of a dataset or iterable of quads in to this
+        dataset. This method returns the dataset it was called on."""
         for quad in dataset_or_quads:
             self.add(quad)
         return self
 
     def __len__(self):
-        return sum(len(g) for g in self.graphs)
+        return self._quad_count
 
     def __contains__(self, item):
-        if hasattr(item, "graph"):
-            if item.graph in self._graphs:
-                graph = self._graphs[item.graph]
-                return q_as_t(item) in graph
-        else:
-            for graph in self._graphs.values():
-                if item in graph:
-                    return True
+        """A `Quad` is looked up in its graph, a `Triple` in the default
+        graph."""
+        if not isinstance(item, tuple):
+            return False
+        if len(item) == 3:
+            item = (*item, None)
+        elif len(item) != 4:
+            return False
+        try:
+            found = self._quad_ids(item)
+        except TypeError:
+            # An unhashable term, which no dataset holds.
+            return False
+        return found is not None and found[1] in found[0]
 
     def __iter__(self):
-        for graph in self._graphs.values():
-            for triple in graph:
-                yield t_as_q(graph.uri, triple)
+        terms = self._dictionary.terms
+        parts = [(name, iter(index)) for name, index in self._indexes(None)]
+        version = self._changes.version
+        return self._quads(terms, parts, version)
+
+    def _quads(self, terms, parts, version):
+        """Yield the quads of `parts`, pairs of a graph name and its index's
+        ids; unless `version` is None, raise once the dataset's version is
+        no longer `version`."""
+        # Checked after building each quad and before yielding it, as the
+        # index checks after each fetch, and once more after the last, so
+        # a read stepped after any graph's change has been counted neither
+        # yields nor finishes.
+        changes = self._changes
+        for name, ids in parts:
+            for s, p, o in ids:
+                quad = _new_triple(Quad, (terms[s], terms[p], terms[o], name))
+                if version is not None and changes.version != version:
+                    raise RuntimeError(_DATASET_CHANGED)
+                yield quad
+        if version is not None and changes.version != version:
+            raise RuntimeError(_DATASET_CHANGED)
 
     def toArray(self):
         return frozenset(self)
+
+    def _index_for_add(self, name):
+        """The index of the graph called `name`, created if it is new."""
+        if name is None:
+            return self._graphs[None]
+        name_id = self._dictionary.intern(name)
+        index = self._graphs.get(name_id)
+        if index is None:
+            self._changes.version += 1
+            index = self._graphs[name_id] = TripleIndex(self._changes)
+        return index
+
+    def _indexes(self, graph):
+        """(name, index) for the graph called `graph`, or for every graph if
+        `graph` is None. Never creates a graph."""
+        if graph is None:
+            terms = self._dictionary.terms
+            for name_id, index in self._graphs.items():
+                yield (None if name_id is None else terms[name_id]), index
+            return
+        name_id = self._dictionary.lookup(graph)
+        index = self._graphs.get(name_id) if name_id is not None else None
+        if index is not None:
+            yield self._dictionary.terms[name_id], index
+
+    def _quad_ids(self, quad):
+        """(index, id triple) of `quad`, or None if its graph does not exist
+        or one of its terms is unknown."""
+        s, p, o, graph = quad
+        lookup = self._dictionary.lookup
+        if graph is None:
+            index = self._graphs[None]
+        else:
+            name_id = lookup(graph)
+            if name_id is None:
+                return None
+            index = self._graphs.get(name_id)
+            if index is None:
+                return None
+        ids = (lookup(s), lookup(p), lookup(o))
+        return None if None in ids else (index, ids)
+
+    def _maybe_compact(self):
+        # As Graph._maybe_compact, counting quads across every graph, plus
+        # one live term per graph name.
+        dictionary = self._dictionary
+        names = len(self._graphs) - 1
+        if len(dictionary) > 6 * self._quad_count + names:
+            live = {name_id for name_id in self._graphs if name_id is not None}
+            for index in self._graphs.values():
+                live.update(index.ids())
+            self._changes.version += 1
+            dictionary.compact(live)
 
 
 # RDF Enviroment Interfaces

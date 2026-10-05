@@ -1,0 +1,4 @@
+# _:b is in the default graph and in <http://e/g1>, and names a third graph.
+_:b <http://e/p> <http://e/o> .
+<http://e/g1> { _:b <http://e/p> "one" . }
+_:b { <http://e/s> <http://e/p> <http://e/o> . }

@@ -9,6 +9,7 @@ faster and changes nothing: run it once per tree and compare the lines.
     python benchmarks/timing.py fhir-r5-examples schemaorg-shapes
     PYTHONPATH=<other tree>/src python benchmarks/timing.py fhir-r5-examples
     python benchmarks/timing.py synthetic --repeat 5 --what labels
+    python benchmarks/timing.py obi --what turtle
 
 Inputs are names from benchmarks/inputs.py, or the kinds real, synthetic and
 rdfc10 (default: real). --what picks labels, turtle (default output) and
@@ -16,6 +17,9 @@ stable (stable=True Turtle). Each time is the best of --repeat runs with the
 garbage collector on; --gc-off adds a run set with it disabled. Every line
 shows all run times, so the spread is visible: on a busy machine runs of a
 few seconds vary by 10% or more.
+
+The rdfc10 inputs are N-Quads and load as Datasets. Labels run on them;
+turtle and stable print "n/a (dataset)", since Turtle cannot hold a dataset.
 """
 
 import argparse
@@ -27,7 +31,7 @@ import time
 
 import pymantic
 from pymantic.compare import Undecidable, canonical_labels
-from pymantic.primitives import Profile
+from pymantic.primitives import Dataset, Profile
 from pymantic.serializers import serialize_turtle
 
 # Prefixes for the real inputs' Turtle, so the timed output is the readable
@@ -136,6 +140,9 @@ def main():
         for gc_enabled in (True, False) if args.gc_off else (True,):
             for kind in ("labels", "turtle", "stable"):
                 if kind not in what:
+                    continue
+                if kind != "labels" and isinstance(graph, Dataset):
+                    print(f"{name:24} {kind:14} n/a (dataset)", flush=True)
                     continue
                 run, digest = measurements[kind]
                 try:

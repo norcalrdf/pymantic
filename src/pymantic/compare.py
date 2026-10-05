@@ -60,14 +60,20 @@ INDIVIDUAL = 0x2545F4914F6CDD1D  # mixed in when a node is individualized
 
 
 class Undecidable(Exception):
-    """Raised when a molecule exhausts its work budget before reaching a
-    canonical form. The message names the molecule by size and attachments."""
+    """Raised when a molecule exhausts its work budget.
+
+    The molecule had not reached a canonical form. The message names it by
+    size and attachments.
+    """
 
 
 def mix(*parts):
-    """Deterministic 64-bit hash of a sequence of integers (FNV-1a over
-    whole words). Collisions only merge refinement classes and cost work;
-    they never make different molecules compare equal."""
+    """Return a deterministic 64-bit hash of a sequence of integers.
+
+    This is FNV-1a over whole words. Collisions only merge refinement
+    classes and cost work; they never make different molecules compare
+    equal.
+    """
     h = FNV_OFFSET
     for part in parts:
         h = ((h ^ part) * FNV_PRIME) & MASK
@@ -85,7 +91,8 @@ def coding_rows(node, statements):
     it, that node, the parts after it), so a round hashes only from that
     node's code on. Anything else is kept whole in ``general``. Returns
     (fixed, links, general); summing as refine does gives exactly the
-    total that mixing every statement in full would."""
+    total that mixing every statement in full would.
+    """
     fixed, links, general = 0, [], []
     for statement in statements:
         # One pass: hash parts until another blank node turns up, then
@@ -117,19 +124,24 @@ def coding_rows(node, statements):
 
 
 def term_code(key):
-    """Deterministic 64-bit code of an IRI or literal key: the first 8 bytes
-    of its SHA-256. SHA-256 because every Python implementation provides it;
-    GraalPy's BLAKE2 cannot produce short digests."""
+    """Return the deterministic 64-bit code of an IRI or literal key.
+
+    The code is the first 8 bytes of the key's SHA-256. SHA-256 because
+    every Python implementation provides it; GraalPy's BLAKE2 cannot produce
+    short digests.
+    """
     digest = hashlib.sha256(key.encode("utf-8")).digest()[:8]
     return int.from_bytes(digest, "big")
 
 
 def term_key(term):
-    """A string that identifies an IRI or literal as an RDF term: two terms
-    get the same key exactly when RDF says they are the same term. A
-    :class:`~pymantic.primitives.Literal` is already canonical -- it carries
-    a datatype whether or not one was written -- so its three fields decide
-    the key, written the way N-Triples writes them."""
+    """Return the string that identifies an IRI or literal as an RDF term.
+
+    Two terms get the same key exactly when RDF says they are the same term.
+    A :class:`~pymantic.primitives.Literal` is already canonical -- it
+    carries a datatype whether or not one was written -- so its three fields
+    decide the key, written the way N-Triples writes them.
+    """
     if isinstance(term, NamedNode):
         return "<%s>" % term
     if isinstance(term, Literal):
@@ -143,16 +155,19 @@ def term_key(term):
 
 
 def statements(graph_or_dataset):
-    """The content of a graph or dataset as a list of distinct
-    (subject, predicate, object, graph) tuples. IRIs and literals become
-    their :func:`term_key`; blank nodes stay as themselves. The graph
-    position is "" for a triple and for a quad in the default graph.
+    """Return a graph or dataset as a list of distinct statements.
+
+    Each statement is a (subject, predicate, object, graph) tuple. IRIs and
+    literals become their :func:`term_key`; blank nodes stay as themselves.
+    The graph position is "" for a triple and for a quad in the default
+    graph.
 
     A named graph of a dataset that holds no quads is still part of the
     dataset, so it gets a record of its own: :data:`EMPTY_GRAPH` in the
     first three positions and the graph name in the fourth. An IRI name
     makes that record ground; a blank name puts it in that node's
-    molecule."""
+    molecule.
+    """
     keys = {}
 
     def key(term):
@@ -180,22 +195,25 @@ def statements(graph_or_dataset):
 
 
 def is_ground(statement):
+    """Return whether a statement names no blank node."""
     return not any(isinstance(term, BlankNode) for term in statement)
 
 
 def placeholder(statement):
-    """The statement with every blank node replaced by a placeholder."""
+    """Return the statement with every blank node replaced by a placeholder."""
     return tuple("_" if isinstance(term, BlankNode) else term for term in statement)
 
 
 class Molecule:
-    """A maximal set of blank nodes connected by blank-to-blank statements,
-    with every statement that touches one of them.
+    """A connected group of blank nodes and every statement touching them.
 
-    ``nodes`` and ``statements`` are in first-encounter order. ``incident``
-    maps each node to its statements with IRIs and literals replaced by
-    their :func:`term_code`. ``coding`` holds, for each node in order, the
-    node and its :func:`coding_rows`, which is what :func:`refine` reads."""
+    The group is maximal: blank nodes are connected by blank-to-blank
+    statements. ``nodes`` and ``statements`` are in first-encounter order.
+    ``incident`` maps each node to its statements with IRIs and literals
+    replaced by their :func:`term_code`. ``coding`` holds, for each node in
+    order, the node and its :func:`coding_rows`, which is what
+    :func:`refine` reads.
+    """
 
     def __init__(self):
         self.nodes = []
@@ -204,9 +222,12 @@ class Molecule:
         self.coding = []
 
     def prepare(self, term_codes):
-        """Fill in ``nodes``, ``incident`` and ``coding`` once ``statements``
-        is complete. ``term_codes`` caches :func:`term_code` for the length
-        of one comparison and is shared by all its molecules."""
+        """Fill in ``nodes``, ``incident`` and ``coding``.
+
+        Call this once ``statements`` is complete. ``term_codes`` caches
+        :func:`term_code` for the length of one comparison and is shared by
+        all its molecules.
+        """
         seen = {}
         for statement in self.statements:
             for term in statement:
@@ -231,11 +252,13 @@ class Molecule:
         ]
 
     def attachments(self):
+        """Return the sorted IRI and literal keys in the molecule's statements."""
         return sorted(
             {t for s in self.statements for t in s if not isinstance(t, BlankNode)}
         )
 
     def describe(self):
+        """Return a one-line description of the molecule for error messages."""
         attachments = self.attachments()
         shown = ", ".join(attachments[:8])
         if len(attachments) > 8:
@@ -248,8 +271,10 @@ class Molecule:
 
 
 def molecules(statements):
-    """Split the non-ground statements into molecules, in the order their
-    first statement appears."""
+    """Split the non-ground statements into molecules.
+
+    Molecules come in the order their first statement appears.
+    """
     parent = {}
 
     def find(node):
@@ -278,8 +303,10 @@ def molecules(statements):
 
 
 def signature(molecule):
-    """Size and placeholder multiset; molecules that can be isomorphic have
-    equal signatures."""
+    """Return a molecule's size and placeholder multiset.
+
+    Molecules that can be isomorphic have equal signatures.
+    """
     return (
         len(molecule.nodes),
         tuple(sorted(placeholder(s) for s in molecule.statements)),
@@ -290,6 +317,7 @@ class Budget:
     """Work allowed for one molecule, in node visits; see WORK_PER_NODE."""
 
     def __init__(self, molecule, work_limit=None):
+        """Allow the molecule its budget, or ``work_limit`` if that is lower."""
         self.molecule = molecule
         size = len(molecule.nodes)
         self.total = size * size * (WORK_PER_NODE + size)
@@ -299,6 +327,7 @@ class Budget:
         self.left = self.total
 
     def spend(self, units):
+        """Spend node visits, raising :class:`Undecidable` when none are left."""
         self.left -= units
         if self.left < 0:
             raise Undecidable(
@@ -308,11 +337,13 @@ class Budget:
 
 
 def refine(molecule, codes, budget=None):
-    """Carroll's iterative vertex classification. ``codes`` maps every node
-    of the molecule to its current class code; the result maps each node to
-    a code that combines its previous code with the multiset of its
-    incident statements, iterated until the partition into classes stops
-    changing. Nodes with equal codes are in the same class."""
+    """Refine a molecule's partition by Carroll's iterative vertex classification.
+
+    ``codes`` maps every node of the molecule to its current class code; the
+    result maps each node to a code that combines its previous code with the
+    multiset of its incident statements, iterated until the partition into
+    classes stops changing. Nodes with equal codes are in the same class.
+    """
     coding = molecule.coding
     classes = len(set(codes.values()))
     while True:
@@ -343,9 +374,11 @@ def refine(molecule, codes, budget=None):
 
 
 def labelled_form(molecule, codes):
-    """The canonical form for a partition of singletons: nodes are numbered
-    in code order and the statements written with those numbers, sorted.
-    Returns (form, positions)."""
+    """Return the canonical form for a partition of singletons.
+
+    Nodes are numbered in code order and the statements written with those
+    numbers, sorted. Returns (form, positions).
+    """
     ordered = sorted(molecule.nodes, key=codes.__getitem__)
     positions = {node: i for i, node in enumerate(ordered)}
     width = len(str(len(ordered) - 1))
@@ -362,12 +395,15 @@ def labelled_form(molecule, codes):
 
 
 def twins(molecule, nodes):
-    """One representative from each set of ``nodes`` (all in one class)
-    that are twins: nodes whose incident statements are identical once the
-    node itself is masked. Swapping two twins is an automorphism, so
-    individualizing either gives the same canonical form and only one
-    branch needs searching. Identical anonymous siblings under a blank node
-    are the common case in documents, and without this they cost k! work."""
+    """Return one representative of each set of twins among ``nodes``.
+
+    ``nodes`` are all in one class. Twins are nodes whose incident
+    statements are identical once the node itself is masked. Swapping two
+    twins is an automorphism, so individualizing either gives the same
+    canonical form and only one branch needs searching. Identical anonymous
+    siblings under a blank node are the common case in documents, and
+    without this they cost k! work.
+    """
     representatives = {}
     for node in nodes:
         key = tuple(
@@ -384,11 +420,13 @@ def twins(molecule, nodes):
 
 
 def individualize(molecule, codes, budget):
-    """Depth-first search over individualization choices. Whenever a
-    refined partition still has a class of several nodes, the smallest such
-    class is picked and each of its nodes is tried as the one to
-    individualize. The lexicographically smallest canonical form over all
-    leaves wins. Returns (form, positions)."""
+    """Search individualization choices depth first for the canonical form.
+
+    Whenever a refined partition still has a class of several nodes, the
+    smallest such class is picked and each of its nodes is tried as the one
+    to individualize. The lexicographically smallest canonical form over all
+    leaves wins. Returns (form, positions).
+    """
     best = None
     pending = [codes]
     while pending:
@@ -414,25 +452,31 @@ def individualize(molecule, codes, budget):
 
 
 def canonical_form(molecule, work_limit=None):
-    """(form, positions) for a molecule: ``form`` is a sorted tuple of its
-    statements with blank nodes replaced by canonical positions, equal for
-    isomorphic molecules; ``positions`` maps each node to its position.
-    Raises :class:`Undecidable` when the molecule's work budget runs out;
-    ``work_limit`` caps that budget in node visits (it cannot raise it)."""
+    """Return (form, positions) for a molecule.
+
+    ``form`` is a sorted tuple of its statements with blank nodes replaced
+    by canonical positions, equal for isomorphic molecules; ``positions``
+    maps each node to its position. Raises :class:`Undecidable` when the
+    molecule's work budget runs out; ``work_limit`` caps that budget in node
+    visits (it cannot raise it).
+    """
     budget = Budget(molecule, work_limit)
     codes = dict.fromkeys(molecule.nodes, 0)
     return individualize(molecule, codes, budget)
 
 
 def form_digest(form):
+    """Return twelve hex digits identifying a canonical form."""
     lines = "\n".join(" ".join(statement) for statement in form)
     # The first 6 bytes of SHA-256, as twelve hex digits; see term_code.
     return hashlib.sha256(lines.encode("utf-8")).hexdigest()[:12]
 
 
 def bail_stage(a, b, work_limit=None):
-    """The number of the first stage of the design note that shows the two
-    graphs (or datasets) differ, or None when they are isomorphic."""
+    """Return the first stage of the design note at which two graphs differ.
+
+    Works for two datasets too. Returns None when they are isomorphic.
+    """
     statements_a, statements_b = statements(a), statements(b)
     if len(statements_a) != len(statements_b):
         return 1
@@ -464,27 +508,33 @@ def bail_stage(a, b, work_limit=None):
 
 
 def isomorphic(a, b, work_limit=None):
-    """Whether two graphs, or two datasets, are isomorphic: equal up to
-    renaming of blank nodes. Two datasets must have the same named graphs,
-    empty ones included. Raises :class:`Undecidable` if a molecule's
-    work budget runs out. ``work_limit`` lowers that budget to at most the
-    given number of node visits per molecule; it can never raise it. See
-    :doc:`/graph-comparison`."""
+    """Return whether two graphs, or two datasets, are isomorphic.
+
+    Isomorphic means equal up to renaming of blank nodes. Two datasets must
+    have the same named graphs, empty ones included. Raises
+    :class:`Undecidable` if a molecule's work budget runs out.
+    ``work_limit`` lowers that budget to at most the given number of node
+    visits per molecule; it can never raise it. See
+    :doc:`/graph-comparison`.
+    """
     return bail_stage(a, b, work_limit) is None
 
 
 def canonical_labels_and_order(graph_or_dataset, work_limit=None):
-    """Returns (labels, order). ``labels`` maps every blank node to its
-    canonical label; ``order`` maps it to its rank when molecules are sorted
-    by canonical form and nodes within a molecule by position, which is the
-    order the stable serializers write sibling blank nodes in.
+    """Return (labels, order) for every blank node of a graph or dataset.
+
+    ``labels`` maps every blank node to its canonical label; ``order`` maps
+    it to its rank when molecules are sorted by canonical form and nodes
+    within a molecule by position, which is the order the stable
+    serializers write sibling blank nodes in.
 
     A label is ``b`` followed by a 12-hex-digit digest of the molecule's
     canonical form, then ``m<i>`` when several molecules share that digest
     (they are numbered in canonical form order, identical ones in encounter
     order) and ``n<position>`` when the molecule has several nodes. Deriving
     the label from a digest rather than a rank keeps the labels of every
-    other molecule unchanged when one molecule is edited."""
+    other molecule unchanged when one molecule is edited.
+    """
     placed = [
         (molecule, *canonical_form(molecule, work_limit))
         for molecule in molecules(statements(graph_or_dataset))
@@ -513,11 +563,13 @@ def canonical_labels_and_order(graph_or_dataset, work_limit=None):
 
 
 def canonical_labels(graph_or_dataset, work_limit=None):
-    """Map every blank node of a graph or dataset to a label derived only
-    from its content, so that a relabelled or reordered copy gets the same
-    labels. A blank node that only names an empty graph of a dataset gets a
-    label like any other. Raises :class:`Undecidable` if a molecule's work budget runs
-    out. ``work_limit`` lowers that budget to at most the given number of
-    node visits per molecule; it can never raise it. See
-    :doc:`/graph-comparison`."""
+    """Map every blank node of a graph or dataset to a content-derived label.
+
+    The labels depend only on content, so a relabelled or reordered copy
+    gets the same labels. A blank node that only names an empty graph of a
+    dataset gets a label like any other. Raises :class:`Undecidable` if a
+    molecule's work budget runs out. ``work_limit`` lowers that budget to at
+    most the given number of node visits per molecule; it can never raise
+    it. See :doc:`/graph-comparison`.
+    """
     return canonical_labels_and_order(graph_or_dataset, work_limit)[0]

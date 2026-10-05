@@ -263,6 +263,12 @@ class Literal(tuple):
     }
 
     def __new__(_cls, value, language=None, datatype=None):
+        """Create a literal, filling in the datatype RDF 1.1 gives it.
+
+        A value that is not a string is converted to its lexical form, with
+        the matching XSD datatype unless one is given. An empty language
+        counts as none.
+        """
         if not isinstance(value, str):
             value, auto_datatype = _cls.types[type(value)](value)
             if not datatype:
@@ -304,7 +310,7 @@ class Literal(tuple):
         return {"value": t[0], "language": t[1], "datatype": t[2]}
 
     def _replace(_self, **kwds):
-        "Return a new Literal object replacing specified fields with new value"
+        """Return a new Literal with the specified fields replaced."""
         if "language" in kwds and "datatype" not in kwds:
             # The datatypes of a simple literal and of a language-tagged
             # string are implied by the language, so changing the language
@@ -330,6 +336,7 @@ class Literal(tuple):
         return str(self.value)
 
     def toNT(self):
+        """Return the literal written as N-Triples."""
         quoted = '"' + nt_escape(self.value) + '"'
         if self.language:
             # A language-tagged string is written with its tag alone; its
@@ -360,6 +367,7 @@ class NamedNode(str):
         return self.value
 
     def toNT(self):
+        """Return the IRI written as N-Triples."""
         return f"<{iri_escape(self.value)}>"
 
 
@@ -569,6 +577,7 @@ class Dataset:
         self._graphs[quad.graph].add(q_as_t(quad))
 
     def remove(self, quad):
+        """Remove a quad, raising KeyError if the dataset lacks its graph."""
         # Looked up without creating: an empty named graph is part of the
         # dataset, so only add and add_graph may bring one into being.
         graph = self._graphs.get(quad.graph)
@@ -592,6 +601,11 @@ class Dataset:
         return self._graphs.values()
 
     def match(self, subject=None, predicate=None, object=None, graph=None):
+        """Yield the quads matching the given terms; None matches any term.
+
+        With ``graph``, only that named graph is searched, and a graph the
+        dataset does not have yields nothing.
+        """
         if graph:
             named = self._graphs.get(graph)
             if named is None:

@@ -1,3 +1,5 @@
+"""Write pymantic graphs and datasets as N-Triples, N-Quads and Turtle."""
+
 from collections import Counter, OrderedDict
 from io import StringIO
 import re
@@ -33,6 +35,7 @@ NT_ESCAPED_RE = re.compile('[\x00-\x1f\x7f"\\\\\ud800-\udfff\ufffe\uffff]')
 
 
 def nt_escape_char(match):
+    """Return the N-Triples escape for one character matched by NT_ESCAPED_RE."""
     char = match.group()
     return NT_ECHAR.get(char) or "\\u%04X" % ord(char)
 
@@ -67,11 +70,13 @@ def stable_lines(graph_or_dataset):
 
 
 def serialize_ntriples(graph, f, stable=False):
-    """Serialize some graph to f as ntriples, in graph order. With
-    ``stable``, blank nodes get content-derived labels and the lines are
-    sorted, so the same graph always produces the same bytes; this raises
-    :class:`pymantic.compare.Undecidable` for a graph whose blank nodes
-    cannot be told apart within the work budget."""
+    """Serialize a graph to f as N-Triples, in graph order.
+
+    With ``stable``, blank nodes get content-derived labels and the lines
+    are sorted, so the same graph always produces the same bytes; this
+    raises :class:`pymantic.compare.Undecidable` for a graph whose blank
+    nodes cannot be told apart within the work budget.
+    """
     if stable:
         f.writelines(stable_lines(graph))
         return
@@ -80,8 +85,10 @@ def serialize_ntriples(graph, f, stable=False):
 
 
 def serialize_nquads(dataset, f, stable=False):
-    """Serialize some dataset to f as nquads, in dataset order. ``stable``
-    works as for :func:`serialize_ntriples`."""
+    """Serialize a dataset to f as N-Quads, in dataset order.
+
+    ``stable`` works as for :func:`serialize_ntriples`.
+    """
     if stable:
         f.writelines(stable_lines(dataset))
         return
@@ -90,6 +97,7 @@ def serialize_nquads(dataset, f, stable=False):
 
 
 def default_bnode_name_generator():
+    """Yield blank node labels ``_:b0``, ``_:b1``, ... for default output."""
     i = 0
     while True:
         yield "_:b" + str(i)
@@ -127,10 +135,12 @@ PN_LOCAL_RE = re.compile(
 
 
 def escape_prefix_local(name):
-    """Escape the local part of a prefixed name (``prefix:local``) so it is a
-    valid Turtle PN_LOCAL. Returns None when the local part cannot be expressed
-    as a prefixed name even with escapes, in which case the caller should fall
-    back to the full <IRI> form."""
+    """Escape the local part of a prefixed name so it is a valid PN_LOCAL.
+
+    ``name`` is ``prefix:local``. Returns None when the local part cannot be
+    expressed as a prefixed name even with escapes, in which case the
+    caller should fall back to the full <IRI> form.
+    """
     prefix, colon, local = name.partition(":")
     if prefix and not PN_PREFIX_RE.fullmatch(prefix):
         raise ValueError("Invalid Turtle prefix name")
@@ -196,7 +206,7 @@ TURTLE_STRING_ESCAPES = turtle_string_escapes()
 
 
 def turtle_string_escape(string):
-    """Escape a string appropriately for output in turtle form."""
+    """Return a string as a double-quoted Turtle string literal."""
     # Single pass, so a backslash inserted by one escape is never escaped
     # again.
     return '"' + string.translate(TURTLE_STRING_ESCAPES) + '"'
@@ -205,9 +215,12 @@ def turtle_string_escape(string):
 def turtle_repr(
     node, profile, name_map, bnode_name_maker, base=None, used_prefixes=None
 ):
-    """Turn a node in an RDF graph into its turtle representation. When
-    ``used_prefixes`` is a set, the prefix of every prefixed name written is
-    added to it; an IRI that falls back to ``<...>`` adds nothing."""
+    """Return the Turtle representation of a node in an RDF graph.
+
+    When ``used_prefixes`` is a set, the prefix of every prefixed name
+    written is added to it; an IRI that falls back to ``<...>`` adds
+    nothing.
+    """
     if node.interfaceName == "NamedNode":
         name = profile.prefixes.shrink(node)
         if name != node:
@@ -252,9 +265,11 @@ def turtle_repr(
 
 
 def turtle_sorted_names(nodes, name_maker, tie_break=None):
-    """Sort a list of nodes in a graph by turtle name. ``tie_break`` maps a
-    node to a secondary key for nodes with the same name, such as two list
-    heads that are both written ``(1)``."""
+    """Return (name, node) pairs for nodes, sorted by Turtle name.
+
+    ``tie_break`` maps a node to a secondary key for nodes with the same
+    name, such as two list heads that are both written ``(1)``.
+    """
     pairs = ((name_maker(node), node) for node in nodes)
     if tie_break is None:
         return sorted(pairs, key=lambda p: p[0])
@@ -276,8 +291,11 @@ RDF_NIL = "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"
 
 
 def list_cell_shape(graph, node):
-    """(first, rest, has_other_predicates) if node looks like an RDF list
-    cell: a blank node with exactly one rdf:first and one rdf:rest."""
+    """Return (first, rest, has_other_predicates) if node is an RDF list cell.
+
+    A list cell is a blank node with exactly one rdf:first and one rdf:rest;
+    for anything else the result is None.
+    """
     if getattr(node, "interfaceName", None) != "BlankNode":
         return None
     firsts, rests, others = [], [], False
@@ -305,7 +323,10 @@ def plan_collections(graph, references=None):
     subjects of their own. A node only qualifies when the whole chain from it
     to rdf:nil is made of blank nodes with exactly one rdf:first, exactly one
     rdf:rest, nothing else, and (past the head) exactly one reference; any
-    other shape is written as ordinary triples so no information is lost."""
+    other shape is written as ordinary triples so no information is lost.
+    ``references`` counts the triples each node is the object of; it is
+    counted here when not given.
+    """
     if references is None:
         references = Counter(triple.object for triple in graph)
     # A node that is not a subject has no rdf:first, so it is no cell.
@@ -360,11 +381,13 @@ def list_cells(graph, head):
 
 
 def inline_candidates(graph, inline, as_subject, consumed, references):
-    """Blank nodes that may be written as [ ... ]: the object of exactly one
-    triple, no part in a collection (``inline``, ``as_subject`` and
-    ``consumed`` are from :func:`plan_collections`), and no rdf:first or
-    rdf:rest of their own. ``references`` counts the triples each node is
-    the object of."""
+    """Return the blank nodes that may be written as [ ... ].
+
+    Such a node is the object of exactly one triple, takes no part in a
+    collection (``inline``, ``as_subject`` and ``consumed`` are from
+    :func:`plan_collections`), and has no rdf:first or rdf:rest of its own.
+    ``references`` counts the triples each node is the object of.
+    """
     candidates = set()
     for node, count in references.items():
         if count != 1 or getattr(node, "interfaceName", None) != "BlankNode":
@@ -378,12 +401,12 @@ def inline_candidates(graph, inline, as_subject, consumed, references):
 
 
 class _InlinePlanner:
-    """Walks one graph from its subjects to decide what
-    :func:`plan_inline_blank_nodes` returns.
+    """The walk behind :func:`plan_inline_blank_nodes`.
 
-    The walk is recursive per nesting level and shares what it has already
-    decided across every subject it starts from, so this object holds that
-    state for the length of one plan."""
+    It walks one graph from its subjects. The walk is recursive per nesting
+    level and shares what it has already decided across every subject it
+    starts from, so this object holds that state for the length of one plan.
+    """
 
     def __init__(self, graph, inline, as_subject, candidates):
         self.graph = graph
@@ -451,8 +474,10 @@ class _InlinePlanner:
 def plan_inline_blank_nodes(
     graph, inline, as_subject, consumed, rank, references, blank_nodes=True
 ):
-    """Decide which blank nodes to write with Turtle's [ ... ] syntax, and
-    which collections are nested too deep to write with ( ... ).
+    """Plan Turtle's [ ... ] blank nodes and its too-deep ( ... ) lists.
+
+    This decides which blank nodes to write with [ ... ], and which
+    collections are nested too deep to write with ( ... ).
 
     A blank node qualifies when it is the object of exactly one triple, takes
     no part in a collection (``inline``, ``as_subject`` and ``consumed`` are
@@ -474,7 +499,8 @@ def plan_inline_blank_nodes(
     their rdf:first and rdf:rest triples. With ``blank_nodes`` False no
     blank node is inlined and only collection depth is planned, as default
     (non-stable) output needs. Returns (nodes to inline, list heads to write
-    with labels)."""
+    with labels).
+    """
     candidates = (
         inline_candidates(graph, inline, as_subject, consumed, references)
         if blank_nodes
@@ -502,29 +528,35 @@ INDENT = 4
 
 
 def indented(text, column):
-    """Shift the continuation lines of a multi-line object, which carry their
-    own indentation relative to the line it starts on, to that line's
-    indentation."""
+    """Shift the continuation lines of a multi-line object to ``column``.
+
+    Those lines carry their own indentation relative to the line the object
+    starts on; ``column`` is that line's indentation.
+    """
     return text.replace("\n", "\n" + " " * column)
 
 
 def object_list(object_names, indent, column):
-    """The objects of one predicate, written after it on a line indented
-    ``indent``. One-line objects go one per line at ``column``; if any object
-    spans lines they are joined with ", " instead, so each opens where the
-    one before it closed and every body sits INDENT in from ``indent``."""
+    """Return the objects of one predicate as Turtle text.
+
+    They are written after the predicate on a line indented ``indent``.
+    One-line objects go one per line at ``column``; if any object spans
+    lines they are joined with ", " instead, so each opens where the one
+    before it closed and every body sits INDENT in from ``indent``.
+    """
     if any("\n" in name for name in object_names):
         return ", ".join(indented(name, indent) for name in object_names)
     return (",\n" + " " * column).join(object_names)
 
 
 class _TurtleWriter:
-    """Writes one graph to a stream as Turtle.
+    """The state of writing one graph to a stream as Turtle.
 
     The parts of the output share state: blank node labels are handed out
     as nodes are first named, and an inline collection is written once, at
     its one reference, after which it is only named. This object holds that
-    state for the length of one serialization."""
+    state for the length of one serialization.
+    """
 
     def __init__(self, graph, f, base, profile, bnode_name_generator, stable):
         self.graph = graph
@@ -747,7 +779,8 @@ def serialize_turtle(
     are declared. The same graph then always produces the same bytes, and
     editing one blank node's content changes only the lines of its molecule.
     Raises :class:`pymantic.compare.Undecidable` for a graph whose blank
-    nodes cannot be told apart within the work budget."""
+    nodes cannot be told apart within the work budget.
+    """
     if profile is None:
         from pymantic.primitives import Profile
 

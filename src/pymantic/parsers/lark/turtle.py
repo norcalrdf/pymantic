@@ -154,6 +154,7 @@ class TurtleTransformer(BaseParser, Transformer):
     """
 
     def __init__(self, base_iri="", profile=None):
+        """Resolve against ``base_iri``; record prefixes in ``profile`` if given."""
         super().__init__()
         self.base_iri = base_iri
         self.prefixes = self.profile.prefixes
@@ -300,6 +301,11 @@ class TurtleTransformer(BaseParser, Transformer):
 
 
 def parse(string_or_stream, graph=None, base="", profile=None):
+    """Parse a Turtle document into ``graph``, or a new graph, and return it.
+
+    Relative IRIs resolve against ``base``. With ``profile``, the document's
+    prefix declarations are recorded in it; see :class:`TurtleTransformer`.
+    """
     if hasattr(string_or_stream, "readline"):
         string = string_or_stream.read()
     else:
@@ -321,4 +327,5 @@ def parse(string_or_stream, graph=None, base="", profile=None):
 
 
 def parse_string(string_or_bytes, graph=None, base="", profile=None):
+    """Parse a Turtle document given as text or bytes; see :func:`parse`."""
     return parse(string_or_bytes, graph, base, profile)

@@ -532,11 +532,8 @@ class _TurtleWriter:
         self.base = base
         self.profile = profile
         self.stable = stable
-        # Stable output declares only the prefixes it uses, which are not
-        # known until the statements are written, so those go to a buffer
-        # first.
-        self.used_prefixes = set() if stable else None
-        self.out = StringIO() if stable else f
+        self.out = f
+        self.used_prefixes = None
         self.name_map = OrderedDict()
         # Every term's written name, so a term named again, such as a
         # predicate on many subjects, is not shrunk and escaped again.
@@ -546,6 +543,13 @@ class _TurtleWriter:
         if stable:
             from pymantic.compare import canonical_labels_and_order
 
+            # Stable output declares only the prefixes it uses, which are
+            # not known until the statements are written, so those go to a
+            # buffer first.
+            self.out = StringIO()
+            self.used_prefixes = set()
+            # Blank nodes take their canonical labels, and blank_order ranks
+            # them for sorting.
             labels, self.blank_order = canonical_labels_and_order(graph)
             self.name_map.update((node, "_:" + label) for node, label in labels.items())
         # How many triples have each node as their object, which both

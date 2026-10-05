@@ -112,7 +112,8 @@ def unpack_node(value):
 
     A blank node property list or collection transforms to a generator that
     yields the triples it contains and then, last, the node that stands for
-    it. A plain term comes with no triples."""
+    it. A plain term comes with no triples.
+    """
     if isinstance(value, (NamedNode, Literal, BlankNode)):
         return [], value
     *triples, node = value

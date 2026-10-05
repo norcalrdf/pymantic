@@ -179,7 +179,8 @@ class SPARQLServer:
         verify=None,
         timeout=30,
     ):
-        """
+        """Set up a client for the SPARQL endpoint at ``query_url``.
+
         :param query_url: The SPARQL endpoint URL.
         :param post_queries: Send queries by POST instead of GET.
         :param post_directly: Send the SPARQL as the request body rather

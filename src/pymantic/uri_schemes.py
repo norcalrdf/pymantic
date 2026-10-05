@@ -1,5 +1,7 @@
-"""A complete list of URI schemes registered as of Sept 26th, 2008, used when
-parsing CURIEs to differentiate explicit URIs from CURIEs."""
+"""The URI schemes registered as of 26 September 2008.
+
+Parsing a CURIE uses the list to tell an explicit URI from a CURIE.
+"""
 
 schemes = [
     "aaa",

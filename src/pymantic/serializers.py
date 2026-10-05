@@ -688,10 +688,10 @@ class _TurtleWriter:
         objects_by_predicate = {}
         for triple in self.graph.match(subject=subject):
             if triple.predicate not in skip:
-                objects = objects_by_predicate.get(triple.predicate)
-                if objects is None:
-                    objects = objects_by_predicate[triple.predicate] = []
-                objects.append(triple.object)
+                group = objects_by_predicate.get(triple.predicate)
+                if group is None:
+                    group = objects_by_predicate[triple.predicate] = []
+                group.append(triple.object)
         blocks = []
         for predicate_name, predicate in turtle_sorted_names(
             objects_by_predicate, self.name

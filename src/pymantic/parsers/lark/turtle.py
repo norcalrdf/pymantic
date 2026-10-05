@@ -4,8 +4,8 @@ Usage::
 
   from pymantic.parsers.lark import turtle_parser
   graph = turtle_parser.parse(io.open('a_file.ttl', mode='rt'))
-  graph2 = turtle_parser.parse(\"\"\"@prefix p: <http://a.example/s>.
-  p: <http://a.example/p> <http://a.example/o> .\"\"\")
+  graph2 = turtle_parser.parse('''@prefix p: <http://a.example/s>.
+  p: <http://a.example/p> <http://a.example/o> .''')
 
 Unlike :mod:`pymantic.parsers.lark.ntriples`, this parser cannot efficiently
 parse turtle line by line. If a file-like object is provided, the entire file
@@ -112,7 +112,8 @@ def unpack_node(value):
 
     A blank node property list or collection transforms to a generator that
     yields the triples it contains and then, last, the node that stands for
-    it. A plain term comes with no triples."""
+    it. A plain term comes with no triples.
+    """
     if isinstance(value, (NamedNode, Literal, BlankNode)):
         return [], value
     *triples, node = value

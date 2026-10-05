@@ -1,5 +1,4 @@
-"""Provides common classes and functions for modelling an RDF graph using
-Python objects."""
+"""Common classes and functions for modelling an RDF graph with Python objects."""
 
 import logging
 
@@ -58,25 +57,25 @@ def register_class(rdf_type):
 
 
 class URLRetrievalError(Exception):
-    """Raised when an attempt to retrieve a resource returns a status other
-    than 200 OK."""
+    """Raised when retrieving a resource returns a status other than 200 OK."""
 
     pass
 
 
 class Resource(metaclass=MetaResource):
-    """Provides necessary context and utility methods for accessing a Resource
-    in an RDF graph. Resources can be used as-is, but are likely somewhat
-    unwieldy, since all predicate access must be by complete URL and produces
-    sets. By subclassing Resource, you can take advantage of a number of
-    quality-of-life features:
+    """Context and utility methods for accessing a resource in an RDF graph.
 
-    1) Bind prefixes to prefixes, and refer to them using CURIEs when
+    Resources can be used as-is, but are likely somewhat unwieldy, since all
+    predicate access must be by complete URL and produces sets. By subclassing
+    Resource, you can take advantage of a number of quality-of-life features:
+
+    1) Bind prefixes to namespace URLs, and refer to them using CURIEs when
        accessing predicates or explicitly resolving CURIEs. Store a dictionary
        mapping prefixes to URLs in the 'prefixes' attribute of your subclass.
        The prefixes dictionaries on all parents are merged with this
        dictionary, and those at the bottom are prioritized. The values in the
-       dictionaries will automatically be turned into rdflib Prefix objects.
+       dictionaries will automatically be turned into
+       :class:`pymantic.primitives.Prefix` objects.
 
     2) Define predicates as scalars. This asserts that a given predicate on this
        resource will only have zero or one value for a given language or
@@ -84,7 +83,7 @@ class Resource(metaclass=MetaResource):
        'scalars' set, which is processed and merged just like prefixes.
 
     3) Automatically classify certain RDF types as certain Resource subclasses.
-       Decorate your class with the pymantic.RDF.register_class decorator, and
+       Decorate your class with the pymantic.rdf.register_class decorator, and
        provide it with the corresponding RDF type. Whenever this type is
        encountered when retrieving objects from a predicate it will
        automatically be instantiated as your class rather than a generic Resource.
@@ -98,10 +97,7 @@ class Resource(metaclass=MetaResource):
        instantiate the correct class for an arbitrary URI), you can do so by
        calling Resource.classify. You can also create a new instance of a
        Resource by calling .new on a subclass.
-
-    Automatic retrieval of resources with no type information is currently
-    implemented here, but is likely to be refactored into a separate persistence
-    layer in the near future."""
+    """
 
     prefixes = {
         "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
@@ -136,13 +132,12 @@ class Resource(metaclass=MetaResource):
         return cls(graph, subject)
 
     def erase(self):
-        """Erase all tripes for this resource from the graph."""
+        """Erase all triples for this resource from the graph."""
         for triple in list(self.graph.match(self.subject, None, None)):
             self.graph.remove(triple)
 
     def is_a(self):
-        """Test to see if the subject of this resource has all the necessary
-        RDF classes applied to it."""
+        """Test whether this resource's subject has all of its RDF classes applied."""
         if hasattr(self, "rdf_classes"):
             for rdf_class in self.rdf_classes:
                 if not any(
@@ -153,7 +148,7 @@ class Resource(metaclass=MetaResource):
 
     @classmethod
     def resolve(cls, key):
-        """Use this class's prefixes to resolve a curie"""
+        """Resolve a CURIE using this class's prefixes."""
         try:
             return cls.prefixes.resolve(key)
         except ValueError:
@@ -177,7 +172,7 @@ class Resource(metaclass=MetaResource):
         return hash(self.subject)
 
     def bare_literals(self, predicate):
-        """Objects for a predicate that are language-less, datatype-less Literals."""
+        """Return the objects of a predicate that have neither language nor datatype."""
         return [
             t.object
             for t in self.graph.match(self.subject, predicate, None)
@@ -188,8 +183,12 @@ class Resource(metaclass=MetaResource):
         ]
 
     def objects_by_lang(self, predicate, lang=None):
-        """Objects for a predicate that match a specified language or, if
-        language is None, have a language specified."""
+        """Return the objects of a predicate in the given language.
+
+        If lang is None, return the objects that have any language. If lang
+        is "", return the objects with neither language nor datatype, as
+        :meth:`bare_literals` does.
+        """
         if lang:
             return [
                 t.object
@@ -206,8 +205,12 @@ class Resource(metaclass=MetaResource):
             ]
 
     def objects_by_datatype(self, predicate, datatype=None):
-        """Objects for a predicate that match a specified datatype or, if
-        datatype is None, have a datatype specified."""
+        """Return the objects of a predicate with the given datatype.
+
+        If datatype is None, return the objects that have any datatype. If
+        datatype is "", return the objects with neither language nor datatype,
+        as :meth:`bare_literals` does.
+        """
         if datatype:
             return [
                 t.object
@@ -224,8 +227,12 @@ class Resource(metaclass=MetaResource):
             ]
 
     def objects_by_type(self, predicate, resource_class=None):
-        """Objects for a predicate that are instances of a particular Resource
-        subclass or, if resource_class is none, are Resources."""
+        """Return the objects of a predicate that classify as resource_class.
+
+        Only IRIs and blank nodes are considered, and they are returned as
+        they are in the graph, not as Resources. If resource_class is None,
+        every IRI and blank node object is returned.
+        """
         selected_objects = []
         for t in self.graph.match(self.subject, predicate, None):
             obj = t.object
@@ -237,12 +244,16 @@ class Resource(metaclass=MetaResource):
         return selected_objects
 
     def objects(self, predicate):
-        """All objects for a predicate."""
+        """Return all objects of a predicate."""
         return [t.object for t in self.graph.match(self.subject, predicate, None)]
 
     def object_of(self, predicate=None):
-        """All subjects for which this resource is an object for the given
-        predicate."""
+        """Yield the subjects that have this resource as an object of predicate.
+
+        The subjects are classified as Resources. With no predicate, yield
+        (subject, predicate) pairs for every triple whose object is this
+        resource.
+        """
         if predicate is None:
             for triple in self.graph.match(None, None, self.subject):
                 yield (self.classify(self.graph, triple.subject), triple.predicate)
@@ -252,7 +263,7 @@ class Resource(metaclass=MetaResource):
                 yield self.classify(self.graph, triple.subject)
 
     def __getitem__(self, key):
-        """Fetch predicates off this subject by key dictionary-style.
+        """Fetch the objects of a predicate of this subject, dictionary-style.
 
         This is the primary mechanism for predicate access. You can either
         provide a predicate name, as a complete URL or CURIE:
@@ -265,7 +276,8 @@ class Resource(metaclass=MetaResource):
         resource['rdfs:label', 'en']
 
         Passing in a value of None will result in all values for the predicate
-        in question being returned."""
+        in question being returned.
+        """
         predicate, objects = self._objects_for_key(key)
         if predicate not in self.scalars or (isinstance(key, tuple) and key[1] is None):
 
@@ -278,17 +290,19 @@ class Resource(metaclass=MetaResource):
             return self.classify(self.graph, util.one_or_none(objects))
 
     def get_scalar(self, key):
-        """As __getitem__ access, but pretend the key is a scalar even if it isn't.
+        """Fetch like __getitem__, but treat the key as a scalar even if it isn't.
 
-        Expect random exceptions if using this carelessly."""
+        Expect random exceptions if using this carelessly.
+        """
         predicate, objects = self._objects_for_key(key)
         return self.classify(self.graph, util.one_or_none(objects))
 
     # Set item
 
     def __setitem__(self, key, value):
-        """Sets objects for predicates for this subject by key dictionary-style.
-        Returns 'self', for easy chaining.
+        """Set the objects of a predicate of this subject, dictionary-style.
+
+        Return 'self', for easy chaining.
 
         1) Setting a predicate without a filter replaces the set of all objects
            for that predicate. The exception is assigning a Literal object with
@@ -307,7 +321,8 @@ class Resource(metaclass=MetaResource):
            ValueError. For example, including an english or dateTime literal
            when setting a predicate's objects using a French language filter
            will result in a ValueError. Object references are always acceptable
-           to include."""
+           to include.
+        """
         predicate, lang, datatype, rdf_class = self._interpret_key(key)
         value = literalize(self.graph, value, lang, datatype)
         if not isinstance(key, tuple):
@@ -337,10 +352,11 @@ class Resource(metaclass=MetaResource):
     # Delete item
 
     def __delitem__(self, key):
-        """Deletes predicates for this subject by key dictionary-style.
+        """Delete the objects of a predicate of this subject, dictionary-style.
 
         del resource[key] will always remove the same things from the graph as
-        resource[key] returns."""
+        resource[key] returns.
+        """
         predicate, objects = self._objects_for_key(key)
         for obj in objects:
             self.graph.remove(Triple(self.subject, predicate, obj))
@@ -348,8 +364,10 @@ class Resource(metaclass=MetaResource):
     # Membership test
 
     def __contains__(self, predicate):
-        """Uses the same logic as __getitem__ to determine if a predicate or
-        filtered predicate is present for this object."""
+        """Test whether a predicate or filtered predicate is present.
+
+        Use the same logic as __getitem__.
+        """
         predicate, objects = self._objects_for_key(predicate)
         if objects:
             return True
@@ -394,7 +412,8 @@ class Resource(metaclass=MetaResource):
         """Classify an object into an appropriate registered class, or Resource.
 
         May create a new class if necessary that is a subclass of two or more
-        registered Resource classes."""
+        registered Resource classes.
+        """
         if obj is None:
             return None
         if isinstance(obj, Literal):
@@ -428,8 +447,7 @@ class Resource(metaclass=MetaResource):
             return cls._meta_resource._classes[types](graph, obj)
 
     def _interpret_key(self, key):
-        """Break up a key into a predicate name and optional language or
-        datatype specifier."""
+        """Split a key into a predicate and an optional language or datatype."""
         lang = None
         datatype = None
         rdf_class = None
@@ -450,7 +468,7 @@ class Resource(metaclass=MetaResource):
         return predicate, lang, datatype, rdf_class
 
     def _interpret_datatype(self, datatype):
-        """Deal with xsd:string vs. plain literal"""
+        """Treat an xsd:string datatype as a plain literal."""
         if datatype == "":
             return ""
         elif datatype == "http://www.w3.org/2001/XMLSchema#string":
@@ -459,9 +477,11 @@ class Resource(metaclass=MetaResource):
             return datatype
 
     def _objects_for_key(self, key):
-        """Find objects that are potentially interesting when doing normal
-        dictionary key-style access - IE, __getitem__, __delitem__, __contains__,
-        and pretty much everything but __setitem__."""
+        """Find the objects a key selects for dictionary-style access.
+
+        This serves __getitem__, __delitem__, __contains__, and pretty much
+        everything but __setitem__.
+        """
         predicate, lang, datatype, rdf_class = self._interpret_key(key)
         # log.debug("predicate: %r lang: %r datatype: %r rdf_class: %r", predicate, lang, datatype, rdf_class)
         if lang is None and datatype is None and rdf_class is None:
@@ -489,8 +509,10 @@ class Resource(metaclass=MetaResource):
         return predicate, objects
 
     def _objects_for_implicit_set(self, predicate, value):
-        """Find the objects that should be removed from the graph when doing a
-        dictionary-style set with implicit type information."""
+        """Find the objects to remove for a set with implicit type information.
+
+        These are the objects that a dictionary-style set removes from the graph.
+        """
         if (
             isinstance(value, frozenset)
             or (isinstance(value, tuple) and not isinstance(value, Literal))
@@ -509,8 +531,10 @@ class Resource(metaclass=MetaResource):
             return self.objects(predicate)
 
     def _objects_for_explicit_set(self, predicate, value, lang, datatype, rdf_class):
-        """Find the objects that should be removed from the graph when doing a
-        dictionary-style set with explicit type information."""
+        """Find the objects to remove for a set with explicit type information.
+
+        These are the objects that a dictionary-style set removes from the graph.
+        """
         if not check_objects(self.graph, value, lang, datatype, rdf_class):
             raise ValueError("Improper value provided.")
         if lang and predicate in self.scalars:
@@ -533,9 +557,10 @@ class Resource(metaclass=MetaResource):
             return self.objects_by_type(predicate, rdf_class)
 
     def copy(self, target_subject):
-        """Create copies of all triples with this resource as their subject
-        with the target subject as their subject. Returns a classified version
-        of the target subject."""
+        """Copy all triples with this resource as subject to target_subject.
+
+        Return the target subject, classified.
+        """
         if not isinstance(target_subject, NamedNode) and not isinstance(
             target_subject, BlankNode
         ):
@@ -552,12 +577,13 @@ class List(Resource):
     """Convenience class for dealing with RDF lists.
 
     Requires considerable use of ``as_``, due to the utter lack of type
-    information on said lists."""
+    information on said lists.
+    """
 
     scalars = frozenset(("rdf:first", "rdf:rest"))
 
     def __iter__(self):
-        """Iterating over lists works differently from normal Resources."""
+        """Iterate over the list's items rather than its predicates and objects."""
         current = self
         while current.subject != self.resolve("rdf:nil"):
             yield current["rdf:first"]
@@ -572,8 +598,7 @@ class List(Resource):
 
 
 def literalize(graph, value, lang, datatype):
-    """Convert either a value or a sequence of values to either a Literal or
-    a Resource."""
+    """Convert a value or a sequence of values to Literals or Resources."""
     if (
         isinstance(value, set)
         or isinstance(value, frozenset)
@@ -598,8 +623,7 @@ def objectify_value(graph, value, lang=None, datatype=None):
 
 
 def check_objects(graph, value, lang, datatype, rdf_class):
-    """Determine that value or the things in values are appropriate for the
-    specified explicit object access key."""
+    """Check that value, or each item in it, fits the explicit access key."""
     if isinstance(value, frozenset) or (
         isinstance(value, tuple) and not isinstance(value, Literal)
     ):

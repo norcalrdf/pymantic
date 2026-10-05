@@ -1,7 +1,5 @@
 class LarkParser:
-    """Provide a consistent interface for parsing serialized RDF using one
-    of the lark parsers.
-    """
+    """A consistent interface for parsing serialized RDF with a lark parser."""
 
     def __init__(self, lark):
         self.lark = lark
@@ -12,8 +10,9 @@ class LarkParser:
             yield from self.lark.parse(line)
 
     def parse(self, string_or_stream, graph=None):
-        """Parse a string or file-like object into RDF primitives and add
-        them to either the provided graph or a new graph.
+        """Parse a string or file-like object into RDF primitives.
+
+        They are added to the provided graph, or to a new graph.
         """
         tf = self.lark.options.transformer
 

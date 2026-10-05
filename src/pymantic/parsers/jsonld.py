@@ -1,4 +1,4 @@
-"""Parse RDF serialized as jsonld
+"""Parse RDF serialized as JSON-LD.
 
 JSON-LD support needs the ``jsonld`` extra: ``pip install 'pymantic[jsonld]'``.
 
@@ -47,8 +47,10 @@ from .base import BaseParser
 
 
 class RemoteContextsDisabledError(JsonLdError):
-    """A document referenced a remote context but no document loader was
-    opted into, so the request was refused."""
+    """Raised when a document references a remote context that may not be fetched.
+
+    No document loader was opted into, so the request was refused.
+    """
 
     def __init__(self, url):
         super().__init__(

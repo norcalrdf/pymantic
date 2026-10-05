@@ -5,7 +5,7 @@ import pymantic.primitives
 
 
 class BaseParser:
-    """Common base class for all parsers
+    """Common base class for all parsers.
 
     Provides shared utilities for creating RDF objects, handling IRIs, and
     tracking parser state.

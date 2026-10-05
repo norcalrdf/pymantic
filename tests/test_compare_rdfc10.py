@@ -17,7 +17,7 @@ import time
 
 from pymantic.compare import Undecidable, isomorphic
 from pymantic.parsers import nquads_parser
-from pymantic.primitives import BlankNode, Graph, Quad
+from pymantic.primitives import BlankNode, Dataset, Quad
 from pymantic.serializers import serialize_nquads
 
 INPUTS_DIR = pathlib.Path(__file__).parent / "compare" / "rdfc10-inputs"
@@ -52,13 +52,13 @@ def relabelled_and_shuffled(graph, seed):
 
     quads = [Quad(term(s), term(p), term(o), term(g)) for s, p, o, g in graph]
     rng.shuffle(quads)
-    return Graph().addAll(quads)
+    return Dataset().addAll(quads)
 
 
 def with_one_quad_removed(graph):
     quads = list(graph)
     quads.pop(len(quads) // 2)
-    return Graph().addAll(quads)
+    return Dataset().addAll(quads)
 
 
 def with_one_edge_redirected(graph):
@@ -75,7 +75,7 @@ def with_one_edge_redirected(graph):
         if isinstance(quad.object, BlankNode) and occurrences[quad.object] > 1:
             quads = [q for q in graph if q is not quad]
             quads.append(Quad(quad.subject, quad.predicate, BlankNode(), quad.graph))
-            return Graph().addAll(quads)
+            return Dataset().addAll(quads)
     return None
 
 

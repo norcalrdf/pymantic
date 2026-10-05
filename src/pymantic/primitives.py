@@ -29,6 +29,9 @@ from operator import itemgetter
 from pymantic.serializers import iri_escape, nt_escape, validate_language
 import pymantic.uri_schemes as uri_schemes
 
+# Raised by whatever refuses to put a quad in a Graph.
+GRAPH_HOLDS_TRIPLES = "a Graph holds triples; use a Dataset for quads"
+
 
 def is_language(lang):
     """Is something a valid XML language?"""
@@ -447,6 +450,8 @@ class Graph:
     def add(self, triple):
         """Adds the specified Triple to the graph. This method returns the
         graph instance it was called on."""
+        if len(triple) != 3:
+            raise TypeError(GRAPH_HOLDS_TRIPLES)
         self._triples[triple] = None
         self._spo[triple.subject][triple.predicate][triple.object] = triple
         self._pos[triple.predicate][triple.object][triple.subject] = triple

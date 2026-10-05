@@ -561,3 +561,14 @@ def test_graph_holds_one_triple_for_the_two_string_forms():
     assert len(g) == 1
     assert Triple(s, p, Literal("v")) in g
     assert Triple(s, p, Literal("v", datatype=XSD_STRING)) in g
+
+
+def test_graph_rejects_a_quad():
+    q = next(generate_quads(1))
+    g = Graph()
+    with pytest.raises(
+        TypeError, match="a Graph holds triples; use a Dataset for quads"
+    ):
+        g.add(q)
+    assert len(g) == 0
+    assert list(g) == []

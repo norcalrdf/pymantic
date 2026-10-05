@@ -4,6 +4,7 @@ import pytest
 from pymantic.parsers import nquads_parser, ntriples_parser, turtle_parser
 from pymantic.primitives import (
     BlankNode,
+    Dataset,
     Graph,
     Literal,
     NamedNode,
@@ -163,7 +164,7 @@ def test_parse_nquads_named_nodes():
     test_nquads = """<http://example.com/objects/1> <http://example.com/predicates/1> <http://example.com/objects/2> <http://example.com/graphs/1> .
 <http://example.com/objects/2> <http://example.com/predicates/2> <http://example.com/objects/1> <http://example.com/graphs/1> .
 """
-    g = Graph()
+    g = Dataset()
     nquads_parser.parse(StringIO(test_nquads), g)
     assert len(g) == 2
     assert (
@@ -334,7 +335,7 @@ def test_parse_nquads_line_by_line_with_comments_and_blank_lines():
         "\n"
         "<http://example/s> <http://example/p> <http://example/o> .\n"
     )
-    g = Graph()
+    g = Dataset()
     nquads_parser.parse(lines, g)
     assert len(g) == 2
     assert Quad(EX_S, EX_P, EX_O, NamedNode("http://example/g")) in g
@@ -345,7 +346,7 @@ def test_parse_nquads_without_graph_label_is_default_graph():
     """N-Quads 1.1: a statement without a graph label belongs to the
     default graph, which pymantic represents as graph=None (as the JSON-LD
     parser already does). Serializing it back must give a triple line."""
-    g = Graph()
+    g = Dataset()
     nquads_parser.parse("<http://example/s> <http://example/p> <http://example/o> .", g)
     assert len(g) == 1
     assert Quad(EX_S, EX_P, EX_O, None) in g
@@ -357,7 +358,7 @@ def test_parse_nquads_without_graph_label_is_default_graph():
 
 
 def test_parse_nquads_blank_node_graph_label():
-    g = Graph()
+    g = Dataset()
     nquads_parser.parse(
         "<http://example/s> <http://example/p> _:o _:g .\n"
         "_:g <http://example/p> <http://example/o> _:g .\n",
@@ -384,7 +385,7 @@ def test_parse_ntriples_minimal_whitespace():
 
 
 def test_parse_nquads_minimal_whitespace():
-    g = Graph()
+    g = Dataset()
     nquads_parser.parse(
         '<http://example/s><http://example/p>"Alice"<http://example/g>.\n'
         "_:s<http://example/p>_:o _:g.\n",
@@ -418,7 +419,7 @@ def test_parse_ntriples_rejects_colon_in_blank_node_label(document):
 )
 def test_parse_nquads_rejects_relative_iri(document):
     with pytest.raises(ValueError):
-        nquads_parser.parse(document, Graph())
+        nquads_parser.parse(document, Dataset())
 
 
 @pytest.mark.parametrize(
@@ -550,3 +551,26 @@ def test_parsed_literals_carry_their_datatype():
         assert len(g) == 2
         datatypes = {(t.object.language, t.object.datatype) for t in g}
         assert datatypes == {(None, XSD_STRING), ("en", RDF_LANGSTRING)}
+
+
+def test_nquads_parser_returns_a_dataset():
+    ds = nquads_parser.parse(
+        "<http://example/s> <http://example/p> <http://example/o> <http://example/g> ."
+    )
+    assert isinstance(ds, Dataset)
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        "<http://example/s> <http://example/p> <http://example/o> .",
+        "",
+        "# only a comment\n",
+    ],
+    ids=["a quad", "empty", "comment only"],
+)
+@pytest.mark.parametrize("stream", [False, True], ids=["string", "stream"])
+def test_nquads_parser_rejects_a_graph(document, stream):
+    source = StringIO(document) if stream else document
+    with pytest.raises(TypeError, match="a Graph holds triples; use a Dataset"):
+        nquads_parser.parse(source, Graph())

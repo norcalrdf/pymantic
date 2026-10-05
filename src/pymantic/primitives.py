@@ -27,7 +27,12 @@ import itertools
 from operator import itemgetter
 
 from pymantic.serializers import iri_escape, nt_escape, validate_language
+from pymantic.term_dictionary import TermDictionary
+from pymantic.triple_index import TripleIndex
 import pymantic.uri_schemes as uri_schemes
+
+# Builds a Triple without the Python-level __new__, for the hot read paths.
+_new_triple = tuple.__new__
 
 # Raised by whatever refuses to put a quad in a Graph.
 GRAPH_HOLDS_TRIPLES = "a Graph holds triples; use a Dataset for quads"
@@ -418,24 +423,53 @@ class BlankNode:
         return str(self)
 
 
-def Index():
-    return defaultdict(Index)
+def _pattern_ids(dictionary, subject, predicate, object):
+    """The ids of a match pattern, keeping None as the wildcard, or None if a
+    bound term is unknown and so nothing can match."""
+    # Unrolled, since every read calls this: about 30 ns faster than a
+    # loop building a list on CPython, and twice as fast on PyPy.
+    lookup = dictionary.lookup
+    s = p = o = None
+    if subject is not None:
+        s = lookup(subject)
+        if s is None:
+            return None
+    if predicate is not None:
+        p = lookup(predicate)
+        if p is None:
+            return None
+    if object is not None:
+        o = lookup(object)
+        if o is None:
+            return None
+    return s, p, o
+
+
+# The generators below only turn ids into terms. Each read does its setup
+# when it is called and hands one of them what it captured, so a read made
+# before a change answers as of the call or raises, however late it is
+# first consumed.
+
+
+def _triples(terms, ids):
+    for s, p, o in ids:
+        yield _new_triple(Triple, (terms[s], terms[p], terms[o]))
 
 
 class Graph:
     """A `Graph` holds a set of one or more `Triple`. Implements the Python
-    set/sequence API for `in`, `for`, and `len`"""
+    set/sequence API for `in`, `for`, and `len`
+
+    Terms are stored once in a `TermDictionary` and triples as id triples in
+    a `TripleIndex`, so the graph keeps no `Triple` objects: reads build
+    fresh ones from the graph's own term instances."""
 
     def __init__(self, graph_uri=None):
-        if not isinstance(graph_uri, NamedNode):
+        if graph_uri is not None and not isinstance(graph_uri, NamedNode):
             graph_uri = NamedNode(graph_uri)
         self._uri = graph_uri
-        # A dict used as an insertion-ordered set, so iteration and
-        # serialization follow the order triples were added.
-        self._triples = {}
-        self._spo = Index()
-        self._pos = Index()
-        self._osp = Index()
+        self._dictionary = TermDictionary()
+        self._index = TripleIndex()
         self._actions = set()
 
     @property
@@ -452,19 +486,21 @@ class Graph:
         graph instance it was called on."""
         if len(triple) != 3:
             raise TypeError(GRAPH_HOLDS_TRIPLES)
-        self._triples[triple] = None
-        self._spo[triple.subject][triple.predicate][triple.object] = triple
-        self._pos[triple.predicate][triple.object][triple.subject] = triple
-        self._osp[triple.object][triple.subject][triple.predicate] = triple
+        s, p, o = triple
+        intern = self._dictionary.intern
+        self._index.add(intern(s), intern(p), intern(o))
         return self
 
     def remove(self, triple):
         """Removes the specified Triple from the graph. This method returns the
         graph instance it was called on."""
-        del self._triples[triple]
-        del self._spo[triple.subject][triple.predicate][triple.object]
-        del self._pos[triple.predicate][triple.object][triple.subject]
-        del self._osp[triple.object][triple.subject][triple.predicate]
+        if len(triple) != 3:
+            raise TypeError(GRAPH_HOLDS_TRIPLES)
+        ids = self._ids(triple)
+        if ids is None:
+            raise KeyError(triple)
+        self._index.remove(*ids)
+        self._maybe_compact()
         return self
 
     def match(self, subject=None, predicate=None, object=None):
@@ -484,50 +520,38 @@ class Graph:
 
         This method implements AND functionality, so only triples matching all
         of the given non-null arguments will be included in the result.
-        """
-        if subject:
-            if predicate:  # s, p, ???
-                if object:  # s, p, o
-                    if Triple(subject, predicate, object) in self:
-                        yield Triple(subject, predicate, object)
-                else:  # s, p, ?var
-                    if subject in self._spo and predicate in self._spo[subject]:
-                        for triple in self._spo[subject][predicate].values():
-                            yield triple
-            else:  # s, ?var, ???
-                if object:  # s, ?var, o
-                    if object in self._osp and subject in self._osp[object]:
-                        for triple in self._osp[object][subject].values():
-                            yield triple
-                else:  # s, ?var, ?var
-                    if subject in self._spo:
-                        for predicate in self._spo[subject]:
-                            for triple in self._spo[subject][predicate].values():
-                                yield triple
-        elif predicate:  # ?var, p, ???
-            if object:  # ?var, p, o
-                if predicate in self._pos and object in self._pos[predicate]:
-                    for triple in self._pos[predicate][object].values():
-                        yield triple
-            else:  # ?var, p, ?var
-                if predicate in self._pos:
-                    for object in self._pos[predicate]:
-                        for triple in self._pos[predicate][object].values():
-                            yield triple
-        elif object:  # ?var, ?var, o
-            if object in self._osp:
-                for subject in self._osp[object]:
-                    for triple in self._osp[object][subject].values():
-                        yield triple
-        else:
-            for triple in self._triples:
-                yield triple
 
-    def removeMatches(self, subject, predicate, object):
+        A pattern with a bound term yields in term-id order, the order the
+        graph first saw its terms; an unbound pattern yields in insertion
+        order.
+        """
+        pattern = _pattern_ids(self._dictionary, subject, predicate, object)
+        if pattern is None:
+            return iter(())
+        terms = self._dictionary.terms
+        if None not in pattern:
+            # A membership test made now rather than the index's
+            # version-checked generator, so the caller may remove the
+            # one match while the result is still open.
+            if pattern not in self._index:
+                return iter(())
+            s, p, o = pattern
+            return iter((_new_triple(Triple, (terms[s], terms[p], terms[o])),))
+        ids = self._index.match(*pattern)
+        return _triples(terms, ids)
+
+    def removeMatches(self, subject=None, predicate=None, object=None):
         """This method removes those triples in the current graph which match
-        the given arguments."""
-        for triple in self.match(subject, predicate, object):
-            self.remove(triple)
+        the given arguments. An argument of None matches any term, as in
+        match(), so calling with no arguments removes every triple."""
+        pattern = _pattern_ids(self._dictionary, subject, predicate, object)
+        if pattern is None:
+            return self
+        # Collected first: removing ends any generator over the index.
+        doomed = list(self._index.match(*pattern))
+        if doomed:
+            self._index.remove_many(doomed)
+            self._maybe_compact()
         return self
 
     def addAll(self, graph_or_triples):
@@ -548,29 +572,59 @@ class Graph:
         return new_graph
 
     def __contains__(self, item):
-        return item in self._triples
+        if not isinstance(item, tuple) or len(item) != 3:
+            return False
+        try:
+            ids = self._ids(item)
+        except TypeError:
+            # An unhashable term, which no graph holds.
+            return False
+        return ids is not None and ids in self._index
 
     def __len__(self):
-        return len(self._triples)
+        return len(self._index)
 
     def __iter__(self):
-        return iter(self._triples)
+        terms = self._dictionary.terms
+        ids = iter(self._index)
+        return _triples(terms, ids)
 
     def toArray(self):
         """Return the set of :py:class:`Triple` within the :py:class:`Graph`"""
-        return frozenset(self._triples)
+        return frozenset(self)
 
     def subjects(self):
-        """Returns an iterator over subjects in the graph."""
-        return self._spo.keys()
+        """Returns a list of the distinct subjects in the graph, in term-id
+        order."""
+        terms = self._dictionary.terms
+        return [terms[i] for i in self._index.subjects()]
 
     def predicates(self):
-        """Returns an iterator over predicates in the graph."""
-        return self._pos.keys()
+        """Returns a list of the distinct predicates in the graph, in term-id
+        order."""
+        terms = self._dictionary.terms
+        return [terms[i] for i in self._index.predicates()]
 
     def objects(self):
-        """Returns an iterator over objects in the graph."""
-        return self._osp.keys()
+        """Returns a list of the distinct objects in the graph, in term-id
+        order."""
+        terms = self._dictionary.terms
+        return [terms[i] for i in self._index.objects()]
+
+    def _ids(self, triple):
+        """The id triple of `triple`, or None if a term is unknown."""
+        lookup = self._dictionary.lookup
+        s, p, o = triple
+        ids = (lookup(s), lookup(p), lookup(o))
+        return None if None in ids else ids
+
+    def _maybe_compact(self):
+        # A triple refers to at most 3 terms, so past 6 terms per triple at
+        # least half the dictionary is dead.
+        dictionary = self._dictionary
+        index = self._index
+        if len(dictionary) > 6 * len(index):
+            dictionary.compact(index.ids())
 
 
 class Dataset:

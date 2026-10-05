@@ -110,9 +110,12 @@ def serialize_nquads(dataset, f, stable=False):
 
 
 def serialize_linetrig(dataset, f):
-    """Serialize some dataset to f as Line-TriG, the line-oriented TriG
-    profile defined in docs/line-trig.rst: default graph triples first, then
-    each named graph's triples, then ``G { }`` for each empty named graph."""
+    """Serialize some dataset to f as Line-TriG.
+
+    Line-TriG is the line-oriented TriG profile defined in
+    docs/line-trig.rst. The output has default graph triples first, then each
+    named graph's triples, then ``G { }`` for each empty named graph.
+    """
     empty = []
     # Dataset.graphs lists the default graph first.
     for graph in dataset.graphs:

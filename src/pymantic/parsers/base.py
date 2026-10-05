@@ -45,8 +45,11 @@ class BaseParser:
         return self.env.createQuad(subject, predicate, object, graph)
 
     def _check_sink(self, sink):
-        """Refuse a Graph as the sink of a parser that produces quads before
-        reading anything, so a document with no statements fails too."""
+        """Refuse a Graph as the sink of a parser that produces quads.
+
+        This runs before anything is read, so a document with no statements
+        fails too.
+        """
         if self.reads_quads and isinstance(sink, pymantic.primitives.Graph):
             raise TypeError(pymantic.primitives.GRAPH_HOLDS_TRIPLES)
 

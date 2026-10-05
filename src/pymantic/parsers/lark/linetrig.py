@@ -1,5 +1,7 @@
-"""Parse Line-TriG, the line-oriented TriG profile described in
-``docs/line-trig.rst``, into a :py:class:`~pymantic.primitives.Dataset`.
+"""Parse Line-TriG into a :py:class:`~pymantic.primitives.Dataset`.
+
+Line-TriG is the line-oriented TriG profile described in
+``docs/line-trig.rst``.
 
 Usage::
 
@@ -42,9 +44,11 @@ READ_SIZE = 64 * 1024
 
 
 def stream_lines(stream):
-    """Yield the lines of a text stream split like :py:data:`LINE` splits a
-    string, reading it a chunk at a time. A stream's own readline would miss
-    a bare CR."""
+    """Yield the lines of a text stream, reading it a chunk at a time.
+
+    The lines are split like :py:data:`LINE` splits a string. A stream's own
+    readline would miss a bare CR.
+    """
     pending = ""
     while chunk := stream.read(READ_SIZE):
         pending += chunk
@@ -89,8 +93,10 @@ class LineTriGParser(LarkParser):
     """Parse Line-TriG into a dataset, one line at a time."""
 
     def parse(self, string_or_stream, dataset=None):
-        """Parse a string or file-like object into a dataset, either the
-        one provided or a new one."""
+        """Parse a string or file-like object into a dataset.
+
+        The dataset is the one provided or a new one.
+        """
         tf = self.lark.options.transformer
         tf._check_sink(dataset)
 

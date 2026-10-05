@@ -58,13 +58,16 @@ _DISAGREE = "TripleIndex orderings disagree with its keys"
 
 
 def _changed(index):
-    """The error for a generator whose index changed under it."""
+    """Return the error for a generator whose index changed under it."""
     return RuntimeError(_DETACHED if index._detached else _CHANGED)
 
 
 def _in_range(s, p, o):
-    """Whether s, p and o are all in range(2**32). An id out of range packs
-    to some other triple's key, so check before using a packed key."""
+    """Return whether s, p and o are all in range(2**32).
+
+    An id out of range packs to some other triple's key, so check before
+    using a packed key.
+    """
     return 0 <= s <= _MASK32 and 0 <= p <= _MASK32 and 0 <= o <= _MASK32
 
 
@@ -75,7 +78,7 @@ def _check_range(s, p, o):
 
 
 def _rotated(keys):
-    """The packed SPO keys as packed keys of each ordering, one at a time.
+    """Yield the packed SPO keys as packed keys of each ordering.
 
     POS and OSP keys are the SPO key rotated by one and two places.
     """
@@ -85,13 +88,16 @@ def _rotated(keys):
 
 
 def _row(values):
-    """A row for a fresh sorted list of values."""
+    """Return a row for a fresh sorted list of values."""
     return tuple(values) if len(values) <= LIST_DEGREE else values
 
 
 def _insert(rows, a, v, crowded):
-    """Insert value `v` into the row of `a`, or if that row is a list, add
-    `v` to the values `crowded` holds for it, for `_insert_crowded`."""
+    """Insert value `v` into the row of `a`.
+
+    If that row is a list, add `v` to the values `crowded` holds for it, for
+    `_insert_crowded`.
+    """
     row = rows.get(a)
     if row is None:
         rows[a] = (v,)
@@ -112,9 +118,11 @@ def _insert(rows, a, v, crowded):
 
 
 def _insert_crowded(rows, crowded):
-    """Insert the values `crowded` holds for each list row: one by one if
-    there are few, otherwise by sorting them into a new row, so a big batch
-    into one long row is not quadratic."""
+    """Insert the values `crowded` holds for each list row.
+
+    Insert them one by one if there are few, otherwise by sorting them into a
+    new row, so a big batch into one long row is not quadratic.
+    """
     for a, values in crowded.items():
         row = rows[a]
         if len(values) <= _REBUILD_MIN:
@@ -186,9 +194,11 @@ def _remove_values(rows, a, gone):
 
 
 class ChangeCounter:
-    """A version that several indexes move together: each moves it before
-    each change it makes, as it moves its own, so a reader of all of them
-    checks one value."""
+    """Hold a version that several indexes move together.
+
+    Each moves it before each change it makes, as it moves its own, so a
+    reader of all of them checks one value.
+    """
 
     __slots__ = ("version",)
 
@@ -201,7 +211,8 @@ class TripleIndex:
 
     `changes`, if given, is a `ChangeCounter` the index moves before every
     change, along with its own version: a dataset gives every one of its
-    graphs' indexes the same one."""
+    graphs' indexes the same one.
+    """
 
     __slots__ = (
         "_keys",
@@ -251,9 +262,12 @@ class TripleIndex:
         return self._version
 
     def check(self, version):
-        """Raise the RuntimeError the index's own readers raise if the
-        index has changed since `version`, for a reader that does more
-        work between fetching a triple and yielding it."""
+        """Raise the RuntimeError the index's readers raise if it has changed.
+
+        This is for a reader that does more work between fetching a triple
+        and yielding it. The index has changed if its version is no longer
+        `version`.
+        """
         if self._version != version:
             raise _changed(self)
 
@@ -376,9 +390,11 @@ class TripleIndex:
         return self._distinct(_OSP)
 
     def object_counts(self):
-        """Return a dict from each object id to the number of triples it is
-        the object of: the lengths of the OSP rows, read without visiting
-        the triples."""
+        """Return a dict from each object id to its number of triples.
+
+        The counts are the lengths of the OSP rows, read without visiting the
+        triples.
+        """
         if self._detached:
             raise RuntimeError(_DETACHED)
         if self._pending:
@@ -480,8 +496,11 @@ class TripleIndex:
             raise _changed(self)
 
     def _scan(self, order, a, b):
-        """The triples in the row of `a` in `order` whose second column is
-        `b`, or all of them if `b` is None."""
+        """Return the triples in the row of `a` in `order` matching `b`.
+
+        Those are the ones whose second column is `b`, or all of them if `b`
+        is None.
+        """
         if self._pending:
             self._merge()
         row = self._orders[order].get(a, ())

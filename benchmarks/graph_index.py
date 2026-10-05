@@ -93,8 +93,10 @@ PATTERNS = {
 
 
 def best_of(fn, repeat):
-    """Time fn() ``repeat`` times after a collection each; returns the
-    times and the last result."""
+    """Time fn() ``repeat`` times, collecting garbage before each run.
+
+    Return the times and the last result.
+    """
     times, result = [], None
     for _ in range(repeat):
         result = None
@@ -124,9 +126,12 @@ def tracked_objects():
 
 
 def footprint(build):
-    """Bytes and collector-tracked objects held by build(), measured in a
-    separate run so tracemalloc does not slow the timed ones. Whatever
-    build's arguments hold stays alive and is not counted."""
+    """Return the bytes and collector-tracked objects held by build().
+
+    They are measured in a separate run so tracemalloc does not slow the
+    timed ones. Whatever build's arguments hold stays alive and is not
+    counted.
+    """
     gc.collect()
     objects_before = tracked_objects()
     if tracemalloc is None:
@@ -202,8 +207,11 @@ def run_queries(graph, queries):
 
 
 def new_triples(triples, count, rng, serial):
-    """``count`` triples absent from the graph: each a new subject with a
-    predicate and an object from a random triple of the graph."""
+    """Return ``count`` triples absent from the graph.
+
+    Each is a new subject with a predicate and an object from a random
+    triple of the graph.
+    """
     made = []
     for _ in range(count):
         _, p, o = rng.choice(triples)
@@ -214,9 +222,11 @@ def new_triples(triples, count, rng, serial):
 
 
 def batch_runs(triples, k, repeat, serial):
-    """Milliseconds per batch of k adds and one query, best of repeat. Each
-    repeat adds to a freshly loaded graph, so every one starts at the same
-    size."""
+    """Return the milliseconds per batch of k adds and one query.
+
+    The result is the best of repeat. Each repeat adds to a freshly loaded
+    graph, so every one starts at the same size.
+    """
     rng = random.Random(k)
     rounds = max(1, BATCH_ADDS // k)
     times = []
@@ -234,8 +244,11 @@ def batch_runs(triples, k, repeat, serial):
 
 
 def interleave_runs(triples, repeat, serial):
-    """Seconds for INTERLEAVED rounds of one add then one query, best of
-    repeat. Each repeat starts from a freshly loaded graph."""
+    """Return the seconds for INTERLEAVED rounds of one add then one query.
+
+    The result is the best of repeat. Each repeat starts from a freshly
+    loaded graph.
+    """
     rng = random.Random(1)
     times = []
     for _ in range(repeat):
@@ -314,7 +327,7 @@ def report_graph(name, parse_times, triples, repeat, retained):
 
 
 def report_loaded_dataset(name, parse_times, quads, repeat):
-    """The measures that apply to an input that loads as a Dataset."""
+    """Report the measures that apply to an input that loads as a Dataset."""
     times, dataset = best_of(lambda: build_dataset(quads), repeat)
     count = len(dataset)
     print(f"{name}: {len(quads)} quads, {count} in the dataset", flush=True)
@@ -334,8 +347,10 @@ def report_loaded_dataset(name, parse_times, quads, repeat):
 
 
 def fhir_quads():
-    """The FHIR R5 examples as quads, one named graph per file, with the
-    counts of files parsed and skipped."""
+    """Return the FHIR R5 examples as quads, one named graph per file.
+
+    Also return the counts of files parsed and skipped.
+    """
     root = inputs.data_path("fhir-r5-examples")
     quads, files, skipped = [], 0, 0
     for path in sorted(glob.glob(os.path.join(root, "**", "*.ttl"), recursive=True)):

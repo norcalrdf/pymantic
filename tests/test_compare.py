@@ -8,6 +8,7 @@ import random
 import time
 
 from pymantic.compare import (
+    EMPTY_GRAPH,
     Undecidable,
     bail_stage,
     canonical_form,
@@ -16,6 +17,7 @@ from pymantic.compare import (
     molecules,
     refine,
     statements,
+    term_key,
 )
 from pymantic.parsers import turtle_parser
 from pymantic.primitives import (
@@ -243,6 +245,47 @@ def test_stable_nquads_cannot_write_an_empty_named_graph():
     out = StringIO()
     serialize_nquads(empty_named_graph_dataset(NamedNode(EX + "g1")), out, stable=True)
     assert out.getvalue() == ""
+
+
+def mixed_dataset():
+    """Quads in the default graph, an IRI-named graph and a blank-named
+    graph, sharing terms, plus an empty graph with an IRI name and one with
+    a blank name. Returns the dataset and the blank empty graph's name."""
+    a, b, empty = BlankNode(), BlankNode(), BlankNode()
+    p, x = NamedNode(EX + "p"), NamedNode(EX + "x")
+    dataset = Dataset()
+    dataset.add(Quad(a, p, x, None))
+    dataset.add(Quad(a, p, Literal("v", "en"), NamedNode(EX + "g")))
+    dataset.add(Quad(x, p, b, b))
+    dataset.add(Quad(b, p, a, NamedNode(EX + "g")))
+    dataset.add_graph(Graph(), named=NamedNode(EX + "empty"))
+    dataset.add_graph(Graph(), named=empty)
+    return dataset, empty
+
+
+def test_statements_of_a_graph_match_reading_its_triples():
+    g = graph('_:a :p :x . :s :p _:a . :s :q "v" . _:a :q :x .')
+    assert statements(g) == statements(list(g))
+
+
+def test_statements_of_a_dataset_match_reading_its_quads():
+    dataset, blank_empty = mixed_dataset()
+    no_statements = (EMPTY_GRAPH, EMPTY_GRAPH, EMPTY_GRAPH)
+    assert statements(dataset) == statements(list(dataset)) + [
+        (*no_statements, term_key(NamedNode(EX + "empty"))),
+        (*no_statements, blank_empty),
+    ]
+
+
+def test_stable_lines_of_a_graph_or_dataset_match_reading_its_items():
+    from pymantic.serializers import stable_lines
+
+    g = graph('_:a :p :x . :s :p _:a . :s :q "v" . _:a :q :x .')
+    assert stable_lines(g) == stable_lines(list(g))
+    dataset, blank_empty = mixed_dataset()
+    dataset.remove_graph(NamedNode(EX + "empty"))
+    dataset.remove_graph(blank_empty)
+    assert stable_lines(dataset) == stable_lines(list(dataset))
 
 
 # Refinement -----------------------------------------------------------------

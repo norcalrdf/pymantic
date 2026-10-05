@@ -1,3 +1,4 @@
+from collections import Counter
 import gc
 import pathlib
 import pytest
@@ -15,6 +16,7 @@ from pymantic.primitives import (
     Quad,
     Triple,
 )
+from pymantic.term_dictionary import TermDictionary
 
 IRIS = [NamedNode("")] + [NamedNode("http://e/%d" % i) for i in range(5)]
 BLANKS = [BlankNode() for _ in range(4)]
@@ -57,10 +59,38 @@ def matching(ref, s, p, o):
     }
 
 
+def mark(term):
+    """The term function the mapped-read tests expect to see applied."""
+    return ("mapped", term)
+
+
+class CountingMark:
+    """`mark`, counting the calls made with each term."""
+
+    def __init__(self):
+        self.calls = Counter()
+
+    def __call__(self, term):
+        self.calls[term] += 1
+        return mark(term)
+
+
+def check_mapped_triples(graph):
+    """mapped_triples gives what iterating and mapping each term gives,
+    calling the function once per distinct term."""
+    fn = CountingMark()
+    expected = [(mark(s), mark(p), mark(o)) for s, p, o in graph]
+    assert list(graph.mapped_triples(fn)) == expected
+    assert fn.calls == Counter({term: 1 for t in graph for term in t})
+
+
 def check_against_reference(graph, ref, rng):
     """Compare every read operation of `graph` with the ordered set `ref`."""
     assert len(graph) == len(ref)
     assert list(graph) == list(ref)
+    # Before any match, while a batch of adds may still be pending.
+    assert graph.object_counts() == Counter(t.object for t in ref)
+    check_mapped_triples(graph)
     for t in rng.sample(list(ref), min(3, len(ref))):
         assert t in graph
     for _ in range(3):
@@ -410,6 +440,18 @@ def named_graphs(ds):
     return {g.uri for g in ds.graphs if g.uri is not None}
 
 
+def check_mapped_quads(ds):
+    """mapped_quads gives what iterating and mapping each term gives, None
+    for the default graph, calling the function once per distinct term
+    across the dataset."""
+    fn = CountingMark()
+    expected = [
+        (mark(s), mark(p), mark(o), None if g is None else mark(g)) for s, p, o, g in ds
+    ]
+    assert list(ds.mapped_quads(fn)) == expected
+    assert fn.calls == Counter({term: 1 for q in ds for term in q if term is not None})
+
+
 def check_dataset_against_reference(ds, ref, names, rng):
     assert len(ds) == len(ref)
     # The running count compaction reads, against the indexes themselves.
@@ -417,6 +459,11 @@ def check_dataset_against_reference(ds, ref, names, rng):
     quads = list(ds)
     assert len(quads) == len(ref)
     assert set(quads) == set(ref)
+    check_mapped_quads(ds)
+    for view in ds.graphs:
+        objects = Counter(q.object for q in ref if q.graph == view.uri)
+        assert view.object_counts() == objects
+        check_mapped_triples(view)
     for q in rng.sample(list(ref), min(3, len(ref))):
         assert (q in ds) is True
     for _ in range(3):
@@ -642,6 +689,10 @@ def test_a_view_of_a_removed_graph_raises():
     with pytest.raises(RuntimeError):
         list(view)
     with pytest.raises(RuntimeError):
+        list(view.mapped_triples(mark))
+    with pytest.raises(RuntimeError):
+        view.object_counts()
+    with pytest.raises(RuntimeError):
         list(pending)
     # The removal emptied the dataset, so compaction freed every term and
     # these reads find unknown terms before reaching the index.
@@ -750,6 +801,147 @@ def test_fully_bound_match_is_unaffected_by_removes_while_open():
     assert list(found) == []
 
 
+def check_lookups_against_match(graph, s, p, o):
+    """Each Triple-free lookup, for every combination of s, p and o it takes
+    with at least one bound, yields the matching column of what match()
+    yields for that pattern, in match()'s order."""
+    for bs, bp, bo in PATTERNS:
+        qs = s if bs else None
+        qp = p if bp else None
+        qo = o if bo else None
+        triples = list(graph.match(qs, qp, qo))
+        if qs is None and (qp is not None or qo is not None):
+            got = list(graph.subjects(predicate=qp, object=qo))
+            assert got == [t.subject for t in triples], (qp, qo)
+        if qp is None and (qs is not None or qo is not None):
+            got = list(graph.predicates(subject=qs, object=qo))
+            assert got == [t.predicate for t in triples], (qs, qo)
+        if qo is None and (qs is not None or qp is not None):
+            got = list(graph.objects(subject=qs, predicate=qp))
+            assert got == [t.object for t in triples], (qs, qp)
+        if qs is not None and qp is None and qo is None:
+            got = list(graph.predicate_objects(qs))
+            assert got == [(t.predicate, t.object) for t in triples], qs
+
+
+def lookup_terms(rng, ref):
+    """A subject, predicate and object to bind in every combination: from a
+    present triple half the time, so lookups usually find matches;
+    otherwise from the pool, sometimes with an unseen subject."""
+    if ref and rng.random() < 0.5:
+        return rng.choice(list(ref))
+    s, p, o = random_triple(rng)
+    if rng.random() < 0.1:
+        s = UNSEEN
+    return s, p, o
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_lookups_agree_with_match(index_constants, seed):
+    rng = random.Random(seed)
+    graph = Graph()
+    ref = {}
+    paths = set()
+    for step in range(300):
+        roll = rng.random()
+        if roll < 0.6:
+            t = random_triple(rng)
+            graph.add(t)
+            ref.setdefault(t, None)
+        elif roll < 0.85:
+            if ref:
+                t = rng.choice(list(ref))
+                graph.remove(t)
+                del ref[t]
+        else:
+            # A batch the next query folds with the small constants, and
+            # inserts one by one with the index's own.
+            batch = [random_triple(rng) for _ in range(40)]
+            graph.addAll(batch)
+            for t in batch:
+                ref.setdefault(t, None)
+        if step % 5 == 0:
+            for _ in range(3):
+                check_lookups_against_match(graph, *lookup_terms(rng, ref))
+            paths |= index_paths([graph._index])
+    if index_constants:
+        assert paths == {"folded", "list rows"}
+
+
+def test_lookups_of_unknown_terms_are_empty():
+    g = Graph().add(Triple(S, P, Literal("a")))
+    assert list(g.subjects(predicate=UNSEEN)) == []
+    assert list(g.subjects(P, UNSEEN)) == []
+    assert list(g.predicates(subject=UNSEEN)) == []
+    assert list(g.predicates(S, UNSEEN)) == []
+    assert list(g.objects(subject=UNSEEN)) == []
+    assert list(g.objects(UNSEEN, P)) == []
+    assert list(g.predicate_objects(UNSEEN)) == []
+    # Known terms in a combination no triple has.
+    assert list(g.objects(P, S)) == []
+
+
+def test_lookups_treat_an_empty_iri_as_a_term():
+    empty = NamedNode("")
+    g = Graph().add(Triple(empty, empty, empty)).add(Triple(S, P, Literal("b")))
+    assert list(g.subjects(object=empty)) == [empty]
+    assert list(g.predicates(subject=empty)) == [empty]
+    assert list(g.objects(empty, empty)) == [empty]
+    assert list(g.predicate_objects(empty)) == [(empty, empty)]
+
+
+def test_lookups_without_arguments_are_distinct_term_lists():
+    other = NamedNode("http://e/other")
+    g = Graph().add(Triple(S, P, Literal("a"))).add(Triple(other, P, S))
+    g.add(Triple(S, P, Literal("b")))
+    assert g.subjects() == [S, other]
+    assert g.predicates() == [P]
+    assert g.objects() == [S, Literal("a"), Literal("b")]
+
+
+LOOKUPS = [
+    lambda g: g.subjects(predicate=P),
+    lambda g: g.predicates(subject=S),
+    lambda g: g.objects(subject=S),
+    lambda g: g.predicate_objects(S),
+    lambda g: g.mapped_triples(mark),
+]
+
+
+@pytest.mark.parametrize("lookup", LOOKUPS)
+@pytest.mark.parametrize("change", ["add", "remove"])
+def test_changing_the_graph_during_a_lookup_raises(lookup, change):
+    g = Graph()
+    for value in ("a", "b", "c"):
+        g.add(Triple(S, P, Literal(value)))
+    found = lookup(g)
+    next(found)
+    if change == "add":
+        g.add(Triple(S, P, Literal("d")))
+    else:
+        g.remove(Triple(S, P, Literal("c")))
+    with pytest.raises(RuntimeError):
+        next(found)
+
+
+@pytest.mark.parametrize("lookup", LOOKUPS)
+def test_lookups_on_a_view_of_a_removed_graph_raise(lookup):
+    name = NamedNode("http://e/g")
+    ds = Dataset()
+    ds.add(Quad(S, P, Literal("a"), name))
+    ds.add(Quad(S, P, Literal("b"), name))
+    (view,) = [g for g in ds.graphs if g.uri == name]
+    assert len(list(lookup(view))) == 2
+    pending = lookup(view)
+    ds.remove_graph(name)
+    # The removal freed every term, so these find unknown terms before
+    # reaching the index.
+    with pytest.raises(RuntimeError):
+        list(pending)
+    with pytest.raises(RuntimeError):
+        list(lookup(view))
+
+
 @pytest.mark.parametrize(
     "item",
     [
@@ -788,8 +980,16 @@ REMOVED_VIEW_USES = {
     "match-unknown": lambda v: list(v.match(UNSEEN)),
     "match-no-match": lambda v: list(v.match(S, P, Literal("nowhere"))),
     "subjects": lambda v: list(v.subjects()),
+    "subjects-unknown": lambda v: list(v.subjects(UNSEEN)),
     "predicates": lambda v: list(v.predicates()),
+    "predicates-unknown": lambda v: list(v.predicates(UNSEEN)),
     "objects": lambda v: list(v.objects()),
+    "objects-unknown": lambda v: list(v.objects(UNSEEN)),
+    "predicate_objects": lambda v: list(v.predicate_objects(S)),
+    "predicate_objects-unknown": lambda v: list(v.predicate_objects(UNSEEN)),
+    "predicate_objects-no-subject": lambda v: v.predicate_objects(None),
+    "mapped_triples": lambda v: list(v.mapped_triples(mark)),
+    "object_counts": lambda v: v.object_counts(),
     "iter": lambda v: list(v),
     "len": lambda v: len(v),
     "contains-triple": lambda v: Triple(S, P, Literal("a")) in v,
@@ -816,6 +1016,73 @@ def test_every_use_of_a_removed_graphs_view_raises(use, keeps_terms):
     ds.remove_graph(name)
     with pytest.raises(RuntimeError):
         use(view)
+
+
+def test_predicate_objects_needs_a_subject():
+    g = Graph().add(Triple(S, P, Literal("a")))
+    with pytest.raises(TypeError, match="predicate_objects needs a subject"):
+        g.predicate_objects(None)
+
+
+def test_object_counts_count_triples_per_object():
+    g = Graph()
+    for s, o in [(S, "a"), (NamedNode("http://e/t"), "a"), (S, "b")]:
+        g.add(Triple(s, P, Literal(o)))
+    g.add(Triple(S, NamedNode("http://e/q"), Literal("a")))
+    assert g.object_counts() == Counter({Literal("a"): 3, Literal("b"): 1})
+    g.remove(Triple(S, P, Literal("b")))
+    assert g.object_counts() == Counter({Literal("a"): 3})
+    assert Graph().object_counts() == Counter()
+
+
+def test_view_object_counts_cover_only_its_graph():
+    name = NamedNode("http://e/g")
+    ds = Dataset()
+    ds.add(Quad(S, P, Literal("a"), None))
+    ds.add(Quad(S, P, Literal("a"), name))
+    ds.add(Quad(S, P, Literal("b"), name))
+    default, named = ds.graphs
+    assert default.object_counts() == Counter({Literal("a"): 1})
+    assert named.object_counts() == Counter({Literal("a"): 1, Literal("b"): 1})
+
+
+def test_mapped_triples_never_calls_the_function_for_an_empty_graph():
+    def fail(term):
+        raise AssertionError(term)
+
+    assert list(Graph().mapped_triples(fail)) == []
+    assert list(Dataset().mapped_quads(fail)) == []
+
+
+def test_mapped_quads_maps_a_shared_term_once_across_graphs():
+    blank = BlankNode()
+    name = NamedNode("http://e/g")
+    ds = Dataset()
+    ds.add(Quad(blank, P, Literal("a"), None))
+    ds.add(Quad(blank, P, Literal("a"), name))
+    ds.add(Quad(S, P, blank, blank))
+    fn = CountingMark()
+    assert list(ds.mapped_quads(fn)) == [
+        (mark(blank), mark(P), mark(Literal("a")), None),
+        (mark(blank), mark(P), mark(Literal("a")), mark(name)),
+        (mark(S), mark(P), mark(blank), mark(blank)),
+    ]
+    assert set(fn.calls.values()) == {1}
+
+
+@pytest.mark.parametrize("change", ["add", "remove"])
+def test_changing_the_dataset_during_mapped_quads_raises(change):
+    ds = Dataset()
+    for value in ("a", "b", "c"):
+        ds.add(Quad(S, P, Literal(value), None))
+    found = ds.mapped_quads(mark)
+    next(found)
+    if change == "add":
+        ds.add(Quad(S, P, Literal("d"), None))
+    else:
+        ds.remove(Quad(S, P, Literal("c"), None))
+    with pytest.raises(RuntimeError):
+        next(found)
 
 
 GA, GB, GC = (NamedNode("http://e/" + name) for name in ("A", "B", "C"))
@@ -846,6 +1113,7 @@ DATASET_READERS = {
     "iter": iter,
     "match": lambda ds: ds.match(),
     "match predicate": lambda ds: ds.match(predicate=P),
+    "mapped_quads": lambda ds: ds.mapped_quads(mark),
 }
 
 
@@ -882,7 +1150,7 @@ def test_re_adding_a_present_quad_during_dataset_iteration_is_no_change(read):
     assert len(list(it)) == 5
 
 
-@pytest.mark.parametrize("read", ["iter"])
+@pytest.mark.parametrize("read", ["iter", "mapped_quads"])
 def test_a_term_freed_and_reused_during_dataset_iteration_is_never_read(read):
     # Emptying GA, already walked, compacts the dictionary; the next add
     # reuses a freed id, which a reader in GB must not go on to read.
@@ -939,6 +1207,12 @@ GRAPH_READERS = {
     "match subject": lambda g: g.match(S),
     "match subject predicate": lambda g: g.match(S, P),
     "match object": lambda g: g.match(object=Literal("a")),
+    "mapped_triples": lambda g: g.mapped_triples(mark),
+    "subjects": lambda g: g.subjects(predicate=P),
+    "predicates": lambda g: g.predicates(subject=S),
+    "objects": lambda g: g.objects(subject=S),
+    "objects subject predicate": lambda g: g.objects(S, P),
+    "predicate_objects": lambda g: g.predicate_objects(S),
 }
 
 # Each really changes the graph that `abc_graph` builds.
@@ -1056,6 +1330,86 @@ def test_a_dataset_read_goes_on_past_a_direct_call_that_changes_nothing(read, ch
     assert len(list(reader)) == 5
 
 
+def compacting_graph():
+    """A graph whose emptying compacts its dictionary."""
+    g = Graph()
+    for value in ("a", "b"):
+        g.add(Triple(S, P, Literal(value)))
+    return g
+
+
+def compacting_dataset():
+    """The default graph's two quads, then GA's ten, whose removal compacts
+    the dictionary."""
+    ds = Dataset()
+    for value in ("d1", "d2"):
+        ds.add(Quad(S, P, Literal(value), None))
+    for i in range(10):
+        ds.add(Quad(NamedNode(f"http://e/a{i}"), P, Literal(f"a{i}"), GA))
+    return ds
+
+
+# Each changes the graph a mapped read walks; "compact" empties it, which
+# compacts its dictionary.
+MAPPED_SOURCE_CHANGES = {
+    "add": lambda g: g.add(Triple(S, P, Literal("new"))),
+    "remove": lambda g: g.remove(Triple(S, P, Literal("b"))),
+    "compact": lambda g: g.removeMatches(),
+}
+
+
+def changing_mark(change, source):
+    """`mark`, making `change` to `source` on its first call."""
+    calls = []
+
+    def fn(term):
+        if not calls:
+            calls.append(term)
+            change(source)
+        return mark(term)
+
+    return fn
+
+
+@pytest.mark.parametrize("change", MAPPED_SOURCE_CHANGES)
+@pytest.mark.parametrize("source", ["graph", "dataset view"])
+def test_mapped_triples_raises_when_the_function_changes_the_graph(source, change):
+    if source == "graph":
+        g = compacting_graph()
+    else:
+        ds = Dataset()
+        for value in ("a", "b"):
+            ds.add(Quad(S, P, Literal(value), GB))
+        g = view_of(ds, GB)
+    found = g.mapped_triples(changing_mark(MAPPED_SOURCE_CHANGES[change], g))
+    with pytest.raises(RuntimeError, match="TripleIndex changed during iteration"):
+        next(found)
+    if change == "compact":
+        assert g._dictionary._free
+
+
+MAPPED_DATASET_CHANGES = {
+    "add": lambda ds: ds.add(Quad(S, P, Literal("new"), None)),
+    "remove": lambda ds: ds.remove(Quad(S, P, Literal("d2"), None)),
+    "add to another graph": lambda ds: ds.add(Quad(S, P, Literal("new"), GB)),
+    "remove from another graph": lambda ds: ds.remove(
+        Quad(NamedNode("http://e/a0"), P, Literal("a0"), GA)
+    ),
+    "compact": lambda ds: ds.removeMatches(graph=GA),
+    "view add": lambda ds: view_of(ds, None).add(Triple(S, P, Literal("new"))),
+}
+
+
+@pytest.mark.parametrize("change", MAPPED_DATASET_CHANGES)
+def test_mapped_quads_raises_when_the_function_changes_the_dataset(change):
+    ds = compacting_dataset()
+    found = ds.mapped_quads(changing_mark(MAPPED_DATASET_CHANGES[change], ds))
+    with pytest.raises(RuntimeError, match="changed during iteration"):
+        next(found)
+    if change == "compact":
+        assert ds._dictionary._free
+
+
 # Each reads only GA, whose two quads three_graph_dataset adds last.
 GA_READERS = {
     "match graph": lambda ds: ds.match(graph=GA),
@@ -1063,6 +1417,9 @@ GA_READERS = {
     "view iter": lambda ds: iter(view_of(ds, GA)),
     "view match": lambda ds: view_of(ds, GA).match(),
     "view match subject": lambda ds: view_of(ds, GA).match(S),
+    "view mapped_triples": lambda ds: view_of(ds, GA).mapped_triples(mark),
+    "view objects": lambda ds: view_of(ds, GA).objects(subject=S),
+    "view predicate_objects": lambda ds: view_of(ds, GA).predicate_objects(S),
 }
 
 
@@ -1147,6 +1504,48 @@ def test_a_removed_graph_and_an_add_graph_source_never_end_a_dataset_read(read):
     source.remove(Triple(S2, P, Literal("c1")))
     source.removeMatches()
     assert len(list(reader)) == 4
+
+
+def test_a_compaction_from_another_graph_is_counted_first_and_misnames_nothing():
+    ds = Dataset()
+    for value in ("b1", "b2"):
+        ds.add(Quad(S, P, Literal(value), GB))
+    for i in range(10):
+        ds.add(Quad(NamedNode(f"http://e/a{i}"), P, Literal(f"a{i}"), GA))
+    graph_reads = [
+        ds.match(graph=GB),
+        iter(view_of(ds, GB)),
+        view_of(ds, GB).mapped_triples(mark),
+    ]
+    firsts = [next(read) for read in graph_reads]
+    versions = {}
+
+    def profile(frame, event, arg):
+        if frame.f_code is TermDictionary.compact.__code__ and event == "call":
+            versions["compact"] = ds._changes.version
+        elif frame.f_code is triple_index.TripleIndex.remove_many.__code__:
+            if event == "return":
+                versions["removed"] = ds._changes.version
+
+    previous = sys.getprofile()
+    sys.setprofile(profile)
+    try:
+        ds.removeMatches(graph=GA)
+    finally:
+        sys.setprofile(previous)
+    assert versions["compact"] > versions["removed"]
+    # Later adds take the freed ids for new terms.
+    assert ds._dictionary._free
+    for i in range(10):
+        ds.add(Quad(NamedNode(f"http://e/c{i}"), P, Literal(f"c{i}"), GC))
+    assert [[first, *read] for first, read in zip(firsts, graph_reads)] == [
+        [Quad(S, P, Literal("b1"), GB), Quad(S, P, Literal("b2"), GB)],
+        [Triple(S, P, Literal("b1")), Triple(S, P, Literal("b2"))],
+        [
+            (mark(S), mark(P), mark(Literal("b1"))),
+            (mark(S), mark(P), mark(Literal("b2"))),
+        ],
+    ]
 
 
 class NamedTriples(list):

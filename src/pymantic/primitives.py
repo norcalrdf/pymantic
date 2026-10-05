@@ -425,6 +425,21 @@ class BlankNode:
         return str(self)
 
 
+class _MappedTerms(dict):
+    """A cache from term id to `fn` of that id's term, filled on first use,
+    so a whole-graph read calls `fn` once per distinct term."""
+
+    __slots__ = ("fn", "terms")
+
+    def __init__(self, fn, terms):
+        self.fn = fn
+        self.terms = terms
+
+    def __missing__(self, term_id):
+        mapped = self[term_id] = self.fn(self.terms[term_id])
+        return mapped
+
+
 def _pattern_ids(dictionary, subject, predicate, object):
     """The ids of a match pattern, keeping None as the wildcard, or None if a
     bound term is unknown and so nothing can match."""
@@ -456,6 +471,25 @@ def _pattern_ids(dictionary, subject, predicate, object):
 def _triples(terms, ids):
     for s, p, o in ids:
         yield _new_triple(Triple, (terms[s], terms[p], terms[o]))
+
+
+def _mapped_triples(mapped, ids, index, version):
+    for s, p, o in ids:
+        triple = mapped[s], mapped[p], mapped[o]
+        # Mapping calls the caller's function, which may change the graph
+        # after the index checked this triple.
+        index.check(version)
+        yield triple
+
+
+def _column_terms(terms, ids, column):
+    for spo in ids:
+        yield terms[spo[column]]
+
+
+def _predicate_object_terms(terms, ids):
+    for _, p, o in ids:
+        yield terms[p], terms[o]
 
 
 class Graph:
@@ -629,23 +663,98 @@ class Graph:
         """Return the set of :py:class:`Triple` within the :py:class:`Graph`"""
         return frozenset(self)
 
-    def subjects(self):
-        """Returns a list of the distinct subjects in the graph, in term-id
-        order."""
-        terms = self._dictionary.terms
-        return [terms[i] for i in self._index.subjects()]
+    def mapped_triples(self, fn):
+        """Yields ``(fn(subject), fn(predicate), fn(object))`` for each
+        triple, in the order iterating the graph yields the triples, and
+        raises RuntimeError as that does if the graph changes meanwhile.
 
-    def predicates(self):
-        """Returns a list of the distinct predicates in the graph, in term-id
-        order."""
-        terms = self._dictionary.terms
-        return [terms[i] for i in self._index.predicates()]
+        This builds no `Triple`, and calls `fn` once per distinct term
+        rather than once per position, so it is the fast path for reading a
+        whole graph through a function of its terms."""
+        mapped = _MappedTerms(fn, self._dictionary.terms)
+        index = self._index
+        ids = iter(index)
+        version = index.version
+        return _mapped_triples(mapped, ids, index, version)
 
-    def objects(self):
-        """Returns a list of the distinct objects in the graph, in term-id
-        order."""
+    def object_counts(self):
+        """Returns a `collections.Counter` from each object to the number of
+        triples it is the object of, equal to counting the objects while
+        iterating the graph. The index already holds each object's triples
+        together, so this reads their number without visiting them."""
         terms = self._dictionary.terms
-        return [terms[i] for i in self._index.objects()]
+        return collections.Counter(
+            {terms[o]: n for o, n in self._index.object_counts().items()}
+        )
+
+    def subjects(self, predicate=None, object=None):
+        """With no arguments, returns a list of the distinct subjects in the
+        graph, in term-id order.
+
+        Otherwise yields the subject of each triple matching the predicate
+        and object given, in the order :meth:`match` yields the triples.
+        This builds no `Triple`, so it is cheaper than reading the subjects
+        out of :meth:`match`."""
+        if predicate is None and object is None:
+            terms = self._dictionary.terms
+            return [terms[i] for i in self._index.subjects()]
+        return self._matching_terms(0, None, predicate, object)
+
+    def predicates(self, subject=None, object=None):
+        """With no arguments, returns a list of the distinct predicates in
+        the graph, in term-id order.
+
+        Otherwise yields the predicate of each triple matching the subject
+        and object given, in the order :meth:`match` yields the triples.
+        This builds no `Triple`, so it is cheaper than reading the
+        predicates out of :meth:`match`."""
+        if subject is None and object is None:
+            terms = self._dictionary.terms
+            return [terms[i] for i in self._index.predicates()]
+        return self._matching_terms(1, subject, None, object)
+
+    def objects(self, subject=None, predicate=None):
+        """With no arguments, returns a list of the distinct objects in the
+        graph, in term-id order.
+
+        Otherwise yields the object of each triple matching the subject and
+        predicate given, in the order :meth:`match` yields the triples.
+        This builds no `Triple`, so it is the fast path for reading the
+        values of one subject's property."""
+        if subject is None and predicate is None:
+            terms = self._dictionary.terms
+            return [terms[i] for i in self._index.objects()]
+        return self._matching_terms(2, subject, predicate, None)
+
+    def predicate_objects(self, subject):
+        """Yields (predicate, object) for each triple of `subject`, in the
+        order ``match(subject)`` yields the triples. This builds no
+        `Triple`, so it is the fast path for reading all of one subject's
+        properties."""
+        self._check_index()
+        # Without this check a missing subject would read as a scan of
+        # the whole graph.
+        if subject is None:
+            raise TypeError("predicate_objects needs a subject")
+        pattern = _pattern_ids(self._dictionary, subject, None, None)
+        if pattern is None:
+            self._check_index()
+            return iter(())
+        terms = self._dictionary.terms
+        ids = self._index.match(*pattern)
+        return _predicate_object_terms(terms, ids)
+
+    def _matching_terms(self, column, subject, predicate, object):
+        """Yields the term in position `column` of each triple matching the
+        pattern, which leaves at least one position unbound, so the index's
+        version-checked generator serves every pattern here."""
+        pattern = _pattern_ids(self._dictionary, subject, predicate, object)
+        if pattern is None:
+            self._check_index()
+            return iter(())
+        terms = self._dictionary.terms
+        ids = self._index.match(*pattern)
+        return _column_terms(terms, ids, column)
 
     def _ids(self, triple):
         """The id triple of `triple`, or None if a term is unknown."""
@@ -888,6 +997,42 @@ class Dataset:
 
     def toArray(self):
         return frozenset(self)
+
+    def mapped_quads(self, fn):
+        """Yields ``(fn(subject), fn(predicate), fn(object), fn(graph))``
+        for each quad, in the order iterating the dataset yields the quads,
+        and raises RuntimeError as that does if the dataset changes
+        meanwhile. The graph position is None for the default graph, for
+        which `fn` is not called.
+
+        This builds no `Quad`, and calls `fn` once per distinct term across
+        the whole dataset, graph names included, so it is the fast path for
+        reading a whole dataset through a function of its terms."""
+        mapped = _MappedTerms(fn, self._dictionary.terms)
+        # An empty graph yields nothing, so its name is not mapped.
+        parts = [
+            (name_id, iter(index))
+            for name_id, index in self._graphs.items()
+            if len(index)
+        ]
+        version = self._changes.version
+        return self._mapped_quads(mapped, parts, version)
+
+    def _mapped_quads(self, mapped, parts, version):
+        """As `_quads`, yielding mapped terms for `mapped_quads`. The check
+        follows the mapping, since the caller's function may change the
+        dataset; every change to any graph changes the dataset's version,
+        so it covers the index being walked too."""
+        changes = self._changes
+        for name_id, ids in parts:
+            name = None if name_id is None else mapped[name_id]
+            for s, p, o in ids:
+                quad = mapped[s], mapped[p], mapped[o], name
+                if changes.version != version:
+                    raise RuntimeError(_DATASET_CHANGED)
+                yield quad
+        if changes.version != version:
+            raise RuntimeError(_DATASET_CHANGED)
 
     def _index_for_add(self, name):
         """The index of the graph called `name`, created if it is new."""

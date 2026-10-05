@@ -1,5 +1,8 @@
+import functools
 from io import StringIO
+import pathlib
 import pytest
+import random
 
 from pymantic.parsers import ntriples_parser
 from pymantic.primitives import Graph, NamedNode, Triple
@@ -2338,3 +2341,122 @@ def test_stable_serializers_raise_undecidable(primitives, serialize_turtle):
         dataset.add(primitives.Quad(*triple, None))
     with pytest.raises(Undecidable):
         serialize_nquads(dataset, StringIO(), stable=True)
+
+
+class MatchLookupGraph(Graph):
+    """A graph whose Triple-free lookups are read out of match(), the
+    reference the real lookups must agree with."""
+
+    def subjects(self, predicate=None, object=None):
+        if predicate is None and object is None:
+            return super().subjects()
+        return (t.subject for t in self.match(None, predicate, object))
+
+    def predicates(self, subject=None, object=None):
+        if subject is None and object is None:
+            return super().predicates()
+        return (t.predicate for t in self.match(subject, None, object))
+
+    def objects(self, subject=None, predicate=None):
+        if subject is None and predicate is None:
+            return super().objects()
+        return (t.object for t in self.match(subject, predicate, None))
+
+    def predicate_objects(self, subject):
+        return ((t.predicate, t.object) for t in self.match(subject, None, None))
+
+
+TURTLE_TESTS = pathlib.Path(__file__).parent / "w3c" / "rdf11" / "rdf-turtle"
+
+
+@functools.cache
+def turtle_fixture_triples():
+    """The triples of every W3C Turtle evaluation test the manifest lists."""
+    from pymantic.parsers import turtle_parser
+
+    manifest = (TURTLE_TESTS / "manifest.ttl").read_text()
+    fixtures = {}
+    for path in sorted(TURTLE_TESTS.glob("*.ttl")):
+        if "<%s>" % path.name not in manifest or not path.with_suffix(".nt").exists():
+            continue
+        graph = turtle_parser.parse(
+            path.read_bytes(), base="http://www.w3.org/2013/TurtleTests/" + path.name
+        )
+        fixtures[path.name] = list(graph)
+    return fixtures
+
+
+def generated_triples(seed):
+    """Triples with collections of every shape the writer plans for (an
+    object, a subject with other predicates, nested in another collection,
+    referenced twice, malformed) and blank nodes nested, shared and in
+    cycles."""
+    from pymantic.primitives import BlankNode, Literal
+    from pymantic.serializers import RDF_FIRST, RDF_NIL, RDF_REST
+
+    rng = random.Random(seed)
+    iris = [NamedNode("http://e/%d" % i) for i in range(5)]
+    literals = [Literal("x"), Literal("y", "en"), Literal("1", datatype=iris[0])]
+    blanks = [BlankNode() for _ in range(6)]
+    triples = []
+    for _ in range(rng.randrange(10, 30)):
+        triples.append(
+            Triple(
+                rng.choice(iris + blanks),
+                rng.choice(iris),
+                rng.choice(iris + literals + blanks),
+            )
+        )
+    heads = []
+    for _ in range(rng.randrange(1, 5)):
+        cells = [BlankNode() for _ in range(rng.randrange(1, 4))]
+        for i, cell in enumerate(cells):
+            if heads and rng.random() < 0.5:
+                first = heads.pop()
+            else:
+                first = rng.choice(iris + literals + blanks)
+            triples.append(Triple(cell, NamedNode(RDF_FIRST), first))
+            rest = cells[i + 1] if i + 1 < len(cells) else NamedNode(RDF_NIL)
+            triples.append(Triple(cell, NamedNode(RDF_REST), rest))
+        shape = rng.choice(["object", "subject", "nested", "twice", "malformed"])
+        if shape == "object":
+            triples.append(Triple(rng.choice(iris), iris[1], cells[0]))
+        elif shape == "subject":
+            triples.append(Triple(cells[0], iris[2], rng.choice(literals)))
+        elif shape == "nested":
+            heads.append(cells[0])
+        elif shape == "twice":
+            triples.append(Triple(iris[3], iris[1], cells[0]))
+            triples.append(Triple(iris[4], iris[1], cells[0]))
+        else:
+            triples.append(Triple(rng.choice(cells), NamedNode(RDF_FIRST), iris[2]))
+    for head in heads:
+        triples.append(Triple(iris[0], iris[2], head))
+    return triples
+
+
+def written_turtle(graph, stable):
+    from pymantic.primitives import Profile
+    from pymantic.serializers import serialize_turtle
+
+    profile = Profile()
+    profile.setPrefix("e", NamedNode("http://e/"))
+    out = StringIO()
+    serialize_turtle(graph, out, profile=profile, stable=stable)
+    return out.getvalue()
+
+
+def test_turtle_written_through_lookups_equals_written_through_match():
+    inputs = dict(turtle_fixture_triples())
+    assert len(inputs) > 100
+    inputs.update(
+        ("generated %d" % seed, generated_triples(seed)) for seed in range(40)
+    )
+    for name, triples in inputs.items():
+        graph = Graph().addAll(triples)
+        reference = MatchLookupGraph().addAll(triples)
+        for stable in (False, True):
+            assert written_turtle(graph, stable) == written_turtle(reference, stable), (
+                name,
+                stable,
+            )

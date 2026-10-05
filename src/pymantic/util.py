@@ -14,22 +14,24 @@ from urllib.parse import quote
 
 
 def en(value):
-    """Returns an RDF literal from the en language for the given value."""
+    """Return an RDF literal in the en language for the given value."""
     from pymantic.primitives import Literal
 
     return Literal(value, language="en")
 
 
 def de(value):
-    """Returns an RDF literal from the de language for the given value."""
+    """Return an RDF literal in the de language for the given value."""
     from pymantic.primitives import Literal
 
     return Literal(value, language="de")
 
 
 def one_or_none(values):
-    """Fetch the first value from values, or None if values is empty. Raises
-    ValueError if values has more than one thing in it."""
+    """Return the first value from values, or None if values is empty.
+
+    Raise ValueError if values has more than one thing in it.
+    """
     if not values:
         return None
     if len(values) > 1:
@@ -75,10 +77,11 @@ def percent_decode(regmatch):
 
 
 def normalize_iri(iri):
-    """Normalize an IRI using the Case Normalization (5.3.2.1) and
-    Percent-Encoding Normalization (5.3.2.3) from RFC 3987. The IRI should be a
-    unicode object."""
+    """Normalize an IRI using RFC 3987 case and percent-encoding normalization.
 
+    These are Case Normalization (5.3.2.1) and Percent-Encoding Normalization
+    (5.3.2.3). The IRI should be a unicode object.
+    """
     return percent_encoding_re.sub(percent_decode, iri)
 
 
@@ -87,9 +90,11 @@ def percent_encode(char):
 
 
 def quote_normalized_iri(normalized_iri):
-    """Percent-encode a normalized IRI; IE, all reserved characters are presumed
-    to be themselves and not percent encoded. All other unsafe characters are
-    percent-encoded."""
+    """Percent-encode a normalized IRI.
+
+    All reserved characters are presumed to be themselves and are not
+    percent-encoded. All other unsafe characters are percent-encoded.
+    """
     normalized_uri = "".join(
         percent_encode(char) if ord(char) > 127 else char for char in normalized_iri
     )
@@ -108,9 +113,11 @@ IRI_REFERENCE_RE = re.compile(
 
 
 def split_iri_reference(reference):
-    """Split an IRI reference into its (scheme, authority, path, query,
-    fragment) components. A component whose delimiter is absent is None,
-    which RFC 3986 distinguishes from one that is present but empty."""
+    """Split an IRI reference into (scheme, authority, path, query, fragment).
+
+    A component whose delimiter is absent is None, which RFC 3986
+    distinguishes from one that is present but empty.
+    """
     match = IRI_REFERENCE_RE.match(reference)
     return match.group("scheme", "authority", "path", "query", "fragment")
 
@@ -119,7 +126,8 @@ def remove_dot_segments(path):
     """Resolve the "." and ".." segments of `path` (RFC 3986 section 5.2.4).
 
     `output` holds one segment per entry, each with its leading "/" if it
-    had one, so dropping the last segment is a pop."""
+    had one, so dropping the last segment is a pop.
+    """
     output = []
     while path:
         if path.startswith("../"):
@@ -150,18 +158,19 @@ def remove_dot_segments(path):
 
 
 def merge_paths(base_authority, base_path, reference_path):
-    """Append a relative path to the base path's directory (RFC 3986
-    section 5.2.3)."""
+    """Append a relative path to the base path's directory (RFC 3986 5.2.3)."""
     if base_authority is not None and base_path == "":
         return "/" + reference_path
     return base_path[: base_path.rfind("/") + 1] + reference_path
 
 
 def resolve_iri(base, reference):
-    """Resolve an IRI reference against a base IRI as a strict parser
-    (RFC 3986 section 5.2), keeping empty path segments and an empty
+    """Resolve an IRI reference against a base IRI (RFC 3986 section 5.2).
+
+    Resolve as a strict parser, keeping empty path segments and an empty
     fragment intact. An absolute reference is returned as is, minus its
-    dot segments, whatever `base` is."""
+    dot segments, whatever `base` is.
+    """
     scheme, authority, path, query, fragment = split_iri_reference(reference)
     if scheme is not None:
         path = remove_dot_segments(path)
@@ -194,18 +203,22 @@ def resolve_iri(base, reference):
 
 
 def smart_urljoin(base, url):
-    """Resolve `url` against `base`; an alias of resolve_iri kept for
-    backwards compatibility."""
+    """Resolve `url` against `base`.
+
+    This is an alias of resolve_iri kept for backwards compatibility.
+    """
     return resolve_iri(base, url)
 
 
 def strips_to_relative_reference(base, iri):
-    """Whether removing `base` from the front of `iri` leaves a relative
-    reference that resolves back to `iri`, as the Turtle serializer writes
-    it: the remainder, with a leading ``#`` when the base ends in one. A
-    string prefix of the base is not always a reference to it: against
+    """Test whether stripping `base` from `iri` leaves a reference back to `iri`.
+
+    The relative reference is the one the Turtle serializer writes: the
+    remainder, with a leading ``#`` when the base ends in one. A string
+    prefix of the base is not always a reference to it: against
     <http://x/a>, stripping <http://x/ab> leaves <b>, which resolves to
-    <http://x/b>."""
+    <http://x/b>.
+    """
     if not iri.startswith(base):
         return False
     relative = ("#" if base.endswith("#") else "") + iri[len(base) :]
@@ -213,7 +226,7 @@ def strips_to_relative_reference(base, iri):
 
 
 def grouper(iterable, n, fillvalue=None):
-    "Collect data into fixed-length chunks or blocks"
+    """Collect data into fixed-length chunks or blocks."""
     # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
 
     from itertools import zip_longest
@@ -260,9 +273,12 @@ def process_escape(escape):
 
 
 def decode_literal(literal):
-    """Replace the ECHAR and UCHAR escapes of Turtle, N-Triples and N-Quads
-    in `literal` with the characters they stand for. Raises ValueError for a
-    numeric escape that does not denote a Unicode scalar value."""
+    """Replace the Turtle, N-Triples and N-Quads escapes in `literal`.
+
+    Each ECHAR and UCHAR escape becomes the character it stands for. Raise
+    ValueError for a numeric escape that does not denote a Unicode scalar
+    value.
+    """
     return re.sub(
         r"\\u[a-fA-F0-9]{4}|\\U[a-fA-F0-9]{8}|\\[^uU]",
         process_escape,

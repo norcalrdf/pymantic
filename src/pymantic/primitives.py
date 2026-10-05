@@ -30,16 +30,17 @@ from pymantic.util import quote_normalized_iri
 
 
 def is_language(lang):
-    """Is something a valid XML language?"""
+    """Return whether something is a valid XML language."""
     if isinstance(lang, NamedNode):
         return False
     return True
 
 
 def lang_match(lang1, lang2):
-    """Determines if two languages are, in fact, the same language.
+    """Determine if two languages are, in fact, the same language.
 
-    Eg: en is the same as en-us and en-uk."""
+    E.g. en is the same as en-us and en-uk.
+    """
     if lang1 is None and lang2 is None:
         return True
     elif lang1 is None or lang2 is None:
@@ -52,9 +53,9 @@ def lang_match(lang1, lang2):
 
 
 def parse_curie(curie, prefixes):
-    """
-    Parses a CURIE within the context of the given namespaces. Will also accept
-    explicit URIs and wrap them in an rdflib URIRef.
+    """Parse a CURIE within the context of the given namespaces.
+
+    Will also accept explicit URIs and wrap them in an rdflib URIRef.
 
     Specifically:
 
@@ -91,16 +92,18 @@ def parse_curies(curies, namespaces):
 
 
 def to_curie(uri, namespaces, seperator=":", explicit=False):
-    """Converts a URI to a CURIE using the prefixes defined in namespaces. If
-    there is no matching prefix, return the URI unchanged.
+    """Convert a URI to a CURIE using the prefixes defined in namespaces.
+
+    If there is no matching prefix, return the URI unchanged.
 
     namespaces - a dictionary of prefix -> namespace mappings.
 
     separator - the character to use as the separator between the prefix and
-                the local name.
+    the local name.
 
     explicit - if True and the URI can be abbreviated, wrap the abbreviated
-               form in []s to indicate that it is definitely a CURIE."""
+    form in []s to indicate that it is definitely a CURIE.
+    """
     matches = []
     for prefix, namespace in namespaces.items():
         if uri.startswith(namespace):
@@ -116,10 +119,10 @@ def to_curie(uri, namespaces, seperator=":", explicit=False):
 
 
 class Triple(tuple):
-    """Triple(subject, predicate, object)
+    """An RDF Triple: Triple(subject, predicate, object).
 
     The Triple interface represents an RDF Triple. The stringification of a
-    Triple results in an N-Triples.
+    Triple results in an N-Triples line.
     """
 
     __slots__ = ()
@@ -131,7 +134,7 @@ class Triple(tuple):
 
     @classmethod
     def _make(cls, iterable, new=tuple.__new__, len=len):
-        "Make a new Triple object from a sequence or iterable"
+        """Make a new Triple object from a sequence or iterable."""
         result = new(cls, iterable)
         if len(result) != 3:
             raise TypeError("Expected 3 arguments, got %d" % len(result))
@@ -141,11 +144,11 @@ class Triple(tuple):
         return "Triple(subject=%r, predicate=%r, object=%r)" % self
 
     def _asdict(t):
-        "Return a new dict which maps field names to their values"
+        """Return a new dict which maps field names to their values."""
         return {"subject": t[0], "predicate": t[1], "object": t[2]}
 
     def _replace(_self, **kwds):
-        "Return a new Triple object replacing specified fields with new values"
+        """Return a new Triple object replacing specified fields with new values."""
         result = _self._make(map(kwds.pop, ("subject", "predicate", "object"), _self))
         if kwds:
             raise ValueError("Got unexpected field names: %r" % kwds.keys())
@@ -166,7 +169,7 @@ class Triple(tuple):
 
 
 class Quad(tuple):
-    "Quad(subject, predicate, object, graph)"
+    """An RDF Quad: Quad(subject, predicate, object, graph)."""
 
     __slots__ = ()
 
@@ -177,7 +180,7 @@ class Quad(tuple):
 
     @classmethod
     def _make(cls, iterable, new=tuple.__new__, len=len):
-        "Make a new Quad object from a sequence or iterable"
+        """Make a new Quad object from a sequence or iterable."""
         result = new(cls, iterable)
         if len(result) != 4:
             raise TypeError("Expected 4 arguments, got %d" % len(result))
@@ -187,7 +190,7 @@ class Quad(tuple):
         return "Quad(subject=%r, predicate=%r, object=%r, graph=%r)" % self
 
     def _asdict(t):
-        "Return a new dict which maps field names to their values"
+        """Return a new dict which maps field names to their values."""
         return {
             "subject": t[0],
             "predicate": t[1],
@@ -196,7 +199,7 @@ class Quad(tuple):
         }
 
     def _replace(_self, **kwds):
-        "Return a new Quad object replacing specified fields with new values"
+        """Return a new Quad object replacing specified fields with new values."""
         result = _self._make(
             map(kwds.pop, ("subject", "predicate", "object", "graph"), _self)
         )
@@ -268,7 +271,7 @@ class Literal(tuple):
 
     @classmethod
     def _make(cls, iterable, new=None, len=len):
-        "Make a new Literal object from a sequence or iterable"
+        """Make a new Literal object from a sequence or iterable."""
         fields = tuple(iterable)
         if len(fields) != 3:
             raise TypeError("Expected 3 arguments, got %d" % len(fields))
@@ -278,7 +281,7 @@ class Literal(tuple):
         return "Literal(value=%r, language=%r, datatype=%r)" % self
 
     def _asdict(t):
-        "Return a new dict which maps field names to their values"
+        """Return a new dict which maps field names to their values."""
         return {"value": t[0], "language": t[1], "datatype": t[2]}
 
     def _replace(_self, **kwds):
@@ -333,8 +336,7 @@ class NamedNode(str):
 
 
 class Prefix(NamedNode):
-    """Node that when called returns the the argument conctantated with
-    self."""
+    """Node that when called returns the argument concatenated with self."""
 
     def __call__(self, name):
         return NamedNode(self + name)
@@ -345,13 +347,15 @@ XSD_STRING = XSD("string")
 
 
 class BlankNode:
-    """A BlankNode is a reference to an unnamed resource (one for which an IRI
-    is not known), and may be used in a Triple as a unique reference to that
-    unnamed resource.
+    """A reference to an unnamed resource (one for which an IRI is not known).
+
+    A BlankNode may be used in a Triple as a unique reference to that unnamed
+    resource.
 
     BlankNodes are stringified by prepending "_:" to a unique value, for
     instance _:b142 or _:me, this stringified form is referred to as a
-    "blank node identifier"."""
+    "blank node identifier".
+    """
 
     interfaceName = "BlankNode"
 
@@ -379,8 +383,10 @@ def Index():
 
 
 class Graph:
-    """A `Graph` holds a set of one or more `Triple`. Implements the Python
-    set/sequence API for `in`, `for`, and `len`"""
+    """A `Graph` holds a set of one or more `Triple`.
+
+    Implements the Python set/sequence API for `in`, `for`, and `len`.
+    """
 
     def __init__(self, graph_uri=None):
         if not isinstance(graph_uri, NamedNode):
@@ -396,7 +402,7 @@ class Graph:
 
     @property
     def uri(self):
-        """URI name of the graph, if it has been given a name"""
+        """URI name of the graph, if it has been given a name."""
         return self._uri
 
     def addAction(self, action):
@@ -404,8 +410,10 @@ class Graph:
         return self
 
     def add(self, triple):
-        """Adds the specified Triple to the graph. This method returns the
-        graph instance it was called on."""
+        """Add the specified Triple to the graph.
+
+        Return the graph instance it was called on.
+        """
         self._triples[triple] = None
         self._spo[triple.subject][triple.predicate][triple.object] = triple
         self._pos[triple.predicate][triple.object][triple.subject] = triple
@@ -413,8 +421,10 @@ class Graph:
         return self
 
     def remove(self, triple):
-        """Removes the specified Triple from the graph. This method returns the
-        graph instance it was called on."""
+        """Remove the specified Triple from the graph.
+
+        Return the graph instance it was called on.
+        """
         del self._triples[triple]
         del self._spo[triple.subject][triple.predicate][triple.object]
         del self._pos[triple.predicate][triple.object][triple.subject]
@@ -422,10 +432,11 @@ class Graph:
         return self
 
     def match(self, subject=None, predicate=None, object=None):
-        """This method returns a new sequence of triples which is comprised of
-        all those triples in the current instance which match the given
-        arguments, that is, for each triple in this graph, it is included in
-        the output graph, if:
+        """Return a new sequence of the triples in this graph that match the arguments.
+
+        The sequence is comprised of all those triples in the current instance
+        which match the given arguments, that is, for each triple in this graph,
+        it is included in the output graph, if:
 
         * calling triple.subject.equals with the specified subject as an
           argument returns true, or the subject argument is null, AND
@@ -478,22 +489,25 @@ class Graph:
                 yield triple
 
     def removeMatches(self, subject, predicate, object):
-        """This method removes those triples in the current graph which match
-        the given arguments."""
+        """Remove those triples in the current graph which match the given arguments."""
         for triple in self.match(subject, predicate, object):
             self.remove(triple)
         return self
 
     def addAll(self, graph_or_triples):
-        """Imports the graph or set of triples in to this graph. This method
-        returns the graph instance it was called on."""
+        """Import the graph or set of triples into this graph.
+
+        Return the graph instance it was called on.
+        """
         for triple in graph_or_triples:
             self.add(triple)
         return self
 
     def merge(self, graph):
-        """Returns a new Graph which is a concatenation of this graph and the
-        graph given as an argument."""
+        """Return a new Graph which is a concatenation of this graph and the argument.
+
+        The argument is the graph to concatenate with this one.
+        """
         new_graph = Graph()
         for triple in graph:
             new_graph.add(triple)
@@ -511,19 +525,19 @@ class Graph:
         return iter(self._triples)
 
     def toArray(self):
-        """Return the set of :py:class:`Triple` within the :py:class:`Graph`"""
+        """Return the set of :py:class:`Triple` within the :py:class:`Graph`."""
         return frozenset(self._triples)
 
     def subjects(self):
-        """Returns an iterator over subjects in the graph."""
+        """Return an iterator over subjects in the graph."""
         return self._spo.keys()
 
     def predicates(self):
-        """Returns an iterator over predicates in the graph."""
+        """Return an iterator over predicates in the graph."""
         return self._pos.keys()
 
     def objects(self):
-        """Returns an iterator over objects in the graph."""
+        """Return an iterator over objects in the graph."""
         return self._osp.keys()
 
 
@@ -564,15 +578,16 @@ class Dataset:
                     yield t_as_q(graph_uri, match)
 
     def removeMatches(self, subject=None, predicate=None, object=None, graph=None):
-        """This method removes those triples in the current graph which match
-        the given arguments."""
+        """Remove those triples in the current graph which match the given arguments."""
         for quad in self.match(subject, predicate, object, graph):
             self.remove(quad)
         return self
 
     def addAll(self, dataset_or_quads):
-        """Imports the graph or set of triples in to this graph. This method
-        returns the graph instance it was called on."""
+        """Import the graph or set of triples into this graph.
+
+        Return the graph instance it was called on.
+        """
         for quad in dataset_or_quads:
             self.add(quad)
         return self
@@ -603,8 +618,9 @@ class Dataset:
 
 
 class PrefixMap(collections.OrderedDict):
-    """A map of prefixes to IRIs, and provides methods to
-    turn one in to the other.
+    """A map of prefixes to IRIs.
+
+    Provides methods to turn one into the other.
 
     Example Usage:
 
@@ -637,16 +653,19 @@ class PrefixMap(collections.OrderedDict):
     """
 
     def resolve(self, curie):
-        """Given a valid CURIE for which a prefix is known (for example
-        "rdfs:label"), this method will return the resulting IRI (for example
-        "http://www.w3.org/2000/01/rdf-schema#label")"""
+        """Return the IRI for a valid CURIE whose prefix is known.
+
+        For example, given "rdfs:label", return
+        "http://www.w3.org/2000/01/rdf-schema#label".
+        """
         return parse_curie(curie, self)
 
     def shrink(self, iri):
-        """Given an IRI for which a prefix is known (for example
-        "http://www.w3.org/2000/01/rdf-schema#label") this method returns a
-        CURIE (for example "rdfs:label"), if no prefix is known the original
-        IRI is returned."""
+        """Return a CURIE for an IRI whose prefix is known.
+
+        For example, given "http://www.w3.org/2000/01/rdf-schema#label",
+        return "rdfs:label". If no prefix is known, return the original IRI.
+        """
         return to_curie(iri, self)
 
     def addAll(self, other, override=False):
@@ -659,14 +678,17 @@ class PrefixMap(collections.OrderedDict):
         return self
 
     def setDefault(self, iri):
-        """Set the iri to be used when resolving CURIEs without a prefix, for
-        example ":this"."""
+        """Set the IRI to be used when resolving CURIEs without a prefix.
+
+        For example ":this".
+        """
         self[""] = iri
 
 
 class TermMap(dict):
-    """A map of simple string terms to IRIs, and provides methods to turn one
-        in to the other.
+    """A map of simple string terms to IRIs.
+
+    Provides methods to turn one into the other.
 
     Example usage:
 
@@ -708,31 +730,35 @@ class TermMap(dict):
         return self
 
     def resolve(self, term):
-        """Given a valid term for which an IRI is known (for example "label"),
-        this method will return the resulting IRI (for example
-        "http://www.w3.org/2000/01/rdf-schema#label").
+        """Return the IRI for a valid term for which an IRI is known.
+
+        For example, given "label", return
+        "http://www.w3.org/2000/01/rdf-schema#label".
 
         If no term is known and a default has been set, the IRI is obtained by
-        concatenating the term and the default iri.
+        concatenating the default IRI and the term.
 
-        If no term is known and no default is set, then this method returns
-        null."""
+        If no term is known and no default is set, return None.
+        """
         if hasattr(self, "default"):
             return self.get(term, self.default + term)
         else:
             return self.get(term)
 
     def setDefault(self, iri):
-        """The default iri to be used when an term cannot be resolved, the
-        resulting IRI is obtained by concatenating this iri with the term being
-        resolved."""
+        """Set the default IRI to be used when a term cannot be resolved.
+
+        The resulting IRI is obtained by concatenating this IRI with the term
+        being resolved.
+        """
         self.default = iri
 
     def shrink(self, iri):
-        """Given an IRI for which an term is known (for example
-        "http://www.w3.org/2000/01/rdf-schema#label") this method returns a
-        term (for example "label"), if no term is known the original IRI is
-        returned."""
+        """Return a term for an IRI for which a term is known.
+
+        For example, given "http://www.w3.org/2000/01/rdf-schema#label",
+        return "label". If no term is known, return the original IRI.
+        """
         for term, v in self.items():
             if v == iri:
                 return term
@@ -740,8 +766,7 @@ class TermMap(dict):
 
 
 class Profile:
-    """Profiles provide an easy to use context for negotiating between CURIEs,
-    Terms and IRIs."""
+    """An easy to use context for negotiating between CURIEs, Terms and IRIs."""
 
     def __init__(self, prefixes=None, terms=None):
         self.prefixes = prefixes or PrefixMap()
@@ -752,81 +777,93 @@ class Profile:
             self.prefixes["xsd"] = "http://www.w3.org/2001/XMLSchema#"
 
     def resolve(self, toresolve):
-        """Given an Term or CURIE this method will return an IRI, or null if it
-        cannot be resolved.
+        """Return the IRI for a Term or CURIE, or None if it cannot be resolved.
 
-        If toresolve contains a : (colon) then this method returns the result
-        of calling prefixes.resolve(toresolve)
-
-        otherwise this method returns the result of calling
-        terms.resolve(toresolve)"""
+        If toresolve contains a : (colon), return the result of calling
+        prefixes.resolve(toresolve); otherwise return the result of calling
+        terms.resolve(toresolve).
+        """
         if ":" in toresolve:
             return self.prefixes.resolve(toresolve)
         else:
             return self.terms.resolve(toresolve)
 
     def setDefaultVocabulary(self, iri):
-        """This method sets the default vocabulary for use when resolving
-        unknown terms, it is identical to calling the setDefault method on
-        terms."""
+        """Set the default vocabulary for use when resolving unknown terms.
+
+        This is identical to calling the setDefault method on terms.
+        """
         self.terms.setDefault(iri)
 
     def setDefaultPrefix(self, iri):
-        """This method sets the default prefix for use when resolving CURIEs
-        without a prefix, for example ":me", it is identical to calling the
-        setDefault method on prefixes."""
+        """Set the default prefix for use when resolving CURIEs without a prefix.
+
+        For example ":me". This is identical to calling the setDefault method
+        on prefixes.
+        """
         self.prefixes.setDefault(iri)
 
     def setTerm(self, term, iri):
-        """This method associates an IRI with a term, it is identical to
-        calling the set method on term."""
+        """Associate an IRI with a term.
+
+        This is identical to calling the set method on terms.
+        """
         self.terms[term] = iri
 
     def setPrefix(self, prefix, iri):
-        """This method associates an IRI with a prefix, it is identical to
-        calling the set method on prefixes."""
+        """Associate an IRI with a prefix.
+
+        This is identical to calling the set method on prefixes.
+        """
         self.prefixes[prefix] = iri
 
     def importProfile(self, profile, override=False):
-        """This method functions the same as calling
+        """Import the prefixes and terms of another profile into this one.
+
+        This functions the same as calling
         prefixes.addAll(profile.prefixes, override) and
         terms.addAll(profile.terms, override), and allows easy updating and
         merging of different profiles.
 
-        This method returns the instance on which it was called."""
+        Return the instance on which it was called.
+        """
         self.prefixes.addAll(profile.prefixes, override)
         self.terms.addAll(profile.terms, override)
         return self
 
 
 class RDFEnvironment(Profile):
-    """The RDF Environment is an interface which exposes a high level API for
-    working with RDF in a programming environment."""
+    """An interface exposing a high level API for working with RDF.
+
+    The RDF Environment exposes this API in a programming environment.
+    """
 
     def createBlankNode(self):
-        """Creates a new :py:class:`BlankNode`."""
+        """Create a new :py:class:`BlankNode`."""
         return BlankNode()
 
     def createNamedNode(self, value):
-        """Creates a new :py:class:`NamedNode`."""
+        """Create a new :py:class:`NamedNode`."""
         return NamedNode(value)
 
     def createLiteral(self, value, language=None, datatype=None):
-        """Creates a :py:class:`Literal` given a value, an optional language
-        and/or an
-        optional datatype."""
+        """Create a :py:class:`Literal`.
+
+        Takes a value, an optional language and/or an optional datatype.
+        """
         return Literal(value, language, datatype)
 
     def createTriple(self, subject, predicate, object):
-        """Creates a :py:class:`Triple` given a subject, predicate and
-        object."""
+        """Create a :py:class:`Triple` given a subject, predicate and object."""
         return Triple(subject, predicate, object)
 
     def createGraph(self, triples=tuple()):
-        """Creates a new :py:class:`Graph`, an optional sequence of
-        :py:class:`Triple` to include within the graph may be specified, this
-        allows easy transition between native sequences and Graphs and is the
-        counterpart for :py:meth:`Graph.toArray`."""
+        """Create a new :py:class:`Graph`.
+
+        An optional sequence of :py:class:`Triple` to include within the graph
+        may be specified. This allows easy transition between native sequences
+        and Graphs and is the counterpart for :py:meth:`Graph.toArray`.
+        """
         g = Graph()
         g.addAll(triples)
         return g

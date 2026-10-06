@@ -23,8 +23,10 @@ the best of --repeat runs, with every run shown. Per input:
   gc        objects the collector tracks because of the graph, per triple,
             counted the same way, and the best of 3 full collections
   retained  with --retained: bytes and tracked objects per triple for a
-            graph parsed from its file and kept, terms included; the cost
-            of a parsed graph as a program holds it
+            graph parsed from its file and kept, terms included, after one
+            match with a bound subject (as in load, so a lazily sorting
+            index has built its orderings); the cost of a parsed graph as
+            a program holds it once it has queried it
   match     milliseconds per pattern for up to 1000 queries; the pattern names
             the bound positions (s, p, o). The bound values are sampled
             (random.Random(0)) from the distinct values of those positions
@@ -264,8 +266,16 @@ def interleave_runs(triples, repeat, serial):
     return times
 
 
+def parse_and_query(name):
+    graph = inputs.load(name)
+    for triple in graph:
+        consume(graph.match(subject=triple.subject))
+        break
+    return graph
+
+
 def report_retained(name):
-    graph, size, objects = footprint(lambda: inputs.load(name))
+    graph, size, objects = footprint(lambda: parse_and_query(name))
     count = len(graph)
     print(
         f"  retained {bytes_per(size, count, 'triple')}, "

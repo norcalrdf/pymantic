@@ -369,16 +369,17 @@ Results against the base, PR #25 (cc09067), on Python 3.14, measured
 cores), so base and new ran in alternating processes (base, new, base,
 new, ...), each from its own `src` with the same benchmark scripts, and
 each figure is the median over the pairs; the ratio is the median of the
-pairs' new/base ratios. Below 0.95 is faster, above 1.05 slower, between is the same.
-Absolute times are higher than on a quiet machine. FHIR R5 examples as one
-graph, 645,566 triples:
+pairs' new/base ratios. Below 0.95 is faster, above 1.05 slower, between
+is the same. Absolute times were measured on that loaded machine, are
+higher than on a quiet one and move with the load; compare the ratios.
+FHIR R5 examples as one graph, 645,566 triples:
 
 | | base | new | median ratio (pairs) |
 |---|---|---|---|
-| full `gc.collect()`, graph loaded | 578 ms | 96 ms | 0.16 (5) |
+| full `gc.collect()`, graph loaded | 578 ms | 96 ms | 0.16 (5); 0.23 (3) in a memory-only run, 230 against 53 ms |
 | tracked objects per triple, index only | 3.79 | 0 | 0 |
 | index bytes per triple | 1030 | 421 | 0.41 |
-| parsed graph kept, terms included: bytes per triple | 1364 | 236 | 0.17 |
+| parsed graph kept and queried once, terms included: bytes per triple | 1363 | 520 | 0.38 (3) |
 | same: tracked objects per triple | 6.49 | 0.66 | 0.10 |
 | load (`addAll` of parsed triples) | 2.56 s | 0.97 s | 0.34 (5) |
 | `canonical_labels` | 6.17 s | 6.14 s | 1.01 (7) |

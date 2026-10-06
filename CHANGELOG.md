@@ -92,11 +92,17 @@ All notable changes to pymantic are recorded here. The format follows
   one entry in each of three orderings (SPO, POS, OSP), held in tuples of
   ints that Python's cyclic garbage collector does not track. With the FHIR
   R5 examples loaded as one graph (645,566 triples) on Python 3.14, a full
-  `gc.collect()` takes about 61 ms instead of 411 ms, the index adds no
+  `gc.collect()` takes 96 ms instead of 578 ms, the index adds no
   collector-tracked objects per triple instead of 3.79, and it takes 421
-  bytes per triple instead of 1030. Loading the triples into a graph takes
-  0.68 s instead of 1.59 s. Writing Turtle is slower: 1.64 s instead of
-  1.44 s by default, and 7.73 s instead of 7.42 s with `stable=True`.
+  bytes per triple instead of 1030 (a parsed graph, terms included, takes
+  236 bytes per triple instead of 1364). Loading the triples into a graph
+  takes 0.97 s instead of 2.56 s. `canonical_labels` takes the same time
+  (6.14 s against 6.17 s). Writing Turtle is 8% slower by default (1.98 s
+  instead of 1.88 s) and the same with `stable=True` (9.37 s against
+  9.05 s, within 3%). These are medians of paired runs against the code
+  before the new index (PR #25, cc09067) on a busy machine, measured on
+  2026-10-05; the comparison is the point, and every time is higher than
+  on a quiet machine.
 - `match` with any term bound yields triples in index order (by term id)
   rather than in the order they were added per subject. The default Turtle
   output's order (of blocks, of blank node labels, and of objects under a

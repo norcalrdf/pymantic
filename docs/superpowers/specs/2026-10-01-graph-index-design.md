@@ -364,19 +364,53 @@ constants checked on pypy312.
   `match` patterns, full iteration, the `Counter` over objects, batched and
   interleaved adds, and a dataset with one graph per FHIR file.
 
-Results (FHIR R5 examples as one graph, 645,566 triples, Python 3.14; "old"
-is the index at 3938832; the full tables are under "Index trial"):
+Results against the base, PR #25 (cc09067), on Python 3.14, measured
+2026-10-05. The machine was busy (1-minute load about 4 to 20 on 10
+cores), so base and new ran in alternating processes (base, new, base,
+new, ...), each from its own `src` with the same benchmark scripts, and
+each figure is the median over the pairs; the ratio is the median of the
+pairs' new/base ratios. Below 0.95 is faster, above 1.05 slower, between is the same.
+Absolute times are higher than on a quiet machine. FHIR R5 examples as one
+graph, 645,566 triples:
 
-| | old | new |
-|---|---|---|
-| full `gc.collect()`, graph loaded | 411 ms | 61 ms |
-| tracked objects per triple, index only | 3.79 | 0 |
-| index bytes per triple | 1030 | 421 |
-| load (`addAll` of parsed triples) | 1.59 s | 0.68 s |
-| default Turtle | 1.44 s | 1.64 s |
-| stable Turtle | 7.42 s | 7.73 s |
-| FHIR as a dataset, one graph per file: load | 1.56 s | 0.63 s |
-| same: full `gc.collect()` | 283 ms | 91 ms |
+| | base | new | median ratio (pairs) |
+|---|---|---|---|
+| full `gc.collect()`, graph loaded | 578 ms | 96 ms | 0.16 (5) |
+| tracked objects per triple, index only | 3.79 | 0 | 0 |
+| index bytes per triple | 1030 | 421 | 0.41 |
+| parsed graph kept, terms included: bytes per triple | 1364 | 236 | 0.17 |
+| same: tracked objects per triple | 6.49 | 0.66 | 0.10 |
+| load (`addAll` of parsed triples) | 2.56 s | 0.97 s | 0.34 (5) |
+| `canonical_labels` | 6.17 s | 6.14 s | 1.01 (7) |
+| default Turtle | 1.88 s | 1.98 s | 1.08 (10) |
+| stable Turtle | 9.05 s | 9.37 s | 1.03 (10) |
+| FHIR as a dataset, one graph per file: load | 2.24 s | 0.90 s | 0.38 (5) |
+| same: full `gc.collect()` | 403 ms | 130 ms | 0.34 (5) |
+
+Other inputs (median ratio, 7 pairs; doid 10, its labels 7 in processes
+that load only doid):
+
+- `canonical_labels`: faster on obi (0.88), fhir-r5-ontology (0.87) and
+  brick (0.91), and at the line on schemaorg-shapes (0.95); the same on
+  the sorted schema.org subsets, fhir-r5-examples and cycle-80; slower on
+  doid (1.11). On doid the labelling itself is faster with the collector
+  off; with it on, CPython runs 3 full collections instead of 1 (its
+  trigger is relative to the long-lived tracked objects, which the old
+  index inflated), about 70-150 ms more in the collector.
+  The 64 RDFC-1.0 inputs: median ratio 1.07 (0.96 to 1.85), 41 slower, a
+  median of +1.0 us per call; they load as a `Dataset` now (see Behavior
+  changes), whose read costs about 0.5 us more to start, which is most of
+  a call on the smallest inputs.
+- Default Turtle: faster on obi (0.80) and doid (0.82), the same on
+  fhir-r5-ontology and brick, slower on schemaorg-shapes (1.15) and the
+  sorted subsets of 100 and 400 shapes (1.27, 1.20). Each subject read
+  through `predicate_objects` translates ids to terms and costs about
+  0.3 us more than the old index's `match` (schemaorg-shapes: 6.8 ms
+  against 3.3 ms for one read of every subject, about 2.2 reads per
+  subject per write).
+- Stable Turtle: faster on obi, fhir-r5-ontology and brick, the same on
+  schemaorg-shapes and doid, slower on the sorted subsets (1.10, 1.07),
+  where the writer's slower reads outweigh the labels.
 
 - `timing.py`: `canonical_labels` and stable Turtle digests are identical
   before and after, on every interpreter measured. The default Turtle digest
@@ -393,12 +427,15 @@ Acceptance:
 
 - Met: the index adds close to zero GC-tracked objects per triple (0 on
   FHIR, 0.001 on obi and schemaorg-shapes).
-- Met: full-collection time with FHIR loaded is 61 ms, well below 0.30 s
-  (411 ms before). The before and after are in the changelog.
-- Met: load time on 3.14 is 2.3x faster (0.68 s against 1.59 s).
-- Not met: Turtle writing on 3.14 is slower than with the old index, 14% by
-  default (1.64 s against 1.44 s) and 4% with `stable=True` (7.73 s against
-  7.42 s). Gavin chose the adjacency index with those numbers (2026-10-02).
+- Met: full-collection time with FHIR loaded is 96 ms on a busy machine,
+  well below 0.30 s (578 ms for the base in the same runs). The before and
+  after are in the changelog.
+- Met: load time on 3.14 is about 3x faster (median ratio 0.34; 0.97 s
+  against 2.56 s).
+- Not met: default Turtle writing on 3.14 is 8% slower than the base on
+  FHIR (median ratio 1.08) and up to 27% on small schema.org inputs;
+  `stable=True` is the same on FHIR (1.03). Gavin chose the adjacency index
+  knowing writing was slower (2026-10-02).
 - Not met: the full suite does not pass on every tox env. On graalpy312 and
   graalpy313, 171 tests each fail (tox on a local merge with
   tox-interpreters, Task 17): `pymantic.compare.term_code` calls

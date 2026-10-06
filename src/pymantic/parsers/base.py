@@ -11,6 +11,9 @@ class BaseParser:
     tracking parser state.
     """
 
+    # Whether the parser produces quads, so a Graph cannot take its output.
+    reads_quads = False
+
     def __init__(self, environment=None):
         super().__init__()
         self.env = environment or pymantic.primitives.RDFEnvironment()
@@ -40,6 +43,15 @@ class BaseParser:
 
     def make_quad(self, subject, predicate, object, graph):
         return self.env.createQuad(subject, predicate, object, graph)
+
+    def _check_sink(self, sink):
+        """Refuse a Graph as the sink of a parser that produces quads.
+
+        This runs before anything is read, so a document with no statements
+        fails too.
+        """
+        if self.reads_quads and isinstance(sink, pymantic.primitives.Graph):
+            raise TypeError(pymantic.primitives.GRAPH_HOLDS_TRIPLES)
 
     def _prepare_parse(self, graph):
         self._call_state.bnodes = defaultdict(self.env.createBlankNode)

@@ -240,7 +240,9 @@ def test_add_graph():
     g.add(t)
     ds = Dataset()
     ds.add_graph(g)
-    assert t in ds
+    assert Quad(*t, g.uri) in ds
+    # A Triple is looked up in the default graph only.
+    assert t not in ds
 
 
 def generate_quads(n):
@@ -417,7 +419,7 @@ def test_match_on_an_unknown_graph_creates_nothing():
     dataset is."""
     ds = dataset_with_one_quad()
     assert list(ds.match(graph=NamedNode("http://nowhere/"))) == []
-    assert len(list(ds.graphs)) == 1
+    assert [g.uri for g in ds.graphs] == [None, NamedNode("http://example.com/g")]
 
 
 def test_contains_a_quad_in_an_unknown_graph_creates_nothing():
@@ -429,7 +431,7 @@ def test_contains_a_quad_in_an_unknown_graph_creates_nothing():
         NamedNode("http://nowhere/"),
     )
     assert absent not in ds
-    assert len(list(ds.graphs)) == 1
+    assert [g.uri for g in ds.graphs] == [None, NamedNode("http://example.com/g")]
 
 
 def test_remove_from_an_unknown_graph_creates_nothing():
@@ -442,7 +444,7 @@ def test_remove_from_an_unknown_graph_creates_nothing():
     )
     with pytest.raises(KeyError):
         ds.remove(absent)
-    assert len(list(ds.graphs)) == 1
+    assert [g.uri for g in ds.graphs] == [None, NamedNode("http://example.com/g")]
 
 
 def test_literal_language_tag_is_lowercased():
@@ -561,3 +563,70 @@ def test_graph_holds_one_triple_for_the_two_string_forms():
     assert len(g) == 1
     assert Triple(s, p, Literal("v")) in g
     assert Triple(s, p, Literal("v", datatype=XSD_STRING)) in g
+
+
+def test_graph_without_a_name_has_no_uri():
+    assert Graph().uri is None
+
+
+def test_graph_rejects_a_quad():
+    q = next(generate_quads(1))
+    g = Graph()
+    with pytest.raises(
+        TypeError, match="a Graph holds triples; use a Dataset for quads"
+    ):
+        g.add(q)
+    assert len(g) == 0
+    assert list(g) == []
+
+
+NOT_STATEMENTS = ["abc", "abcd", ["a", "b", "c"], b"abc", {"a": 1, "b": 2, "c": 3}]
+
+
+def _graph_and_view():
+    dataset = Dataset()
+    return {"graph": Graph(), "view": dataset.graphs[0]}
+
+
+@pytest.mark.parametrize("bad", NOT_STATEMENTS, ids=repr)
+@pytest.mark.parametrize("kind", ["graph", "view"])
+def test_graph_takes_only_tuples_as_triples(kind, bad):
+    g = _graph_and_view()[kind]
+    message = "a Graph holds triples; use a Dataset for quads"
+    with pytest.raises(TypeError, match=message):
+        g.add(bad)
+    with pytest.raises(TypeError, match=message):
+        g.remove(bad)
+    with pytest.raises(TypeError, match=message):
+        g.addAll([bad])
+    assert bad not in g
+    assert len(g) == 0
+
+
+@pytest.mark.parametrize("bad", NOT_STATEMENTS, ids=repr)
+def test_dataset_takes_only_tuples_as_quads(bad):
+    d = Dataset()
+    message = "a Dataset holds quads"
+    with pytest.raises(TypeError, match=message):
+        d.add(bad)
+    with pytest.raises(TypeError, match=message):
+        d.remove(bad)
+    with pytest.raises(TypeError, match=message):
+        d.addAll([bad])
+    assert bad not in d
+    assert len(d) == 0
+    assert list(d.graphs[0]) == []
+
+
+def test_graph_and_dataset_accept_plain_tuples():
+    s, p, o = NamedNode("http://x/s"), NamedNode("http://x/p"), NamedNode("http://x/o")
+    g = Graph()
+    g.add((s, p, o))
+    assert (s, p, o) in g
+    g.remove((s, p, o))
+    assert len(g) == 0
+    d = Dataset()
+    d.add((s, p, o, None))
+    assert (s, p, o, None) in d
+    d.remove((s, p, o, None))
+    assert len(d) == 0

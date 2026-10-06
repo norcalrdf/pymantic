@@ -22,7 +22,13 @@ from pymantic.parsers.jsonld import (  # noqa: E402
     RemoteContextsDisabledError,
     UnsafePyLDLoader,
 )
-from pymantic.primitives import Graph, Literal, NamedNode, Quad  # noqa: E402
+from pymantic.primitives import (  # noqa: E402
+    Dataset,
+    Graph,
+    Literal,
+    NamedNode,
+    Quad,
+)
 
 NAME_IRI = "http://ex/name"
 XSD_STRING = NamedNode("http://www.w3.org/2001/XMLSchema#string")
@@ -135,7 +141,7 @@ def test_jsonld_basic():
   "http://example.com/term5": [50, 51]
 }]
 """
-    g = Graph()
+    g = Dataset()
     jsonld_parser.parse_json(json.loads(jsonld), g)
     assert len(g) == 7
 
@@ -200,3 +206,13 @@ def test_literal_shapes_are_normalized_terms():
     }
     assert Literal("chat", "fr").datatype == RDF_LANGSTRING
     assert Literal("x") == Literal("x", None, XSD_STRING)
+
+
+@pytest.mark.parametrize(
+    "document",
+    [{"@id": "http://ex/s", NAME_IRI: "x"}, {}],
+    ids=["a statement", "empty"],
+)
+def test_parse_json_rejects_a_graph(document):
+    with pytest.raises(TypeError, match="a Graph holds triples; use a Dataset"):
+        jsonld_parser.parse_json(document, Graph())

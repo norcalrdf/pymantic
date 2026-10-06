@@ -1,0 +1,206 @@
+"""Tests for the Line-TriG reader (docs/line-trig.rst)."""
+
+from io import StringIO
+import pytest
+
+from pymantic.compare import isomorphic
+from pymantic.parsers import linetrig_parser
+from pymantic.primitives import BlankNode, Dataset, Graph, NamedNode, Quad
+from pymantic.serializers import serialize_linetrig
+
+S = NamedNode("http://e/s")
+P = NamedNode("http://e/p")
+O = NamedNode("http://e/o")  # noqa: E741
+G = NamedNode("http://e/g")
+EMPTY = NamedNode("http://e/empty")
+
+TRIPLE = "<http://e/s> <http://e/p> <http://e/o> ."
+
+
+def test_default_graph_line_is_a_default_graph_quad():
+    ds = linetrig_parser.parse(TRIPLE + "\n")
+    assert Quad(S, P, O, None) in ds and len(ds) == 1
+
+
+def test_named_graph_line():
+    ds = linetrig_parser.parse("<http://e/g> { " + TRIPLE + " }\n")
+    assert Quad(S, P, O, G) in ds and len(ds) == 1
+
+
+def test_empty_named_graph_exists():
+    ds = linetrig_parser.parse("<http://e/g> { }\n")
+    assert len(ds) == 0
+    assert [g.uri for g in ds.graphs if g.uri is not None] == [G]
+
+
+def test_empty_graph_with_a_blank_node_name_exists():
+    ds = linetrig_parser.parse("_:g { }\n")
+    assert len(ds) == 0
+    (name,) = [g.uri for g in ds.graphs if g.uri is not None]
+    assert isinstance(name, BlankNode)
+
+
+@pytest.mark.parametrize("ending", ["\r\n", "\r", "\n"], ids=["crlf", "cr", "lf"])
+def test_every_line_ending_separates_lines(ending):
+    text = ending.join([TRIPLE, "<http://e/g> { " + TRIPLE + " }", "<http://e/h> { }"])
+    for source in (text, text + ending):
+        ds = linetrig_parser.parse(source)
+        assert Quad(S, P, O, None) in ds
+        assert Quad(S, P, O, G) in ds
+        assert len(ds) == 2
+        assert sorted(g.uri.value for g in ds.graphs if g.uri is not None) == [
+            "http://e/g",
+            "http://e/h",
+        ]
+
+
+def test_line_number_counts_cr_and_crlf_endings():
+    with pytest.raises(ValueError, match="line 3"):
+        linetrig_parser.parse(TRIPLE + "\r" + TRIPLE + "\r\nnot a statement\n")
+
+
+def test_empty_graph_line_after_triples_keeps_them():
+    ds = linetrig_parser.parse("<http://e/g> { " + TRIPLE + " }\n<http://e/g> { }\n")
+    assert Quad(S, P, O, G) in ds and len(ds) == 1
+
+
+def test_blank_node_label_is_document_scoped():
+    ds = linetrig_parser.parse(
+        "_:g { _:b <http://e/p> <http://e/o> . }\n_:b <http://e/p> _:g .\n"
+    )
+    (named,) = [q for q in ds if q.graph is not None]
+    (default,) = [q for q in ds if q.graph is None]
+    assert named.subject is default.subject and named.graph is default.object
+
+
+def test_repeated_graph_name_is_a_union():
+    ds = linetrig_parser.parse(
+        "<http://e/g> { " + TRIPLE + " }\n"
+        "<http://e/g> { <http://e/s> <http://e/p> <http://e/o2> . }\n"
+    )
+    assert len(ds) == 2
+    assert Quad(S, P, O, G) in ds
+    assert Quad(S, P, NamedNode("http://e/o2"), G) in ds
+
+
+def test_comments_and_blank_lines_are_ignored():
+    ds = linetrig_parser.parse(
+        "# a comment\n\n" + TRIPLE + " # trailing\n   \n# another\n"
+        "<http://e/g> { " + TRIPLE + " }"
+    )
+    assert len(ds) == 2
+
+
+def test_stream_and_string_agree():
+    text = TRIPLE + "\n<http://e/g> { " + TRIPLE + " }\n<http://e/h> { }\n"
+    assert linetrig_parser.parse(StringIO(text)).toArray() == (
+        linetrig_parser.parse_string(text.encode("utf-8")).toArray()
+    )
+
+
+def test_literal_with_line_separator_character_is_one_line():
+    ds = linetrig_parser.parse('<http://e/s> <http://e/p> "a b" .\n')
+    assert len(ds) == 1
+
+
+def test_parse_adds_to_the_given_dataset():
+    ds = linetrig_parser.parse(TRIPLE + "\n")
+    assert linetrig_parser.parse("<http://e/g> { }\n", ds) is ds
+    assert len(ds.graphs) == 2
+
+
+OUT_OF_PROFILE = {
+    "two statements on one line": TRIPLE + " " + TRIPLE,
+    "two triples in braces": "<http://e/g> { " + TRIPLE + " " + TRIPLE + " }",
+    "prefixed name": "ex:s <http://e/p> <http://e/o> .",
+    "GRAPH keyword": "GRAPH <http://e/g> { " + TRIPLE + " }",
+    "missing dot in braces": "<http://e/g> { <http://e/s> <http://e/p> <http://e/o> }",
+    "literal graph name": '"g" { ' + TRIPLE + " }",
+}
+
+
+@pytest.mark.parametrize("line", OUT_OF_PROFILE.values(), ids=OUT_OF_PROFILE.keys())
+@pytest.mark.parametrize("wrap", [str, StringIO], ids=["string", "stream"])
+def test_out_of_profile_line_is_rejected_with_its_line_number(line, wrap):
+    with pytest.raises(ValueError, match="line 2"):
+        linetrig_parser.parse(wrap(TRIPLE + "\n" + line + "\n"))
+
+
+def test_writer_puts_default_graph_first_then_named_then_empty():
+    ds = Dataset()
+    ds.add(Quad(S, P, O, G))
+    ds.add(Quad(S, P, O, None))
+    ds.add_graph(Graph(), named=EMPTY)
+    out = StringIO()
+    serialize_linetrig(ds, out)
+    assert out.getvalue() == (
+        "<http://e/s> <http://e/p> <http://e/o> .\n"
+        "<http://e/g> { <http://e/s> <http://e/p> <http://e/o> . }\n"
+        "<http://e/empty> { }\n"
+    )
+
+
+def test_round_trip_keeps_empty_graphs_and_shared_blank_nodes():
+    original = linetrig_parser.parse(
+        "_:g { _:b <http://e/p> <http://e/o> . }\n"
+        "_:b <http://e/p> _:g .\n"
+        "<http://e/empty> { }\n"
+        '<http://e/g> { <http://e/s> <http://e/p> "a\\nb\\u2028c"@en . }\n'
+    )
+    out = StringIO()
+    serialize_linetrig(original, out)
+    reparsed = linetrig_parser.parse(out.getvalue())
+    assert isomorphic(original, reparsed)
+    assert [g.uri for g in reparsed.graphs if len(g) == 0] == [EMPTY]
+
+
+@pytest.mark.parametrize("document", ["<http://e/s> <http://e/p> <http://e/o> .", ""])
+def test_parse_rejects_a_graph(document):
+    with pytest.raises(TypeError, match="a Graph holds triples; use a Dataset"):
+        linetrig_parser.parse(document, Graph())
+
+
+@pytest.mark.parametrize("document", [TRIPLE, TRIPLE.encode()])
+@pytest.mark.parametrize("with_dataset", [False, True])
+def test_parse_string_takes_a_dataset(document, with_dataset):
+    target = Dataset() if with_dataset else None
+    ds = linetrig_parser.parse_string(document, dataset=target)
+    assert Quad(S, P, O, None) in ds and len(ds) == 1
+    if with_dataset:
+        assert ds is target
+
+
+class OneCharacterAtATime:
+    """A stream whose reads end wherever it likes, here after one character."""
+
+    def __init__(self, text):
+        self.text = StringIO(text)
+
+    def read(self, size=-1):
+        return self.text.read(1)
+
+
+BAD_AFTER_BARE_CRS = TRIPLE + "\r" + TRIPLE + "\rbad line\n"
+BAD_AFTER_CRLFS = TRIPLE + "\r\n" + TRIPLE + "\r\nbad line\n"
+
+
+@pytest.mark.parametrize("document", [BAD_AFTER_BARE_CRS, BAD_AFTER_CRLFS])
+@pytest.mark.parametrize(
+    "wrap",
+    [
+        str,
+        StringIO,
+        lambda text: StringIO(text, newline=""),
+        OneCharacterAtATime,
+    ],
+    ids=["str", "StringIO", "StringIO-newline-empty", "split-at-every-character"],
+)
+def test_error_line_number_is_the_same_for_every_input_shape(document, wrap):
+    with pytest.raises(ValueError, match="line 3"):
+        linetrig_parser.parse(wrap(document))
+
+
+def test_stream_keeps_line_separator_character_in_a_literal():
+    text = '<http://e/s> <http://e/p> "a\u2028b" .\n'
+    ds = linetrig_parser.parse(StringIO(text))
+    assert len(ds) == 1

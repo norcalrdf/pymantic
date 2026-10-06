@@ -172,6 +172,22 @@ def testResourceEquality(reset_metaresource):
     assert testResource != 42
 
 
+def test_copy_adds_the_subject_s_triples_to_the_target(reset_metaresource):
+    graph = Graph()
+    source = NamedNode("http://example.com/source")
+    target = NamedNode("http://example.com/target")
+    name = NamedNode("http://example.com/name")
+    values = [Literal("a"), Literal("b"), NamedNode("http://example.com/c")]
+    for value in values:
+        graph.add(Triple(source, name, value))
+    copied = pymantic.rdf.Resource(graph, source).copy(target)
+    assert copied == target
+    assert set(graph.match(target, None, None)) == {
+        Triple(target, name, value) for value in values
+    }
+    assert len(graph) == 2 * len(values)
+
+
 def testClassification(reset_metaresource):
     """Test classification of a resource."""
 

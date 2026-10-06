@@ -12,6 +12,7 @@ Pymantic documentation contents
     modules/serializers
     modules/compare
     graph-comparison
+    line-trig
 
 
 Indices, glossary and tables

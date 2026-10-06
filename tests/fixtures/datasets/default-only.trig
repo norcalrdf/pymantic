@@ -1,0 +1,4 @@
+# Only default-graph triples: the dataset has no named graphs.
+<http://e/s> <http://e/p> <http://e/o> .
+<http://e/s> <http://e/p> "o" .
+_:b <http://e/p> <http://e/s> .
